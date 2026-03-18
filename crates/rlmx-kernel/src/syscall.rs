@@ -96,6 +96,7 @@ pub struct KernelContext {
     pub process_manager: Arc<Mutex<ProcessManager>>,
     pub proof_engine: Arc<Mutex<ProofEngine>>,
     pub capability_manager: Arc<Mutex<CapabilityManager>>,
+    pub caller_pid: Option<ProcessId>,
 }
 
 /// Dispatch a syscall to the appropriate kernel subsystem.
@@ -174,9 +175,13 @@ pub async fn dispatch(syscall: &Syscall, ctx: &KernelContext) -> KernelResult<Sy
             pm.send(*target, message.clone()).await?;
             Ok(SyscallResult::MessageSent { delivered: true })
         }
-        Syscall::ProcessRecv { timeout: _ } => {
-            // ProcessRecv needs a caller process id; without one we return None.
-            Ok(SyscallResult::MessageReceived { message: None })
+        Syscall::ProcessRecv { timeout } => {
+            let pid = ctx.caller_pid.ok_or_else(||
+                crate::types::KernelError::Internal("ProcessRecv requires a caller process id".into())
+            )?;
+            let mut pm = ctx.process_manager.lock().await;
+            let msg = pm.recv(pid, timeout.clone()).await?;
+            Ok(SyscallResult::MessageReceived { message: msg })
         }
         Syscall::StateMutate {
             action,

@@ -43,8 +43,8 @@ pub async fn run_stdio_loop(server: &mut McpServer) -> Result<(), McpError> {
             }
         };
 
-        // Handle the request
-        let response = server.handle_request(&request).await;
+        // Handle the request (no caller token for stdio transport)
+        let response = server.handle_request(&request, None).await;
 
         // Write the response
         match response.to_json() {

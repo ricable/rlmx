@@ -125,14 +125,19 @@ async fn handle_connection(
         }
     };
 
+    // Extract the caller's bearer token (if present).
+    let caller_bearer = headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("authorization"))
+        .and_then(|(_, v)| v.strip_prefix("Bearer "))
+        .map(|t| t.to_string());
+
     // Authentication check: compare SHA-256 hash of incoming token against
     // the pre-hashed expected token to avoid timing side-channels.
     if auth_enabled {
         if let Some(expected_hash) = auth_token {
-            let authorized = headers
-                .iter()
-                .find(|(k, _)| k.eq_ignore_ascii_case("authorization"))
-                .and_then(|(_, v)| v.strip_prefix("Bearer "))
+            let authorized = caller_bearer
+                .as_deref()
                 .map(|t| rlmx_rvf::hash_sha256(t.as_bytes()) == expected_hash)
                 .unwrap_or(false);
 
@@ -173,9 +178,10 @@ async fn handle_connection(
     };
 
     // Handle the request — acquire mutex since handle_request takes &mut self.
+    // Pass the caller's bearer token so RBAC can resolve per-caller roles.
     let mcp_response = {
         let mut srv = server.lock().await;
-        srv.handle_request(&mcp_request).await
+        srv.handle_request(&mcp_request, caller_bearer.as_deref()).await
     };
 
     let json = mcp_response.to_json().unwrap_or_else(|_| {
@@ -237,8 +243,10 @@ async fn read_full_http_request(
     }
 
     // The body starts after the header terminator (4 bytes for \r\n\r\n).
-    let body_start = header_end + 4;
-    let total_needed = body_start + content_length;
+    let body_start = header_end.checked_add(4)
+        .ok_or_else(|| McpError::internal("header offset overflow"))?;
+    let total_needed = body_start.checked_add(content_length)
+        .ok_or_else(|| McpError::internal("body size overflow"))?;
 
     // Read remaining body bytes if we don't have them yet.
     while buf.len() < total_needed {

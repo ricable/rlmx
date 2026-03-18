@@ -104,7 +104,7 @@ impl WitnessChain {
         };
 
         self.entries.push(entry);
-        self.entries.last().unwrap()
+        self.entries.last().expect("entries is non-empty after push")
     }
 
     /// Verify the hash-chain integrity (each entry's `prev_hash` matches).

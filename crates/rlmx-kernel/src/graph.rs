@@ -388,6 +388,14 @@ impl Graph {
             )));
         }
 
+        const MAX_DIFFUSE_STEPS: usize = 1_000;
+        if steps > MAX_DIFFUSE_STEPS {
+            return Err(KernelError::GraphError(format!(
+                "steps {} exceeds maximum allowed {}",
+                steps, MAX_DIFFUSE_STEPS
+            )));
+        }
+
         // Sort node IDs for deterministic position-to-node mapping.
         let mut node_ids: Vec<Uuid> = self.nodes.keys().copied().collect();
         node_ids.sort();

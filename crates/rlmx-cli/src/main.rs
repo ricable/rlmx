@@ -315,7 +315,9 @@ fn cmd_seal(path: &str, output: Option<&str>) -> Result<(), Box<dyn std::error::
     // Verify the seal is valid.
     let vk = signing_key.verifying_key();
     let valid = container.verify(&vk)?;
-    assert!(valid, "seal verification failed immediately after signing");
+    if !valid {
+        return Err("seal verification failed immediately after signing".into());
+    }
 
     // Save to disk.
     container.save(Path::new(output_path))?;

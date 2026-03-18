@@ -151,7 +151,15 @@ impl McpServer {
     }
 
     /// Handle an incoming MCP request and produce a response.
-    pub async fn handle_request(&mut self, request: &McpRequest) -> McpResponse {
+    ///
+    /// `caller_token` is the bearer token presented by the caller (if any).
+    /// It is used to look up the caller's RBAC role via `token_roles`.
+    /// Pass `None` for unauthenticated transports (e.g., stdio).
+    pub async fn handle_request(
+        &mut self,
+        request: &McpRequest,
+        caller_token: Option<&str>,
+    ) -> McpResponse {
         // Validate JSON-RPC version
         if request.jsonrpc != "2.0" {
             return McpResponse::error(
@@ -178,7 +186,7 @@ impl McpServer {
                 if request.method == "tools/list" {
                     self.handle_tools_list(request)
                 } else {
-                    self.handle_tools_call(request).await
+                    self.handle_tools_call(request, caller_token).await
                 }
             }
             _ => McpResponse::error(
@@ -221,7 +229,7 @@ impl McpServer {
     }
 
     /// Handle the `tools/call` method.
-    async fn handle_tools_call(&self, request: &McpRequest) -> McpResponse {
+    async fn handle_tools_call(&self, request: &McpRequest, caller_token: Option<&str>) -> McpResponse {
         let params = match &request.params {
             Some(p) => p,
             None => {
@@ -290,9 +298,9 @@ impl McpServer {
         }
 
         let caller_role = if self.config.auth_enabled {
-            // When auth is enabled, check if the authenticated token has a
+            // When auth is enabled, check if the caller's token has a
             // server-side role mapping (which may include Admin/System).
-            let token_role = self.config.auth_token.as_deref()
+            let token_role = caller_token
                 .and_then(|token| self.config.role_for_token(token).cloned());
 
             if let Some(role) = token_role {
@@ -408,7 +416,7 @@ mod tests {
     async fn test_handle_initialize() {
         let mut server = make_server();
         let req = McpRequest::new(json!(1), "initialize", Some(json!({})));
-        let resp = server.handle_request(&req).await;
+        let resp = server.handle_request(&req, None).await;
         assert!(resp.error.is_none());
         let result = resp.result.unwrap();
         assert_eq!(result["serverInfo"]["name"], "rlmx-mcp");
@@ -419,10 +427,10 @@ mod tests {
         let mut server = make_server();
         // Initialize first (Issue 14)
         let init_req = McpRequest::new(json!(0), "initialize", Some(json!({})));
-        server.handle_request(&init_req).await;
+        server.handle_request(&init_req, None).await;
 
         let req = McpRequest::new(json!(2), "tools/list", None);
-        let resp = server.handle_request(&req).await;
+        let resp = server.handle_request(&req, None).await;
         assert!(resp.error.is_none());
         let result = resp.result.unwrap();
         let tools = result["tools"].as_array().unwrap();
@@ -434,13 +442,13 @@ mod tests {
         let mut server = make_server();
         // Initialize first (Issue 14)
         let init_req = McpRequest::new(json!(0), "initialize", Some(json!({})));
-        server.handle_request(&init_req).await;
+        server.handle_request(&init_req, None).await;
 
         let req = McpRequest::new(json!(3), "tools/call", Some(json!({
             "name": "rlmx_memory_stats",
             "arguments": {}
         })));
-        let resp = server.handle_request(&req).await;
+        let resp = server.handle_request(&req, None).await;
         assert!(resp.error.is_none());
     }
 
@@ -448,7 +456,7 @@ mod tests {
     async fn test_tools_rejected_before_initialize() {
         let mut server = make_server();
         let req = McpRequest::new(json!(1), "tools/list", None);
-        let resp = server.handle_request(&req).await;
+        let resp = server.handle_request(&req, None).await;
         assert!(resp.error.is_some());
         assert_eq!(resp.error.unwrap().code, SERVER_NOT_INITIALIZED);
     }
@@ -457,14 +465,14 @@ mod tests {
     async fn test_rbac_viewer_cannot_ingest() {
         let mut server = make_server();
         let init_req = McpRequest::new(json!(0), "initialize", Some(json!({})));
-        server.handle_request(&init_req).await;
+        server.handle_request(&init_req, None).await;
 
         let req = McpRequest::new(json!(5), "tools/call", Some(json!({
             "name": "rlmx_ingest",
             "arguments": {"data": "test"},
             "_role": "viewer"
         })));
-        let resp = server.handle_request(&req).await;
+        let resp = server.handle_request(&req, None).await;
         assert!(resp.error.is_some());
         assert_eq!(resp.error.unwrap().code, ACCESS_DENIED);
     }
@@ -473,7 +481,7 @@ mod tests {
     async fn test_handle_method_not_found() {
         let mut server = make_server();
         let req = McpRequest::new(json!(4), "nonexistent/method", None);
-        let resp = server.handle_request(&req).await;
+        let resp = server.handle_request(&req, None).await;
         assert!(resp.error.is_some());
         assert_eq!(resp.error.unwrap().code, METHOD_NOT_FOUND);
     }
@@ -482,14 +490,14 @@ mod tests {
     async fn test_rbac_client_cannot_self_assign_admin() {
         let mut server = make_server();
         let init_req = McpRequest::new(json!(0), "initialize", Some(json!({})));
-        server.handle_request(&init_req).await;
+        server.handle_request(&init_req, None).await;
 
         let req = McpRequest::new(json!(6), "tools/call", Some(json!({
             "name": "rlmx_query",
             "arguments": {"query": "test"},
             "_role": "admin"
         })));
-        let resp = server.handle_request(&req).await;
+        let resp = server.handle_request(&req, None).await;
         assert!(resp.error.is_some(), "Client should not be able to self-assign Admin role");
         let err = resp.error.unwrap();
         assert_eq!(err.code, ACCESS_DENIED);
@@ -500,14 +508,14 @@ mod tests {
     async fn test_rbac_client_cannot_self_assign_system() {
         let mut server = make_server();
         let init_req = McpRequest::new(json!(0), "initialize", Some(json!({})));
-        server.handle_request(&init_req).await;
+        server.handle_request(&init_req, None).await;
 
         let req = McpRequest::new(json!(7), "tools/call", Some(json!({
             "name": "rlmx_query",
             "arguments": {"query": "test"},
             "_role": "system"
         })));
-        let resp = server.handle_request(&req).await;
+        let resp = server.handle_request(&req, None).await;
         assert!(resp.error.is_some(), "Client should not be able to self-assign System role");
         let err = resp.error.unwrap();
         assert_eq!(err.code, ACCESS_DENIED);
@@ -529,13 +537,14 @@ mod tests {
         server.register_tools(create_all_tools(new_shared_state()));
 
         let init_req = McpRequest::new(json!(0), "initialize", Some(json!({})));
-        server.handle_request(&init_req).await;
+        server.handle_request(&init_req, None).await;
 
         let req = McpRequest::new(json!(8), "tools/call", Some(json!({
             "name": "rlmx_query",
             "arguments": {"query": "test"}
         })));
-        let resp = server.handle_request(&req).await;
+        // Pass the caller's token so RBAC resolves the Admin role.
+        let resp = server.handle_request(&req, Some("admin-token-123")).await;
         assert!(resp.error.is_none(), "Server-side Admin token should be authorized");
     }
 
@@ -543,14 +552,14 @@ mod tests {
     async fn test_rbac_operator_role_allowed_via_param() {
         let mut server = make_server();
         let init_req = McpRequest::new(json!(0), "initialize", Some(json!({})));
-        server.handle_request(&init_req).await;
+        server.handle_request(&init_req, None).await;
 
         let req = McpRequest::new(json!(9), "tools/call", Some(json!({
             "name": "rlmx_query",
             "arguments": {"query": "test"},
             "_role": "operator"
         })));
-        let resp = server.handle_request(&req).await;
+        let resp = server.handle_request(&req, None).await;
         assert!(resp.error.is_none(), "Operator role should be allowed via _role param");
     }
 
