@@ -194,8 +194,8 @@ impl ProofEngine {
             ));
         }
 
-        let action_hash = simple_hash(action);
-        let reasoning_hash = simple_hash(reasoning_chain);
+        let action_hash = hash_sha256(action);
+        let reasoning_hash = hash_sha256(reasoning_chain);
 
         let witness_id = self.chain.append(action_hash, reasoning_hash, evidence_refs);
 
@@ -229,8 +229,8 @@ impl Default for ProofEngine {
     }
 }
 
-/// Cryptographic SHA-256 hash.
-fn simple_hash(input: &str) -> String {
+/// Compute a hex-encoded SHA-256 hash of the given string.
+fn hash_sha256(input: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(input.as_bytes());
     hex::encode(hasher.finalize())

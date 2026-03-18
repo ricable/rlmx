@@ -14,7 +14,7 @@ use serde_json::json;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use rlmx_kernel::{Graph, MemoryRegion, SearchFilters, SegmentMetadata};
+use rlmx_kernel::{Graph, MemoryRegion, SearchFilters, SegmentMetadata, EMBED_DIM, text_to_embedding};
 
 use crate::protocol::{McpError, McpTool, ToolHandler};
 #[allow(unused_imports)]
@@ -34,8 +34,6 @@ pub struct ToolState {
     pub ingest_count: u64,
     /// Running counter of total query operations performed.
     pub query_count: u64,
-    /// Running counter of evicted segments (simulated).
-    pub eviction_count: u64,
 }
 
 impl ToolState {
@@ -46,7 +44,6 @@ impl ToolState {
             graph: Graph::new(),
             ingest_count: 0,
             query_count: 0,
-            eviction_count: 0,
         }
     }
 }
@@ -63,47 +60,6 @@ pub type SharedToolState = Arc<RwLock<ToolState>>;
 /// Create a default shared tool state.
 pub fn new_shared_state() -> SharedToolState {
     Arc::new(RwLock::new(ToolState::new()))
-}
-
-// ---------------------------------------------------------------------------
-// Embedding helper
-// ---------------------------------------------------------------------------
-
-/// Dimension used for the simple hash-based embedding.
-const EMBED_DIM: usize = 64;
-
-/// Generate a deterministic pseudo-embedding from text.
-///
-/// This is NOT a real embedding model — it produces a reproducible float
-/// vector by hashing character trigrams into buckets, then L2-normalising.
-/// It is good enough for demo / integration-test purposes where identical
-/// or very similar strings should have high cosine similarity.
-fn text_to_embedding(text: &str) -> Vec<f32> {
-    let mut vec = vec![0.0_f32; EMBED_DIM];
-    let lower = text.to_lowercase();
-    let chars: Vec<char> = lower.chars().collect();
-
-    // Hash unigrams and trigrams into the vector.
-    for ch in &chars {
-        let idx = (*ch as usize) % EMBED_DIM;
-        vec[idx] += 1.0;
-    }
-    for window in chars.windows(3) {
-        let hash = window.iter().fold(0_usize, |acc, c| {
-            acc.wrapping_mul(31).wrapping_add(*c as usize)
-        });
-        let idx = hash % EMBED_DIM;
-        vec[idx] += 0.5;
-    }
-
-    // L2-normalise.
-    let norm: f32 = vec.iter().map(|v| v * v).sum::<f32>().sqrt();
-    if norm > 0.0 {
-        for v in &mut vec {
-            *v /= norm;
-        }
-    }
-    vec
 }
 
 // ---------------------------------------------------------------------------
@@ -349,7 +305,8 @@ impl ToolHandler for RlmxMemoryStatsHandler {
             },
             "ingest_operations": state.ingest_count,
             "query_operations": state.query_count,
-            "eviction_count": state.eviction_count,
+            // TODO: track evictions once tier promotion/demotion is implemented
+            "eviction_count": 0,
         });
 
         if include_hnsw {

@@ -20,6 +20,43 @@ pub struct ContextSegment {
     pub tier: SegmentTier,
 }
 
+/// Dimension used for the hash-based pseudo-embedding.
+pub const EMBED_DIM: usize = 64;
+
+/// Generate a deterministic pseudo-embedding from text.
+///
+/// This is NOT a real embedding model — it produces a reproducible float
+/// vector by hashing character unigrams and trigrams into buckets, then
+/// L2-normalising. It is good enough for demo / integration-test purposes
+/// where identical or very similar strings should have high cosine similarity.
+pub fn text_to_embedding(text: &str) -> Vec<f32> {
+    let mut vec = vec![0.0_f32; EMBED_DIM];
+    let lower = text.to_lowercase();
+    let chars: Vec<char> = lower.chars().collect();
+
+    // Hash unigrams and trigrams into the vector.
+    for ch in &chars {
+        let idx = (*ch as usize) % EMBED_DIM;
+        vec[idx] += 1.0;
+    }
+    for window in chars.windows(3) {
+        let hash = window.iter().fold(0_usize, |acc, c| {
+            acc.wrapping_mul(31).wrapping_add(*c as usize)
+        });
+        let idx = hash % EMBED_DIM;
+        vec[idx] += 0.5;
+    }
+
+    // L2-normalise.
+    let norm: f32 = vec.iter().map(|v| v * v).sum::<f32>().sqrt();
+    if norm > 0.0 {
+        for v in &mut vec {
+            *v /= norm;
+        }
+    }
+    vec
+}
+
 /// Cosine similarity between two vectors.
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
     if a.len() != b.len() || a.is_empty() {

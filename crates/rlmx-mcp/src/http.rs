@@ -7,7 +7,7 @@
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use tokio::sync::RwLock;
+use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
 use crate::protocol::{McpError, McpRequest, McpResponse};
@@ -41,8 +41,10 @@ pub async fn run_http_server(
     let auth_enabled = server.auth_enabled();
     let auth_token = server.auth_token().map(|s| s.to_string());
 
-    // Wrap the owned server in Arc<RwLock> for safe sharing across tasks.
-    let shared_server: Arc<RwLock<McpServer>> = Arc::new(RwLock::new(server));
+    // Wrap the owned server in Arc<Mutex> for safe sharing across tasks.
+    // Mutex suffices because handle_request takes &mut self, so every
+    // request needs exclusive access anyway.
+    let shared_server: Arc<Mutex<McpServer>> = Arc::new(Mutex::new(server));
 
     loop {
         let (stream, peer_addr) = match listener.accept().await {
@@ -76,7 +78,7 @@ pub async fn run_http_server(
 /// Handle a single HTTP connection.
 async fn handle_connection(
     mut stream: tokio::net::TcpStream,
-    server: Arc<RwLock<McpServer>>,
+    server: Arc<Mutex<McpServer>>,
     auth_enabled: bool,
     auth_token: Option<&str>,
 ) -> Result<(), McpError> {
@@ -148,9 +150,9 @@ async fn handle_connection(
         }
     };
 
-    // Handle the request — acquire write lock since handle_request takes &mut self.
+    // Handle the request — acquire mutex since handle_request takes &mut self.
     let mcp_response = {
-        let mut srv = server.write().await;
+        let mut srv = server.lock().await;
         srv.handle_request(&mcp_request).await
     };
 
@@ -240,14 +242,7 @@ fn find_header_end(buf: &[u8]) -> Option<usize> {
 /// Parse the Content-Length header value from the raw header section.
 fn parse_content_length(headers: &str) -> Option<usize> {
     for line in headers.lines() {
-        if let Some(value) = line.strip_prefix("Content-Length:") {
-            return value.trim().parse().ok();
-        }
-        if let Some(value) = line.strip_prefix("content-length:") {
-            return value.trim().parse().ok();
-        }
-        // Case-insensitive fallback
-        let lower = line.to_lowercase();
+        let lower = line.to_ascii_lowercase();
         if let Some(rest) = lower.strip_prefix("content-length:") {
             return rest.trim().parse().ok();
         }

@@ -15,7 +15,7 @@ pub mod types;
 // Re-export primary types for convenient access.
 pub use capability::{CapabilityManager, CapabilityToken};
 pub use graph::Graph;
-pub use memory::{cosine_similarity, ContextSegment, MemoryRegion};
+pub use memory::{cosine_similarity, text_to_embedding, ContextSegment, MemoryRegion, EMBED_DIM};
 pub use process::{Process, ProcessManager, ProcessStatus};
 pub use proof::{Proof, ProofEngine, Witness, WitnessChain};
 pub use scheduler::{Scheduler, SchedulerConfig, Strategy};

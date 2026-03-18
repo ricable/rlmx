@@ -3,7 +3,6 @@
 //! Defines all 24+ segment types that can be packaged inside an RVF container.
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 /// All segment types supported by the RVF container format.
@@ -112,7 +111,7 @@ impl RvfSegment {
         data: Vec<u8>,
         metadata: serde_json::Value,
     ) -> Self {
-        let hash = compute_sha256(&data);
+        let hash = crate::crypto::hash_sha256(&data);
         Self {
             id: Uuid::new_v4(),
             segment_type,
@@ -124,29 +123,11 @@ impl RvfSegment {
 
     /// Verify that the stored hash matches the actual data.
     pub fn verify_integrity(&self) -> bool {
-        let computed = compute_sha256(&self.data);
+        let computed = crate::crypto::hash_sha256(&self.data);
         computed == self.hash
     }
 }
 
-/// Compute a hex-encoded SHA-256 hash of the given data.
-fn compute_sha256(data: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    let result = hasher.finalize();
-    hex::encode(result)
-}
-
-/// Inline hex encoding (avoid pulling in the `hex` crate).
-mod hex {
-    pub fn encode(bytes: impl AsRef<[u8]>) -> String {
-        bytes
-            .as_ref()
-            .iter()
-            .map(|b| format!("{:02x}", b))
-            .collect()
-    }
-}
 
 /// Represents a difference between two segments (used by branch diffing).
 #[derive(Debug, Clone)]

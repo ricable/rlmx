@@ -73,7 +73,7 @@ pub fn hash_sha256(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(data);
     let result = hasher.finalize();
-    result.iter().map(|b| format!("{:02x}", b)).collect()
+    hex::encode(result)
 }
 
 /// Container signature stored alongside an RVF container.

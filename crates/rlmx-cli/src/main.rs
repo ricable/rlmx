@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use clap::{Parser, Subcommand};
+use rlmx_kernel::text_to_embedding;
 
 /// RLMX - The RuVix Cognition Kernel CLI
 #[derive(Parser, Debug)]
@@ -389,37 +390,11 @@ fn cmd_plugin(action: &str, _name: Option<&str>) -> Result<(), Box<dyn std::erro
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Generate a deterministic pseudo-embedding from text.
-///
-/// This is a placeholder that produces a fixed-length f32 vector by hashing
-/// character byte values. It is NOT a real embedding model but allows the
-/// vector search pipeline to function end-to-end.
-fn text_to_embedding(text: &str) -> Vec<f32> {
-    const DIM: usize = 64;
-    let mut embedding = vec![0.0_f32; DIM];
-
-    for (i, byte) in text.bytes().enumerate() {
-        let idx = i % DIM;
-        // Simple deterministic mixing.
-        embedding[idx] += (byte as f32) * 0.01;
-    }
-
-    // Normalize to unit length.
-    let norm: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if norm > 0.0 {
-        for v in &mut embedding {
-            *v /= norm;
-        }
-    }
-
-    embedding
-}
-
-/// Truncate a string to the given maximum length, appending "..." if truncated.
+/// Truncate a string to the given maximum number of characters, appending "..." if truncated.
 fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
+    if s.chars().count() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len])
+        format!("{}...", s.chars().take(max_len).collect::<String>())
     }
 }
