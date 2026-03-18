@@ -426,8 +426,7 @@ impl Graph {
             let mut step_result = result.clone();
             let mut current_term = result.clone();
             for k in 1..=terms {
-                let prev = current_term.clone();
-                current_term = mat_vec_mul(&laplacian, &prev);
+                current_term = mat_vec_mul(&laplacian, &current_term);
                 let scale = -t / (k as f64);
                 for val in &mut current_term {
                     *val *= scale;
@@ -581,6 +580,9 @@ fn parse_node_spec(spec: &str) -> KernelResult<(String, Option<String>)> {
 
 fn parse_rel_spec(spec: &str) -> KernelResult<Option<String>> {
     let parts: Vec<&str> = spec.splitn(2, ':').collect();
+    // Validate the relationship variable (e.g. "r" in "r:KNOWS").
+    let var = parts[0].trim();
+    validate_identifier(var)?;
     let typ = parts.get(1).map(|t| t.trim().to_string());
     if let Some(ref t) = typ {
         validate_identifier(t)?;

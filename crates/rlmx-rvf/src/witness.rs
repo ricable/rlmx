@@ -198,30 +198,20 @@ fn canonical_payload(
 
 /// Hash an entire entry to produce the chain link.
 ///
-/// Includes all fields so that tampering with any field breaks the chain.
+/// Uses `canonical_payload` to ensure the hash covers exactly the same
+/// fields and encoding as the Ed25519 signature, preventing divergence.
 fn hash_entry(entry: &WitnessEntry) -> String {
-    let evidence_str: String = entry
-        .evidence_refs
-        .iter()
-        .map(|r| r.to_string())
-        .collect::<Vec<_>>()
-        .join(",");
-    // Use deterministic f64 representation (bit-level hex) to ensure
-    // cross-platform consistency. This matches canonical_payload which
-    // also uses to_bits().to_le_bytes().
-    let confidence_hex = hex::encode(entry.confidence.to_bits().to_le_bytes());
-    let canonical = format!(
-        "{}:{}:{}:{}:{}:{}:{}:{}",
-        entry.id,
-        entry.timestamp.to_rfc3339(),
-        entry.agent_id,
-        confidence_hex,
-        evidence_str,
-        entry.action_hash,
-        entry.reasoning_chain_hash,
-        entry.prev_hash,
+    let payload = canonical_payload(
+        &entry.id,
+        &entry.timestamp,
+        &entry.agent_id,
+        entry.confidence,
+        &entry.evidence_refs,
+        &entry.action_hash,
+        &entry.reasoning_chain_hash,
+        &entry.prev_hash,
     );
-    hash_sha256(canonical.as_bytes())
+    hash_sha256(&payload)
 }
 
 #[cfg(test)]

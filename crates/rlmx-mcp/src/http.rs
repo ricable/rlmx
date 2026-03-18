@@ -42,7 +42,11 @@ pub async fn run_http_server(
     info!(address = %addr, "MCP HTTP server listening");
 
     let auth_enabled = server.auth_enabled();
-    let auth_token = server.auth_token().map(|s| s.to_string());
+    // Pre-hash the expected token once at startup so we only hash
+    // the incoming token per-request (not both).
+    let auth_token_hash = server
+        .auth_token()
+        .map(|s| rlmx_rvf::hash_sha256(s.as_bytes()));
 
     // Wrap the owned server in Arc<Mutex> for safe sharing across tasks.
     // Mutex suffices because handle_request takes &mut self, so every
@@ -63,21 +67,26 @@ pub async fn run_http_server(
 
         debug!(peer = %peer_addr, "Accepted connection");
 
+        // Acquire permit before spawning to bound task count under load.
+        let permit = match semaphore.clone().try_acquire_owned() {
+            Ok(p) => p,
+            Err(_) => {
+                warn!(peer = %peer_addr, "Connection rejected: max concurrent connections reached");
+                drop(stream);
+                continue;
+            }
+        };
+
         let server_handle = Arc::clone(&shared_server);
-        let token = auth_token.clone();
-        let sem = semaphore.clone();
+        let token_hash = auth_token_hash.clone();
 
         tokio::spawn(async move {
-            // Acquire a permit; released when the task completes.
-            let _permit = match sem.acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => return, // semaphore closed
-            };
+            let _permit = permit; // released when task completes
             if let Err(e) = handle_connection(
                 stream,
                 server_handle,
                 auth_enabled,
-                token.as_deref(),
+                token_hash.as_deref(),
             )
             .await
             {
@@ -116,19 +125,15 @@ async fn handle_connection(
         }
     };
 
-    // Authentication check
+    // Authentication check: compare SHA-256 hash of incoming token against
+    // the pre-hashed expected token to avoid timing side-channels.
     if auth_enabled {
-        if let Some(expected_token) = auth_token {
+        if let Some(expected_hash) = auth_token {
             let authorized = headers
                 .iter()
                 .find(|(k, _)| k.eq_ignore_ascii_case("authorization"))
                 .and_then(|(_, v)| v.strip_prefix("Bearer "))
-                .map(|t| {
-                    use sha2::{Sha256, Digest};
-                    let a = Sha256::digest(t.as_bytes());
-                    let b = Sha256::digest(expected_token.as_bytes());
-                    a == b
-                })
+                .map(|t| rlmx_rvf::hash_sha256(t.as_bytes()) == expected_hash)
                 .unwrap_or(false);
 
             if !authorized {
