@@ -125,18 +125,22 @@ async fn handle_connection(
         }
     };
 
-    // Extract the caller's bearer token (if present).
-    let caller_bearer = headers
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("authorization"))
-        .and_then(|(_, v)| v.strip_prefix("Bearer "))
-        .map(|t| t.to_string());
+    // Extract the caller's bearer token lazily (only allocates when present).
+    let caller_bearer = || -> Option<String> {
+        headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("authorization"))
+            .and_then(|(_, v)| v.strip_prefix("Bearer "))
+            .map(|t| t.to_string())
+    };
 
     // Authentication check: compare SHA-256 hash of incoming token against
     // the pre-hashed expected token to avoid timing side-channels.
+    let caller_token: Option<String>;
     if auth_enabled {
+        caller_token = caller_bearer();
         if let Some(expected_hash) = auth_token {
-            let authorized = caller_bearer
+            let authorized = caller_token
                 .as_deref()
                 .map(|t| rlmx_rvf::hash_sha256(t.as_bytes()) == expected_hash)
                 .unwrap_or(false);
@@ -148,6 +152,9 @@ async fn handle_connection(
                 return Ok(());
             }
         }
+    } else {
+        // Auth disabled — no token extraction needed for RBAC.
+        caller_token = None;
     }
 
     // Only accept POST /mcp
@@ -181,7 +188,7 @@ async fn handle_connection(
     // Pass the caller's bearer token so RBAC can resolve per-caller roles.
     let mcp_response = {
         let mut srv = server.lock().await;
-        srv.handle_request(&mcp_request, caller_bearer.as_deref()).await
+        srv.handle_request(&mcp_request, caller_token.as_deref()).await
     };
 
     let json = mcp_response.to_json().unwrap_or_else(|_| {

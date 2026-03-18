@@ -180,7 +180,7 @@ pub async fn dispatch(syscall: &Syscall, ctx: &KernelContext) -> KernelResult<Sy
                 crate::types::KernelError::Internal("ProcessRecv requires a caller process id".into())
             )?;
             let mut pm = ctx.process_manager.lock().await;
-            let msg = pm.recv(pid, timeout.clone()).await?;
+            let msg = pm.recv(pid, *timeout).await?;
             Ok(SyscallResult::MessageReceived { message: msg })
         }
         Syscall::StateMutate {
