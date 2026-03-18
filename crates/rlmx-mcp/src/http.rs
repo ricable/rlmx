@@ -7,7 +7,7 @@
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Semaphore};
 use tracing::{debug, error, info, warn};
 
 use crate::protocol::{McpError, McpRequest, McpResponse};
@@ -15,6 +15,9 @@ use crate::server::McpServer;
 
 /// Maximum HTTP body size (10 MB) to prevent OOM from untrusted Content-Length.
 const MAX_BODY_SIZE: usize = 10 * 1024 * 1024;
+
+/// Maximum number of concurrent HTTP connections to prevent resource exhaustion.
+const MAX_CONCURRENT_CONNECTIONS: usize = 256;
 
 /// Run the HTTP transport server.
 ///
@@ -46,6 +49,9 @@ pub async fn run_http_server(
     // request needs exclusive access anyway.
     let shared_server: Arc<Mutex<McpServer>> = Arc::new(Mutex::new(server));
 
+    // Limit concurrent connections to prevent resource exhaustion (DoS).
+    let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
+
     loop {
         let (stream, peer_addr) = match listener.accept().await {
             Ok(conn) => conn,
@@ -59,8 +65,14 @@ pub async fn run_http_server(
 
         let server_handle = Arc::clone(&shared_server);
         let token = auth_token.clone();
+        let sem = semaphore.clone();
 
         tokio::spawn(async move {
+            // Acquire a permit; released when the task completes.
+            let _permit = match sem.acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => return, // semaphore closed
+            };
             if let Err(e) = handle_connection(
                 stream,
                 server_handle,
@@ -111,7 +123,12 @@ async fn handle_connection(
                 .iter()
                 .find(|(k, _)| k.eq_ignore_ascii_case("authorization"))
                 .and_then(|(_, v)| v.strip_prefix("Bearer "))
-                .map(|t| t == expected_token)
+                .map(|t| {
+                    use sha2::{Sha256, Digest};
+                    let a = Sha256::digest(t.as_bytes());
+                    let b = Sha256::digest(expected_token.as_bytes());
+                    a == b
+                })
                 .unwrap_or(false);
 
             if !authorized {

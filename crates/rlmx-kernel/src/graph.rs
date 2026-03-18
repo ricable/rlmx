@@ -190,7 +190,8 @@ impl Graph {
             ));
         }
 
-        let node_ids: Vec<Uuid> = self.nodes.keys().copied().collect();
+        let mut node_ids: Vec<Uuid> = self.nodes.keys().copied().collect();
+        node_ids.sort();
         let mut rng = rand::thread_rng();
 
         let mut best_cut = f64::MAX;
@@ -244,7 +245,7 @@ impl Graph {
 
             if cut_weight < best_cut {
                 best_cut = cut_weight;
-                let parts: Vec<Vec<Uuid>> = sizes.values().cloned().collect();
+                let parts: Vec<Vec<Uuid>> = sizes.values().filter(|v| !v.is_empty()).cloned().collect();
                 best_partitions = parts;
             }
         }
@@ -261,7 +262,9 @@ impl Graph {
 
         // Build an adjacency matrix using merged-node indices.
         // Each "supernode" is a set of original node ids.
-        let node_ids: Vec<Uuid> = self.nodes.keys().copied().collect();
+        // Sort for deterministic index assignment.
+        let mut node_ids: Vec<Uuid> = self.nodes.keys().copied().collect();
+        node_ids.sort();
         let n = node_ids.len();
         let id_to_idx: HashMap<Uuid, usize> =
             node_ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
@@ -313,7 +316,10 @@ impl Graph {
                         }
                     }
                 }
-                let v = best_node.unwrap();
+                let v = match best_node {
+                    Some(v) => v,
+                    None => break, // no more candidates in this phase
+                };
                 in_a[v] = true;
                 second_last = last;
                 last = v;
@@ -352,6 +358,7 @@ impl Graph {
                 w[s][i] += w[t][i];
                 w[i][s] += w[i][t];
             }
+            w[s][s] = 0.0; // no self-loops
             // Zero out t's row/col to be safe.
             for i in 0..n {
                 w[t][i] = 0.0;
@@ -381,7 +388,9 @@ impl Graph {
             )));
         }
 
-        let node_ids: Vec<Uuid> = self.nodes.keys().copied().collect();
+        // Sort node IDs for deterministic position-to-node mapping.
+        let mut node_ids: Vec<Uuid> = self.nodes.keys().copied().collect();
+        node_ids.sort();
         let id_to_idx: HashMap<Uuid, usize> =
             node_ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
 
@@ -405,24 +414,29 @@ impl Graph {
             }
         }
 
-        // Taylor expansion: result = (I - tL + (tL)^2/2! - ...) * signal
-        let t = steps as f64;
-        let terms = 6; // Number of Taylor terms.
+        // Approximate e^{-tL} * signal using iterated Taylor expansion.
+        // Instead of e^{-steps*L} (diverges for large steps with few terms),
+        // apply e^{-L} repeatedly `steps` times, each with a 10-term Taylor
+        // expansion for t=1.0 which converges well.
+        let t = 1.0_f64;
+        let terms = 10;
         let mut result = signal.to_vec();
 
-        // tL^k / k! applied iteratively.
-        let mut current = signal.to_vec();
-        for k in 1..=terms {
-            let prev = current.clone();
-            current = mat_vec_mul(&laplacian, &prev);
-            // Scale by -t/k
-            let scale = -t / (k as f64);
-            for val in &mut current {
-                *val *= scale;
+        for _step in 0..steps {
+            let mut step_result = result.clone();
+            let mut current_term = result.clone();
+            for k in 1..=terms {
+                let prev = current_term.clone();
+                current_term = mat_vec_mul(&laplacian, &prev);
+                let scale = -t / (k as f64);
+                for val in &mut current_term {
+                    *val *= scale;
+                }
+                for i in 0..n {
+                    step_result[i] += current_term[i];
+                }
             }
-            for i in 0..n {
-                result[i] += current[i];
-            }
+            result = step_result;
         }
 
         Ok(result)
@@ -498,7 +512,7 @@ impl CypherPattern {
             .find(')')
             .ok_or_else(|| KernelError::ParseError("missing source node ')'".into()))?;
         let src_inner = &pattern[src_start + 1..src_end];
-        let (source_var, source_type) = parse_node_spec(src_inner);
+        let (source_var, source_type) = parse_node_spec(src_inner)?;
 
         // Find relationship: -[r:REL]->
         let rel_start = pattern.find('[');
@@ -506,7 +520,7 @@ impl CypherPattern {
         let rel_type = match (rel_start, rel_end) {
             (Some(s), Some(e)) => {
                 let rel_inner = &pattern[s + 1..e];
-                parse_rel_spec(rel_inner)
+                parse_rel_spec(rel_inner)?
             }
             _ => None,
         };
@@ -520,7 +534,7 @@ impl CypherPattern {
             .rfind(')')
             .ok_or_else(|| KernelError::ParseError("missing target node ')'".into()))?;
         let tgt_inner = &rest[tgt_start + 1..tgt_end];
-        let (target_var, target_type) = parse_node_spec(tgt_inner);
+        let (target_var, target_type) = parse_node_spec(tgt_inner)?;
 
         Ok(CypherPattern {
             source_var,
@@ -532,23 +546,46 @@ impl CypherPattern {
     }
 }
 
-fn parse_node_spec(spec: &str) -> (String, Option<String>) {
+/// Validate that an identifier contains only alphanumeric characters and underscores.
+fn validate_identifier(s: &str) -> KernelResult<()> {
+    if s.is_empty() {
+        return Ok(());
+    }
+    if s.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        Ok(())
+    } else {
+        Err(KernelError::ParseError(format!(
+            "invalid identifier '{}': only alphanumeric and underscore allowed",
+            s
+        )))
+    }
+}
+
+fn parse_node_spec(spec: &str) -> KernelResult<(String, Option<String>)> {
     let parts: Vec<&str> = spec.splitn(2, ':').collect();
     let var = parts[0].trim().to_string();
     let typ = parts.get(1).map(|t| t.trim().to_string());
-    (
+    validate_identifier(&var)?;
+    if let Some(ref t) = typ {
+        validate_identifier(t)?;
+    }
+    Ok((
         if var.is_empty() {
             "_".to_string()
         } else {
             var
         },
         typ,
-    )
+    ))
 }
 
-fn parse_rel_spec(spec: &str) -> Option<String> {
+fn parse_rel_spec(spec: &str) -> KernelResult<Option<String>> {
     let parts: Vec<&str> = spec.splitn(2, ':').collect();
-    parts.get(1).map(|t| t.trim().to_string())
+    let typ = parts.get(1).map(|t| t.trim().to_string());
+    if let Some(ref t) = typ {
+        validate_identifier(t)?;
+    }
+    Ok(typ)
 }
 
 // ---------------------------------------------------------------------------
@@ -596,5 +633,152 @@ mod tests {
             assert_eq!(row["m"]["type"], "Company");
             assert_eq!(row["n"]["type"], "Person");
         }
+    }
+
+    /// Build a 4-node graph: two pairs (a-b, c-d) with heavy internal edges
+    /// and a single light edge between pairs. The min-cut should be the light edge.
+    fn build_two_pair_graph() -> (Graph, Uuid, Uuid, Uuid, Uuid) {
+        let mut g = Graph::new();
+        let a = g.insert_node("N");
+        let b = g.insert_node("N");
+        let c = g.insert_node("N");
+        let d = g.insert_node("N");
+        // Heavy edges within pairs
+        g.insert_edge(a, b, "HEAVY", 10.0).unwrap();
+        g.insert_edge(c, d, "HEAVY", 10.0).unwrap();
+        // Light edge between pairs
+        g.insert_edge(b, c, "LIGHT", 1.0).unwrap();
+        (g, a, b, c, d)
+    }
+
+    #[test]
+    fn test_stoer_wagner_min_cut_simple() {
+        let (g, a, b, c, d) = build_two_pair_graph();
+        let (cut_weight, partitions) = g.min_cut(&MinCutAlgorithm::StoerWagner).unwrap();
+
+        assert!(
+            (cut_weight - 1.0).abs() < 1e-9,
+            "expected cut weight 1.0, got {}",
+            cut_weight
+        );
+        assert_eq!(partitions.len(), 2);
+        assert!(!partitions[0].is_empty(), "partition 0 should be non-empty");
+        assert!(!partitions[1].is_empty(), "partition 1 should be non-empty");
+
+        // One partition should contain {a, b} and the other {c, d} (in any order).
+        let mut p0: Vec<Uuid> = partitions[0].clone();
+        let mut p1: Vec<Uuid> = partitions[1].clone();
+        p0.sort();
+        p1.sort();
+        let mut pair_ab = vec![a, b];
+        let mut pair_cd = vec![c, d];
+        pair_ab.sort();
+        pair_cd.sort();
+
+        let correct = (p0 == pair_ab && p1 == pair_cd) || (p0 == pair_cd && p1 == pair_ab);
+        assert!(correct, "partitions should be {{a,b}} and {{c,d}}");
+    }
+
+    #[test]
+    fn test_karger_min_cut_simple() {
+        let (g, _a, _b, _c, _d) = build_two_pair_graph();
+        let (cut_weight, partitions) = g.min_cut(&MinCutAlgorithm::Karger).unwrap();
+
+        // Karger is randomized; with heavy/light gap it should find the right cut.
+        assert!(
+            (cut_weight - 1.0).abs() < 1e-9,
+            "expected cut weight 1.0, got {}",
+            cut_weight
+        );
+        assert_eq!(partitions.len(), 2);
+        assert!(!partitions[0].is_empty(), "partition 0 should be non-empty");
+        assert!(!partitions[1].is_empty(), "partition 1 should be non-empty");
+    }
+
+    #[test]
+    fn test_stoer_wagner_triangle() {
+        // Triangle: 3 nodes, all edges weight 1. Min-cut = 2.
+        let mut g = Graph::new();
+        let a = g.insert_node("N");
+        let b = g.insert_node("N");
+        let c = g.insert_node("N");
+        g.insert_edge(a, b, "E", 1.0).unwrap();
+        g.insert_edge(b, c, "E", 1.0).unwrap();
+        g.insert_edge(a, c, "E", 1.0).unwrap();
+
+        let (cut_weight, partitions) = g.min_cut(&MinCutAlgorithm::StoerWagner).unwrap();
+
+        assert!(
+            (cut_weight - 2.0).abs() < 1e-9,
+            "expected cut weight 2.0, got {}",
+            cut_weight
+        );
+        assert_eq!(partitions.len(), 2);
+        assert!(!partitions[0].is_empty());
+        assert!(!partitions[1].is_empty());
+    }
+
+    #[test]
+    fn test_min_cut_too_few_nodes() {
+        let mut g = Graph::new();
+        g.insert_node("N");
+        assert!(g.min_cut(&MinCutAlgorithm::StoerWagner).is_err());
+        assert!(g.min_cut(&MinCutAlgorithm::Karger).is_err());
+    }
+
+    #[test]
+    fn test_diffuse_two_node_graph() {
+        // 2-node graph with edge weight 1.0.
+        // Laplacian: [[1, -1], [-1, 1]]
+        // Signal [1.0, 0.0] should diffuse toward [0.5, 0.5].
+        let mut g = Graph::new();
+        let a = g.insert_node("A");
+        let b = g.insert_node("B");
+        g.insert_edge(a, b, "E", 1.0).unwrap();
+
+        // Determine sorted order so we know which index is which.
+        let mut ids = vec![a, b];
+        ids.sort();
+        let signal = if ids[0] == a {
+            vec![1.0, 0.0]
+        } else {
+            vec![0.0, 1.0]
+        };
+
+        let result = g.diffuse(&signal, 1).unwrap();
+        assert_eq!(result.len(), 2);
+
+        // Signal should have moved toward equilibrium.
+        let sum: f64 = result.iter().sum();
+        assert!((sum - 1.0).abs() < 1e-6, "Signal sum should be ~1.0, got {}", sum);
+
+        // Both values should be between 0 and 1.
+        for (i, &v) in result.iter().enumerate() {
+            assert!(v >= 0.0 && v <= 1.0, "result[{}] = {} out of [0,1]", i, v);
+        }
+
+        // The originally-1.0 node should have decreased, the 0.0 node increased.
+        let a_idx = if ids[0] == a { 0 } else { 1 };
+        let b_idx = 1 - a_idx;
+        assert!(result[a_idx] < 1.0, "Node A should have diffused away");
+        assert!(result[b_idx] > 0.0, "Node B should have received signal");
+    }
+
+    #[test]
+    fn test_diffuse_signal_length_mismatch() {
+        let mut g = Graph::new();
+        g.insert_node("A");
+        g.insert_node("B");
+        // Signal has wrong length.
+        assert!(g.diffuse(&[1.0, 0.0, 0.0], 1).is_err());
+    }
+
+    #[test]
+    fn test_cypher_rejects_invalid_identifiers() {
+        let mut g = Graph::new();
+        g.insert_node("Person");
+        // Query with special characters in type should be rejected.
+        let result = g.cypher_query("MATCH (n:Per;son)-[r:KNOWS]->(m) RETURN n,m");
+        assert!(result.is_err());
     }
 }

@@ -206,12 +206,16 @@ fn hash_entry(entry: &WitnessEntry) -> String {
         .map(|r| r.to_string())
         .collect::<Vec<_>>()
         .join(",");
+    // Use deterministic f64 representation (bit-level hex) to ensure
+    // cross-platform consistency. This matches canonical_payload which
+    // also uses to_bits().to_le_bytes().
+    let confidence_hex = hex::encode(entry.confidence.to_bits().to_le_bytes());
     let canonical = format!(
         "{}:{}:{}:{}:{}:{}:{}:{}",
         entry.id,
         entry.timestamp.to_rfc3339(),
         entry.agent_id,
-        entry.confidence,
+        confidence_hex,
         evidence_str,
         entry.action_hash,
         entry.reasoning_chain_hash,

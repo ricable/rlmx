@@ -15,3 +15,4 @@ async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 rlmx-kernel = { path = "../rlmx-kernel" }
 rlmx-rvf = { path = "../rlmx-rvf" }
+sha2 = "0.10"
