@@ -25,7 +25,12 @@ pub struct ContextSegment {
 
 impl ContextSegment {
     /// Create a new context segment with automatic token estimation.
-    pub fn new(id: impl Into<String>, content: impl Into<String>, relevance: f64, source: impl Into<String>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        content: impl Into<String>,
+        relevance: f64,
+        source: impl Into<String>,
+    ) -> Self {
         let content = content.into();
         let token_estimate = estimate_tokens(&content);
         Self {
@@ -41,7 +46,7 @@ impl ContextSegment {
 /// Approximate token count using chars/4 heuristic.
 pub fn estimate_tokens(text: &str) -> usize {
     // Rough approximation: 1 token ~= 4 characters for English text
-    (text.len() + 3) / 4
+    text.len().div_ceil(4)
 }
 
 /// Manages the model's context window, ensuring content fits within
@@ -113,8 +118,11 @@ impl ContextWindow {
         self.segments.push(segment);
 
         // Re-sort by relevance (highest first)
-        self.segments
-            .sort_by(|a, b| b.relevance.partial_cmp(&a.relevance).unwrap_or(std::cmp::Ordering::Equal));
+        self.segments.sort_by(|a, b| {
+            b.relevance
+                .partial_cmp(&a.relevance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         true
     }
@@ -125,7 +133,11 @@ impl ContextWindow {
     /// context window is full. Returns the number of segments added.
     pub fn add_segments_by_priority(&mut self, mut segments: Vec<ContextSegment>) -> usize {
         // Sort by relevance descending
-        segments.sort_by(|a, b| b.relevance.partial_cmp(&a.relevance).unwrap_or(std::cmp::Ordering::Equal));
+        segments.sort_by(|a, b| {
+            b.relevance
+                .partial_cmp(&a.relevance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let mut added = 0;
         for segment in segments {

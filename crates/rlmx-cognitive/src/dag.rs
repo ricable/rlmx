@@ -169,6 +169,153 @@ impl DagOptimizer {
 }
 
 // ---------------------------------------------------------------------------
+// Strategy Tracker
+// ---------------------------------------------------------------------------
+
+/// A record of a single strategy execution outcome.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StrategyRecord {
+    pub strategy: String,
+    pub query_type: String,
+    pub latency_ms: u64,
+    pub success: bool,
+    pub reward: f64,
+    pub timestamp: DateTime<Utc>,
+}
+
+/// Tracks strategy success rates and selects optimal strategies per query type.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StrategyTracker {
+    /// Full history of strategy records.
+    pub records: Vec<StrategyRecord>,
+    /// Per-strategy success tracking: maps strategy name to (successes, total).
+    pub success_rates: HashMap<String, (u64, u64)>,
+}
+
+/// Summary statistics for the strategy tracker.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StrategyTrackerStats {
+    pub total_queries: u64,
+    pub strategies_tracked: usize,
+    pub best_overall: Option<String>,
+    pub avg_latency_ms: f64,
+}
+
+impl StrategyTracker {
+    /// Create a new, empty strategy tracker.
+    pub fn new() -> Self {
+        Self {
+            records: Vec::new(),
+            success_rates: HashMap::new(),
+        }
+    }
+
+    /// Record a strategy execution outcome.
+    pub fn record(
+        &mut self,
+        strategy: &str,
+        query_type: &str,
+        latency_ms: u64,
+        success: bool,
+        reward: f64,
+    ) {
+        self.records.push(StrategyRecord {
+            strategy: strategy.to_string(),
+            query_type: query_type.to_string(),
+            latency_ms,
+            success,
+            reward,
+            timestamp: Utc::now(),
+        });
+
+        let entry = self
+            .success_rates
+            .entry(strategy.to_string())
+            .or_insert((0, 0));
+        if success {
+            entry.0 += 1;
+        }
+        entry.1 += 1;
+    }
+
+    /// Return the success rate for a given strategy (0.0 if unknown).
+    pub fn success_rate(&self, strategy: &str) -> f64 {
+        match self.success_rates.get(strategy) {
+            Some(&(successes, total)) if total > 0 => successes as f64 / total as f64,
+            _ => 0.0,
+        }
+    }
+
+    /// Return the strategy with the highest success rate for a given query type.
+    /// Only considers strategies that have been used for this query type.
+    pub fn best_strategy(&self, query_type: &str) -> Option<String> {
+        // Group records by strategy for this query type.
+        let mut by_strategy: HashMap<&str, (u64, u64)> = HashMap::new();
+        for r in &self.records {
+            if r.query_type == query_type {
+                let entry = by_strategy.entry(&r.strategy).or_insert((0, 0));
+                if r.success {
+                    entry.0 += 1;
+                }
+                entry.1 += 1;
+            }
+        }
+
+        by_strategy
+            .into_iter()
+            .filter(|(_, (_, total))| *total > 0)
+            .max_by(|(_, (s1, t1)), (_, (s2, t2))| {
+                let rate1 = *s1 as f64 / *t1 as f64;
+                let rate2 = *s2 as f64 / *t2 as f64;
+                rate1
+                    .partial_cmp(&rate2)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(name, _)| name.to_string())
+    }
+
+    /// Return summary statistics.
+    pub fn stats(&self) -> StrategyTrackerStats {
+        let total_queries = self.records.len() as u64;
+        let strategies_tracked = self.success_rates.len();
+        let avg_latency_ms = if self.records.is_empty() {
+            0.0
+        } else {
+            self.records
+                .iter()
+                .map(|r| r.latency_ms as f64)
+                .sum::<f64>()
+                / self.records.len() as f64
+        };
+        let best_overall = self
+            .success_rates
+            .iter()
+            .filter(|(_, (_, total))| *total > 0)
+            .max_by(|(_, (s1, t1)), (_, (s2, t2))| {
+                let rate1 = *s1 as f64 / *t1 as f64;
+                let rate2 = *s2 as f64 / *t2 as f64;
+                rate1
+                    .partial_cmp(&rate2)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(name, _)| name.clone());
+
+        StrategyTrackerStats {
+            total_queries,
+            strategies_tracked,
+            best_overall,
+            avg_latency_ms,
+        }
+    }
+}
+
+impl Default for StrategyTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -232,6 +379,53 @@ mod tests {
 
         let improvement = opt.latency_improvement();
         // Early avg = 95, recent avg = 45, improvement ~52.6%
-        assert!(improvement > 50.0, "Expected >50% improvement, got {}", improvement);
+        assert!(
+            improvement > 50.0,
+            "Expected >50% improvement, got {}",
+            improvement
+        );
+    }
+
+    // -- StrategyTracker tests --
+
+    #[test]
+    fn test_record_strategy() {
+        let mut tracker = StrategyTracker::new();
+        tracker.record("parallel", "select", 10, true, 0.9);
+        tracker.record("parallel", "select", 12, false, 0.3);
+
+        assert_eq!(tracker.records.len(), 2);
+        assert_eq!(tracker.success_rates.get("parallel"), Some(&(1, 2)));
+    }
+
+    #[test]
+    fn test_success_rate() {
+        let mut tracker = StrategyTracker::new();
+        tracker.record("parallel", "select", 10, true, 0.9);
+        tracker.record("parallel", "select", 12, true, 0.8);
+        tracker.record("parallel", "select", 15, false, 0.2);
+
+        let rate = tracker.success_rate("parallel");
+        assert!((rate - 2.0 / 3.0).abs() < 0.001);
+
+        // Unknown strategy returns 0.0.
+        assert!((tracker.success_rate("unknown") - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_best_strategy() {
+        let mut tracker = StrategyTracker::new();
+        // parallel: 2/3 success for "select"
+        tracker.record("parallel", "select", 10, true, 0.9);
+        tracker.record("parallel", "select", 12, true, 0.8);
+        tracker.record("parallel", "select", 15, false, 0.2);
+        // sequential: 1/1 success for "select"
+        tracker.record("sequential", "select", 20, true, 0.95);
+
+        let best = tracker.best_strategy("select");
+        assert_eq!(best, Some("sequential".to_string()));
+
+        // Unknown query type returns None.
+        assert!(tracker.best_strategy("unknown_type").is_none());
     }
 }

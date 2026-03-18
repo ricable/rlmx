@@ -63,9 +63,8 @@ pub fn verify_with_key(verifying_key: &VerifyingKey, data: &[u8], signature: &[u
     }
     let mut sig_bytes = [0u8; 64];
     sig_bytes.copy_from_slice(signature);
-    match Signature::from_bytes(&sig_bytes) {
-        sig => verifying_key.verify(data, &sig).is_ok(),
-    }
+    let sig = Signature::from_bytes(&sig_bytes);
+    verifying_key.verify(data, &sig).is_ok()
 }
 
 /// Compute a hex-encoded SHA-256 hash of the provided data.

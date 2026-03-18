@@ -197,7 +197,9 @@ impl ProofEngine {
         let action_hash = hash_sha256(action);
         let reasoning_hash = hash_sha256(reasoning_chain);
 
-        let witness_id = self.chain.append(action_hash, reasoning_hash, evidence_refs);
+        let witness_id = self
+            .chain
+            .append(action_hash, reasoning_hash, evidence_refs);
 
         let valid = confidence >= request.confidence_threshold;
 

@@ -140,15 +140,15 @@ impl Graph {
             let src_match = parsed
                 .source_type
                 .as_ref()
-                .map_or(true, |t| src.node_type == *t);
+                .is_none_or(|t| src.node_type == *t);
             let tgt_match = parsed
                 .target_type
                 .as_ref()
-                .map_or(true, |t| tgt.node_type == *t);
+                .is_none_or(|t| tgt.node_type == *t);
             let rel_match = parsed
                 .rel_type
                 .as_ref()
-                .map_or(true, |t| edge.edge_type == *t);
+                .is_none_or(|t| edge.edge_type == *t);
 
             if src_match && tgt_match && rel_match {
                 let row = serde_json::json!({
@@ -200,7 +200,7 @@ impl Graph {
         // Run Karger's algorithm multiple times for better results.
         // Cap iterations to prevent DoS on large graphs.
         const MAX_ITERATIONS: usize = 10_000;
-        let iterations = (self.nodes.len() * self.nodes.len()).max(10).min(MAX_ITERATIONS);
+        let iterations = (self.nodes.len() * self.nodes.len()).clamp(10, MAX_ITERATIONS);
 
         for _ in 0..iterations {
             // Each node starts in its own supernode.
@@ -245,7 +245,8 @@ impl Graph {
 
             if cut_weight < best_cut {
                 best_cut = cut_weight;
-                let parts: Vec<Vec<Uuid>> = sizes.values().filter(|v| !v.is_empty()).cloned().collect();
+                let parts: Vec<Vec<Uuid>> =
+                    sizes.values().filter(|v| !v.is_empty()).cloned().collect();
                 best_partitions = parts;
             }
         }
@@ -266,14 +267,16 @@ impl Graph {
         let mut node_ids: Vec<Uuid> = self.nodes.keys().copied().collect();
         node_ids.sort();
         let n = node_ids.len();
-        let id_to_idx: HashMap<Uuid, usize> =
-            node_ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
+        let id_to_idx: HashMap<Uuid, usize> = node_ids
+            .iter()
+            .enumerate()
+            .map(|(i, &id)| (id, i))
+            .collect();
 
         // Weighted adjacency matrix (symmetric, undirected).
         let mut w = vec![vec![0.0_f64; n]; n];
         for edge in &self.edges {
-            if let (Some(&i), Some(&j)) =
-                (id_to_idx.get(&edge.source), id_to_idx.get(&edge.target))
+            if let (Some(&i), Some(&j)) = (id_to_idx.get(&edge.source), id_to_idx.get(&edge.target))
             {
                 w[i][j] += edge.weight;
                 w[j][i] += edge.weight;
@@ -309,11 +312,9 @@ impl Graph {
                 let mut best_node = None;
                 let mut best_key = -1.0_f64;
                 for &v in &active_nodes {
-                    if !in_a[v] {
-                        if phase_step == 0 || key[v] > best_key {
-                            best_key = key[v];
-                            best_node = Some(v);
-                        }
+                    if !in_a[v] && (phase_step == 0 || key[v] > best_key) {
+                        best_key = key[v];
+                        best_node = Some(v);
                     }
                 }
                 let v = match best_node {
@@ -354,12 +355,14 @@ impl Graph {
             groups[s].extend(t_members);
             active[t] = false;
 
+            #[allow(clippy::needless_range_loop)]
             for i in 0..n {
                 w[s][i] += w[t][i];
                 w[i][s] += w[i][t];
             }
             w[s][s] = 0.0; // no self-loops
-            // Zero out t's row/col to be safe.
+                           // Zero out t's row/col to be safe.
+            #[allow(clippy::needless_range_loop)]
             for i in 0..n {
                 w[t][i] = 0.0;
                 w[i][t] = 0.0;
@@ -399,8 +402,11 @@ impl Graph {
         // Sort node IDs for deterministic position-to-node mapping.
         let mut node_ids: Vec<Uuid> = self.nodes.keys().copied().collect();
         node_ids.sort();
-        let id_to_idx: HashMap<Uuid, usize> =
-            node_ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
+        let id_to_idx: HashMap<Uuid, usize> = node_ids
+            .iter()
+            .enumerate()
+            .map(|(i, &id)| (id, i))
+            .collect();
 
         // Build adjacency matrix.
         let mut adj = vec![vec![0.0_f64; n]; n];
@@ -576,14 +582,7 @@ fn parse_node_spec(spec: &str) -> KernelResult<(String, Option<String>)> {
     if let Some(ref t) = typ {
         validate_identifier(t)?;
     }
-    Ok((
-        if var.is_empty() {
-            "_".to_string()
-        } else {
-            var
-        },
-        typ,
-    ))
+    Ok((if var.is_empty() { "_".to_string() } else { var }, typ))
 }
 
 fn parse_rel_spec(spec: &str) -> KernelResult<Option<String>> {
@@ -760,7 +759,11 @@ mod tests {
 
         // Signal should have moved toward equilibrium.
         let sum: f64 = result.iter().sum();
-        assert!((sum - 1.0).abs() < 1e-6, "Signal sum should be ~1.0, got {}", sum);
+        assert!(
+            (sum - 1.0).abs() < 1e-6,
+            "Signal sum should be ~1.0, got {}",
+            sum
+        );
 
         // Both values should be between 0 and 1.
         for (i, &v) in result.iter().enumerate() {

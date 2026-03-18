@@ -1,0 +1,2906 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RLMX — Cognition Kernel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Outfit:wght@200;300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ── Design Tokens ─────────────────────────────────── */
+:root {
+  --void: #05060b;
+  --abyss: #0a0d16;
+  --deep: #0e1220;
+  --surface: #131928;
+  --panel: #161d30;
+  --raised: #1c2540;
+  --border: #1e2a45;
+  --border-glow: #2a3a60;
+
+  --text: #d8dce8;
+  --text-dim: #7a849e;
+  --text-faint: #4a5270;
+
+  --cyan: #00e5ff;
+  --cyan-dim: #007a8a;
+  --cyan-glow: rgba(0, 229, 255, 0.15);
+  --cyan-ghost: rgba(0, 229, 255, 0.06);
+
+  --violet: #a855f7;
+  --violet-dim: #6d28d9;
+  --violet-glow: rgba(168, 85, 247, 0.15);
+
+  --green: #10b981;
+  --green-glow: rgba(16, 185, 129, 0.15);
+
+  --amber: #f59e0b;
+  --amber-glow: rgba(245, 158, 11, 0.12);
+
+  --red: #ef4444;
+  --red-glow: rgba(239, 68, 68, 0.12);
+
+  --pink: #ec4899;
+
+  --font-display: 'Outfit', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 16px;
+
+  --glass: rgba(19, 25, 40, 0.75);
+  --glass-border: rgba(42, 58, 96, 0.5);
+}
+
+/* ── Reset & Base ──────────────────────────────────── */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { font-size: 14px; }
+
+body {
+  font-family: var(--font-mono);
+  background: var(--void);
+  color: var(--text);
+  min-height: 100vh;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Ambient Background ────────────────────────────── */
+#bg-canvas {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  top: -50%; left: -50%;
+  width: 200%; height: 200%;
+  background:
+    radial-gradient(ellipse at 20% 30%, rgba(0, 229, 255, 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 70%, rgba(168, 85, 247, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(16, 185, 129, 0.02) 0%, transparent 60%);
+  z-index: 0;
+  pointer-events: none;
+  animation: drift 30s ease-in-out infinite alternate;
+}
+
+@keyframes drift {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  100% { transform: translate(-3%, 2%) rotate(2deg); }
+}
+
+/* ── Noise Texture Overlay ─────────────────────────── */
+body::after {
+  content: '';
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+/* ── Layout Shell ──────────────────────────────────── */
+.shell {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ── Header ────────────────────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.5rem;
+  height: 52px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(10, 13, 22, 0.95) 0%, rgba(10, 13, 22, 0.8) 100%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.logo-glyph {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, var(--cyan) 0%, var(--violet) 100%);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: var(--void);
+  box-shadow: 0 0 20px var(--cyan-glow), 0 0 40px rgba(168, 85, 247, 0.08);
+}
+
+.logo-text {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  color: var(--text);
+}
+
+.logo-text span { color: var(--cyan); }
+.logo-sub {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-left: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.ws-indicator {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+
+.ws-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--red);
+  transition: all 0.3s;
+}
+
+.ws-dot.connected {
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green-glow);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.status-chip {
+  font-size: 0.65rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  transition: all 0.3s;
+}
+
+.status-chip.connected { color: var(--green); border-color: rgba(16, 185, 129, 0.3); }
+.status-chip.disconnected { color: var(--red); border-color: rgba(239, 68, 68, 0.3); }
+.status-chip.connecting { color: var(--amber); border-color: rgba(245, 158, 11, 0.3); }
+
+/* ── Main Grid ─────────────────────────────────────── */
+.main {
+  display: grid;
+  grid-template-columns: 56px 220px 1fr;
+  height: calc(100vh - 52px);
+  overflow: hidden;
+}
+
+/* ── Icon Rail (far left) ──────────────────────────── */
+.rail {
+  background: var(--abyss);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.75rem 0;
+  gap: 0.25rem;
+  overflow-y: auto;
+}
+
+.rail-btn {
+  width: 40px; height: 40px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  transition: all 0.15s;
+  position: relative;
+}
+
+.rail-btn:hover {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.rail-btn.active {
+  background: linear-gradient(135deg, rgba(0, 229, 255, 0.12) 0%, rgba(168, 85, 247, 0.08) 100%);
+  color: var(--cyan);
+  box-shadow: inset 2px 0 0 var(--cyan);
+}
+
+.rail-btn.active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 50%;
+  transform: translateY(-50%);
+  width: 2px; height: 20px;
+  background: var(--cyan);
+  border-radius: 0 2px 2px 0;
+}
+
+.rail-sep {
+  width: 28px;
+  height: 1px;
+  background: var(--border);
+  margin: 0.35rem 0;
+}
+
+/* ── Side Panel (nav) ──────────────────────────────── */
+.sidebar {
+  background: var(--abyss);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  padding: 1rem 1rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+.sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem 0;
+}
+
+.nav-section {
+  padding: 0.5rem 0;
+}
+
+.nav-label {
+  font-size: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--text-faint);
+  padding: 0.35rem 1rem;
+  font-weight: 500;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  padding: 0.45rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.12s;
+  border-left: 2px solid transparent;
+}
+
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text);
+}
+
+.nav-item.active {
+  color: var(--cyan);
+  background: var(--cyan-ghost);
+  border-left-color: var(--cyan);
+}
+
+.nav-icon {
+  width: 16px;
+  text-align: center;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.nav-badge {
+  margin-left: auto;
+  font-size: 0.55rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: var(--raised);
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.nav-badge.live {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--green);
+}
+
+/* ── Content Area ──────────────────────────────────── */
+.content {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--deep);
+}
+
+.content-header {
+  padding: 1.25rem 2rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(14, 18, 32, 0.9) 0%, rgba(14, 18, 32, 0.5) 100%);
+  backdrop-filter: blur(10px);
+}
+
+.content-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.content-title .glyph {
+  font-size: 1.3rem;
+}
+
+.content-desc {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  margin-top: 0.3rem;
+  font-family: var(--font-mono);
+}
+
+.breadcrumb {
+  font-size: 0.6rem;
+  color: var(--text-faint);
+  margin-top: 0.4rem;
+  letter-spacing: 0.05em;
+}
+
+.breadcrumb span { color: var(--cyan-dim); }
+
+.content-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem 2rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--raised) transparent;
+}
+
+.content-body::-webkit-scrollbar { width: 6px; }
+.content-body::-webkit-scrollbar-track { background: transparent; }
+.content-body::-webkit-scrollbar-thumb { background: var(--raised); border-radius: 3px; }
+
+/* ── Metric Cards ──────────────────────────────────── */
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.metric-card {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  backdrop-filter: blur(8px);
+  position: relative;
+  overflow: hidden;
+  transition: all 0.2s;
+}
+
+.metric-card:hover {
+  border-color: var(--border-glow);
+  transform: translateY(-1px);
+}
+
+.metric-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 2px;
+  background: linear-gradient(90deg, var(--cyan) 0%, transparent 80%);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.metric-card:hover::before { opacity: 1; }
+
+.metric-label {
+  font-size: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--text-faint);
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.metric-value {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+}
+
+.metric-value.cyan { color: var(--cyan); }
+.metric-value.violet { color: var(--violet); }
+.metric-value.green { color: var(--green); }
+.metric-value.amber { color: var(--amber); }
+
+.metric-sub {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  margin-top: 0.35rem;
+}
+
+.metric-spark {
+  position: absolute;
+  bottom: 0.5rem; right: 0.75rem;
+  width: 60px; height: 24px;
+  opacity: 0.4;
+}
+
+/* ── Glass Panels ──────────────────────────────────── */
+.glass-panel {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+  overflow: hidden;
+}
+
+.glass-panel-header {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.glass-panel-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.glass-panel-body {
+  padding: 1rem;
+}
+
+/* ── Topology Canvas ───────────────────────────────── */
+.topo-container {
+  position: relative;
+  width: 100%;
+  height: 400px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: radial-gradient(ellipse at center, rgba(0, 229, 255, 0.02) 0%, transparent 70%);
+}
+
+#topo-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ── Zone Legend ────────────────────────────────────── */
+.zone-legend {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+}
+
+.zone-tag {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.65rem;
+  color: var(--text-dim);
+}
+
+.zone-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+}
+
+.zone-dot.za { background: var(--cyan); box-shadow: 0 0 6px var(--cyan-glow); }
+.zone-dot.zb { background: var(--violet); box-shadow: 0 0 6px var(--violet-glow); }
+.zone-dot.zc { background: var(--green); box-shadow: 0 0 6px var(--green-glow); }
+.zone-dot.zd { background: var(--amber); box-shadow: 0 0 6px var(--amber-glow); }
+.zone-dot.zbr { background: var(--pink); box-shadow: 0 0 6px rgba(236, 72, 153, 0.15); }
+
+/* ── Buttons ───────────────────────────────────────── */
+.btn {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--cyan-dim) 0%, var(--violet-dim) 100%);
+  color: #fff;
+  box-shadow: 0 2px 12px rgba(0, 229, 255, 0.15);
+}
+
+.btn-primary:hover {
+  box-shadow: 0 4px 20px rgba(0, 229, 255, 0.25);
+  transform: translateY(-1px);
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.btn-ghost:hover {
+  border-color: var(--border-glow);
+  color: var(--text);
+  background: var(--raised);
+}
+
+.btn-danger {
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--red);
+}
+
+.btn-danger:hover {
+  background: var(--red-glow);
+}
+
+.btn-sm { padding: 0.3rem 0.6rem; font-size: 0.65rem; }
+
+.btn-group {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* ── Inputs ────────────────────────────────────────── */
+input, textarea, select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  outline: none;
+  transition: all 0.15s;
+  width: 100%;
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: var(--cyan-dim);
+  box-shadow: 0 0 0 2px var(--cyan-glow);
+}
+
+textarea { min-height: 80px; resize: vertical; }
+
+.input-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.input-row input, .input-row select { flex: 1; }
+
+.field-label {
+  font-size: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-faint);
+  margin-bottom: 0.3rem;
+  font-weight: 500;
+}
+
+/* ── Data Cards ────────────────────────────────────── */
+.data-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin-bottom: 0.6rem;
+  transition: all 0.15s;
+  position: relative;
+}
+
+.data-card:hover {
+  border-color: var(--border-glow);
+}
+
+.data-card-label {
+  font-size: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-faint);
+  margin-bottom: 0.35rem;
+}
+
+.data-card-value {
+  font-size: 0.8rem;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.data-card-meta {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  margin-top: 0.35rem;
+}
+
+.data-card .score {
+  position: absolute;
+  top: 1rem; right: 1rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--cyan);
+}
+
+/* ── JSON Output ───────────────────────────────────── */
+pre.json-output {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  font-size: 0.7rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-dim);
+  margin-top: 0.75rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* ── Event Stream ──────────────────────────────────── */
+.event-stream {
+  max-height: 350px;
+  overflow-y: auto;
+}
+
+.event-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(30, 42, 69, 0.5);
+  font-size: 0.7rem;
+  animation: event-slide-in 0.2s ease-out;
+}
+
+@keyframes event-slide-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.event-ts {
+  color: var(--text-faint);
+  white-space: nowrap;
+  font-size: 0.6rem;
+  min-width: 65px;
+  padding-top: 1px;
+}
+
+.event-type {
+  font-weight: 600;
+  min-width: 100px;
+  font-size: 0.65rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+
+.event-type.node { color: var(--cyan); background: var(--cyan-glow); }
+.event-type.agent { color: var(--violet); background: var(--violet-glow); }
+.event-type.health { color: var(--green); background: var(--green-glow); }
+.event-type.research { color: var(--amber); background: var(--amber-glow); }
+.event-type.mutation { color: var(--pink); background: rgba(236, 72, 153, 0.12); }
+
+.event-detail { color: var(--text-dim); flex: 1; }
+
+/* ── Agent Cards ───────────────────────────────────── */
+.agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+
+.agent-card {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  backdrop-filter: blur(6px);
+  position: relative;
+  transition: all 0.2s;
+}
+
+.agent-card:hover {
+  border-color: var(--border-glow);
+  transform: translateY(-1px);
+}
+
+.agent-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+
+.agent-type-badge {
+  font-size: 0.6rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.agent-status {
+  font-size: 0.6rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.agent-status .dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+}
+
+.agent-status .dot.running { background: var(--green); box-shadow: 0 0 4px var(--green); }
+.agent-status .dot.idle { background: var(--amber); }
+.agent-status .dot.terminated { background: var(--red); }
+
+.agent-name {
+  font-weight: 500;
+  font-size: 0.8rem;
+  color: var(--text);
+  margin-bottom: 0.35rem;
+}
+
+.agent-meta {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+/* ── Compute Pool Visualization ────────────────────── */
+.pool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+  gap: 6px;
+}
+
+.pool-cell {
+  aspect-ratio: 1;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.55rem;
+  color: var(--text-faint);
+  transition: all 0.3s;
+  background: var(--surface);
+}
+
+.pool-cell.active {
+  background: var(--cyan-glow);
+  border-color: var(--cyan-dim);
+  color: var(--cyan);
+  animation: compute-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes compute-pulse {
+  0%, 100% { box-shadow: 0 0 4px var(--cyan-glow); }
+  50% { box-shadow: 0 0 12px var(--cyan-glow); }
+}
+
+/* ── Log Table ─────────────────────────────────────── */
+.log-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.log-table th {
+  text-align: left;
+  font-size: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-faint);
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+}
+
+.log-table td {
+  font-size: 0.7rem;
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid rgba(30, 42, 69, 0.3);
+  color: var(--text-dim);
+}
+
+.log-table tr:hover td { background: rgba(255, 255, 255, 0.01); }
+
+.log-method { color: var(--cyan); font-weight: 600; }
+.log-ok { color: var(--green); }
+.log-err { color: var(--red); }
+
+/* ── Empty State ───────────────────────────────────── */
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--text-faint);
+  font-size: 0.75rem;
+}
+
+.empty-state .icon {
+  font-size: 2rem;
+  margin-bottom: 0.75rem;
+  opacity: 0.3;
+}
+
+/* ── Research / Evolution ──────────────────────────── */
+.fitness-bar {
+  height: 4px;
+  background: var(--surface);
+  border-radius: 2px;
+  margin-top: 0.5rem;
+  overflow: hidden;
+}
+
+.fitness-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--cyan) 0%, var(--violet) 100%);
+  transition: width 0.5s ease-out;
+}
+
+/* ── Two-Column Layout ─────────────────────────────── */
+.split-view {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 1100px) {
+  .split-view { grid-template-columns: 1fr; }
+}
+
+/* ── Tab Bar ───────────────────────────────────────── */
+.tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1rem;
+}
+
+.tab-btn {
+  padding: 0.5rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+}
+
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active {
+  color: var(--cyan);
+  border-bottom-color: var(--cyan);
+}
+
+/* ── Scrollbar ─────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--raised); border-radius: 2px; }
+
+/* ── Utility ───────────────────────────────────────── */
+.gap-sm { gap: 0.5rem; }
+.gap-md { gap: 0.75rem; }
+.mt-sm { margin-top: 0.5rem; }
+.mt-md { margin-top: 1rem; }
+.mt-lg { margin-top: 1.5rem; }
+.mb-sm { margin-bottom: 0.5rem; }
+.mb-md { margin-bottom: 1rem; }
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.w-full { width: 100%; }
+.text-cyan { color: var(--cyan); }
+.text-violet { color: var(--violet); }
+.text-green { color: var(--green); }
+.text-amber { color: var(--amber); }
+.text-red { color: var(--red); }
+.text-dim { color: var(--text-dim); }
+.text-xs { font-size: 0.6rem; }
+.font-display { font-family: var(--font-display); }
+.font-bold { font-weight: 700; }
+.hidden { display: none !important; }
+.topo-tooltip {
+  position: absolute;
+  background: var(--panel);
+  border: 1px solid var(--border-glow);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.65rem;
+  color: var(--text);
+  pointer-events: none;
+  z-index: 10;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  transition: opacity 0.15s;
+}
+.graph-canvas { cursor: grab; display: block; width: 100%; height: 400px; border-radius: var(--radius); background: radial-gradient(ellipse at center, rgba(0,229,255,0.02) 0%, transparent 70%); }
+.graph-canvas:active { cursor: grabbing; }
+.config-preview { display: flex; gap: 4px; font-size: 0.6rem; flex-wrap: wrap; margin-top: 0.5rem; padding: 0.4rem; background: var(--surface); border-radius: var(--radius-sm); }
+.config-preview .perm { padding: 0.1rem 0.3rem; border-radius: 3px; }
+.config-preview .perm.on { color: var(--green); background: var(--green-glow); }
+.config-preview .perm.off { color: var(--text-faint); background: var(--surface); }
+.tab-badge { font-size: 0.6rem; padding: 0.15rem 0.45rem; border-radius: 999px; background: var(--violet-glow); color: var(--violet); margin-left: 0.5rem; }
+</style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+
+<div class="shell">
+  <!-- ── Header ─────────────────────────────────── -->
+  <header>
+    <div class="logo">
+      <div class="logo-glyph">RX</div>
+      <div class="logo-text"><span>RLMX</span></div>
+      <div class="logo-sub">Cognition Kernel v2.0</div>
+    </div>
+    <div class="header-right">
+      <div class="ws-indicator">
+        <div class="ws-dot" id="ws-dot"></div>
+        <span id="ws-label">ws:3001</span>
+      </div>
+      <div class="status-chip disconnected" id="mcp-status">MCP disconnected</div>
+    </div>
+  </header>
+
+  <!-- ── Main Area ──────────────────────────────── -->
+  <div class="main">
+    <!-- Icon Rail -->
+    <div class="rail">
+      <button class="rail-btn active" data-section="swarm" title="Swarm">&#x2B21;</button>
+      <button class="rail-btn" data-section="agents" title="Agents">&#x2726;</button>
+      <button class="rail-btn" data-section="compute" title="Compute">&#x2699;</button>
+      <div class="rail-sep"></div>
+      <button class="rail-btn" data-section="memory" title="Memory">&#x25C8;</button>
+      <button class="rail-btn" data-section="graph" title="Graph">&#x2B53;</button>
+      <button class="rail-btn" data-section="edge" title="Edge AI">&#x26A1;</button>
+      <div class="rail-sep"></div>
+      <button class="rail-btn" data-section="research" title="Research">&#x2740;</button>
+      <button class="rail-btn" data-section="events" title="Events">&#x21C6;</button>
+      <div class="rail-sep"></div>
+      <button class="rail-btn" data-section="tools" title="Tools">&#x2692;</button>
+      <button class="rail-btn" data-section="rpc" title="JSON-RPC">&#x2318;</button>
+      <button class="rail-btn" data-section="log" title="Log">&#x2261;</button>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title" id="sidebar-title">Swarm Control</div>
+      </div>
+      <div class="sidebar-body" id="sidebar-nav"></div>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+      <div class="content-header">
+        <div class="content-title" id="content-title">
+          <span class="glyph">&#x2B21;</span>
+          <span>Swarm Overview</span>
+        </div>
+        <div class="content-desc" id="content-desc">Real-time distributed swarm topology and health monitoring</div>
+        <div class="breadcrumb">rlmx <span>&#x203A;</span> swarm <span>&#x203A;</span> <span id="breadcrumb-view">overview</span></div>
+      </div>
+      <div class="content-body" id="view-content"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  RLMX Cognition Kernel — Dashboard Engine                   ║
+// ║  ADR-001 / ADR-008 / ADR-009 / DDD-001 / DDD-004 compliant ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+const MCP_URL = 'http://127.0.0.1:3000/mcp';
+const WS_URL = 'ws://127.0.0.1:3001';
+let reqId = 0;
+let initialized = false;
+const logs = [];
+const wsEvents = [];
+
+// ── Edge / WASM runtime ──────────────────────────────
+const edgeCaps = { wasm: false, simd: false, webgpu: false, sharedMem: false, workers: false, mode: 'http' };
+let wasmMod = null, ruvllm = null, parallelInf = null;
+
+// ── Demo Data & Simulation ───────────────────────────
+let useLiveData = false;
+
+const DemoData = (() => {
+  const uid = () => crypto.randomUUID ? crypto.randomUUID().slice(0,8) : Math.random().toString(36).slice(2,10);
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const clamp = (v,lo,hi) => Math.min(hi, Math.max(lo, v));
+  const zoneConf = [
+    { id:'zone-a', name:'Zone A · Compute', consensus:'Pbft', policy:'ComputeHeavy', count:7, color:'#00e5ff' },
+    { id:'zone-b', name:'Zone B · Inference', consensus:'Raft', policy:'InferenceOptimized', count:8, color:'#a855f7' },
+    { id:'zone-c', name:'Zone C · Edge', consensus:'Gossip', policy:'EdgeRelay', count:5, color:'#10b981' },
+    { id:'zone-d', name:'Cloud · Burst', consensus:'Raft', policy:'Any', count:3, color:'#f59e0b' },
+    { id:'browser', name:'Browser · WASM', consensus:'None', policy:'BrowserCompute', count:2, color:'#ec4899' },
+  ];
+  let nodes = [], agents = [], experiments = [], mutations = [], graphData = { nodes:[], edges:[] };
+  let metricsSeries = { load:[], mem:[], latency:[], agents:[] };
+  let consensusState = {};
+
+  function init() {
+    // Generate nodes
+    nodes = [];
+    for (const z of zoneConf) {
+      for (let i = 0; i < z.count; i++) {
+        nodes.push({
+          id: uid(), zone: z.id, zone_name: z.name,
+          status: Math.random() > 0.1 ? 'Online' : (Math.random() > 0.5 ? 'Degraded' : 'Joining'),
+          cpu_usage: Math.random() * 60 + 10,
+          memory_usage: Math.random() * 50 + 20,
+          latency_ms: Math.random() * 40 + 5,
+          address: `10.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}:9000`,
+          capabilities: z.policy === 'BrowserCompute' ? ['wasm','simd'] : ['inference','embedding','graph'],
+        });
+      }
+    }
+    // Generate agents
+    const agentDefs = [
+      { type:'Coordinator', name:'coord-alpha', zone:'zone-a', status:'Running', task:'Orchestrate research pipeline', tier:3, tasks_done:142 },
+      { type:'Researcher', name:'res-quantum', zone:'zone-a', status:'Running', task:'Investigate attention scaling laws', tier:3, tasks_done:37 },
+      { type:'Router', name:'router-b1', zone:'zone-b', status:'Running', task:'Route inference requests', tier:1, tasks_done:1893 },
+      { type:'Worker', name:'worker-b2', zone:'zone-b', status:'Running', task:'Execute embedding batch', tier:2, tasks_done:456 },
+      { type:'Worker', name:'worker-b3', zone:'zone-b', status:'Running', task:'Process vector search queue', tier:2, tasks_done:312 },
+      { type:'Monitor', name:'mon-c1', zone:'zone-c', status:'Running', task:'Watchdog heartbeat', tier:1, tasks_done:2810 },
+      { type:'Experimenter', name:'exp-hyp1', zone:'zone-a', status:'Running', task:'Test hypothesis: sparse attention', tier:3, tasks_done:8 },
+      { type:'Embedder', name:'embed-a1', zone:'zone-a', status:'Running', task:'Generate 64-dim embeddings', tier:1, tasks_done:5420 },
+    ];
+    agents = agentDefs.map(a => ({
+      agent_id: uid(), agent_type: a.type, name: a.name, status: a.status,
+      task: a.task, zone: a.zone, model_tier: a.tier,
+      spawned_at: new Date(Date.now() - Math.random() * 3600000).toISOString(),
+      parent_id: a.type === 'Coordinator' ? null : 'coord-alpha',
+      children: a.type === 'Coordinator' ? agentDefs.slice(1).map(() => uid()) : [],
+      metrics: { tasks_completed: a.tasks_done, tasks_failed: Math.floor(a.tasks_done * 0.02), uptime_secs: Math.floor(Math.random()*7200+300), memory_usage_mb: Math.random()*200+50, cpu_usage_pct: Math.random()*40+5 },
+    }));
+    // Experiments
+    experiments = [
+      { id: uid(), hypothesis:'Sparse attention reduces latency by 30% at iso-quality', status:'running', fitness:0.72, generation:5, mutations:12 },
+      { id: uid(), hypothesis:'Cross-pollinated routing thresholds outperform random init', status:'running', fitness:0.45, generation:3, mutations:7 },
+      { id: uid(), hypothesis:'EWC++ prevents catastrophic forgetting in SONA adapters', status:'evaluating', fitness:0.31, generation:2, mutations:4 },
+    ];
+    // Mutations
+    mutations = Array.from({length:8}, (_,i) => ({
+      id: uid(), generation: i+1, parent_id: i > 0 ? 'prev' : null,
+      fitness: 0.2 + i * 0.08 + Math.random() * 0.05,
+      delta: { routing_thresholds: `[${(Math.random()*0.3+0.3).toFixed(2)}, ${(Math.random()*0.3+0.4).toFixed(2)}]`, feature_weights: `${(Math.random()*2-1).toFixed(3)}` },
+      timestamp: new Date(Date.now() - (8-i) * 600000).toISOString(),
+    }));
+    // Graph data
+    const gn = ['AuthPattern','JWTToken','UserSession','RateLimiter','CacheLayer','EmbeddingIndex','AttentionHead','SonaAdapter','GraphQuery','MinCut','DiffusionKernel','WitnessChain'];
+    const gTypes = ['security','security','security','infra','infra','compute','compute','ml','query','query','query','audit'];
+    const gColors = { security:'#ef4444', infra:'#f59e0b', compute:'#00e5ff', ml:'#a855f7', query:'#10b981', audit:'#ec4899' };
+    graphData.nodes = gn.map((n,i) => ({ id:i, label:n, type:gTypes[i], color:gColors[gTypes[i]], x:0, y:0, vx:0, vy:0 }));
+    graphData.edges = [
+      [0,1],[0,2],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,5],[5,8],[8,9],[8,10],[10,11],[11,0],[1,3],[6,10],[4,8],[7,11]
+    ].map(([s,t]) => ({ source:s, target:t, label:'' }));
+    // Metrics time series (60 points)
+    for (let i = 0; i < 60; i++) {
+      metricsSeries.load.push(30 + Math.sin(i/8)*15 + Math.random()*5);
+      metricsSeries.mem.push(45 + Math.cos(i/10)*10 + Math.random()*3);
+      metricsSeries.latency.push(12 + Math.sin(i/6)*8 + Math.random()*4);
+      metricsSeries.agents.push(8);
+    }
+    // Consensus
+    consensusState = {
+      pbft: { view:3, sequence:47, leader:nodes.find(n=>n.zone==='zone-a')?.id, prepares:5, commits:4, checkpoint_interval:100 },
+      raft: { term:7, leader:nodes.find(n=>n.zone==='zone-b')?.id, commit_index:234, voters: nodes.filter(n=>n.zone==='zone-b').length, log_length:234 },
+      gossip: { generation:42, members: nodes.filter(n=>n.zone==='zone-c').length, fanout:3, interval_ms:1000 },
+    };
+    // Seed initial events
+    const evtTypes = ['NodeJoined','HealthUpdate','AgentSpawned','ConsensusReached','ExperimentUpdate','MutationFound','HealthUpdate','AgentSpawned'];
+    for (let i = 0; i < 15; i++) {
+      const t = evtTypes[i % evtTypes.length];
+      const nd = pick(nodes);
+      wsEvents.push({
+        ts: new Date(Date.now() - (15-i)*4000).toLocaleTimeString(),
+        event_type: t,
+        data: t.includes('Node') ? { node_id:nd.id, zone:nd.zone } :
+              t.includes('Agent') ? { agent_type:pick(agents).agent_type, name:pick(agents).name } :
+              t.includes('Health') ? { node_id:nd.id, status:nd.status, cpu: nd.cpu_usage.toFixed(1)+'%' } :
+              t.includes('Consensus') ? { protocol: pick(['Pbft','Raft','Gossip']), round: Math.floor(Math.random()*50) } :
+              t.includes('Experiment') ? { id:pick(experiments).id, fitness: (Math.random()*0.8).toFixed(3) } :
+              { generation: Math.floor(Math.random()*8)+1, fitness_delta: (Math.random()*0.1).toFixed(4) }
+      });
+    }
+  }
+
+  function swarmStatus() {
+    const healthy = nodes.filter(n => n.status === 'Online').length;
+    return { node_count: nodes.length, healthy_nodes: healthy, zone_count: zoneConf.length, uptime_secs: Math.floor((Date.now() - performance.timeOrigin) / 1000), zones: zoneConf.map(z => ({ id:z.id, name:z.name, consensus:z.consensus, node_count: nodes.filter(n=>n.zone===z.id).length })) };
+  }
+
+  function swarmTopology() {
+    return {
+      zones: zoneConf.map(z => ({
+        id: z.id, name: z.name, consensus: z.consensus,
+        nodes: nodes.filter(n => n.zone === z.id).map(n => ({ id:n.id, status:n.status, cpu:n.cpu_usage.toFixed(1), mem:n.memory_usage.toFixed(1), latency:n.latency_ms.toFixed(1) })),
+      })),
+      connections: [
+        { from:'zone-a', to:'zone-b', latency_ms:2.3 },
+        { from:'zone-b', to:'zone-c', latency_ms:8.1 },
+        { from:'zone-a', to:'zone-d', latency_ms:45.2 },
+        { from:'zone-b', to:'zone-d', latency_ms:42.7 },
+        { from:'zone-c', to:'browser', latency_ms:15.6 },
+        { from:'zone-b', to:'browser', latency_ms:12.3 },
+        { from:'zone-d', to:'browser', latency_ms:52.1 },
+      ],
+    };
+  }
+
+  function agentList() { return { agents, total: agents.length }; }
+  function experimentList() { return { experiments }; }
+  function mutationHistory() { return { mutations, total: mutations.length }; }
+  function memoryStats() { return { total_segments:40, hot:18, warm:14, cold:8, dimensions:64 }; }
+  function getNodes() { return nodes; }
+  function getAgents() { return agents; }
+  function getMetrics() { return metricsSeries; }
+  function getConsensus() { return consensusState; }
+  function getGraph() { return graphData; }
+
+  function tick() {
+    // Random-walk node metrics
+    for (const n of nodes) {
+      n.cpu_usage = clamp(n.cpu_usage + (Math.random()-0.5)*6, 5, 95);
+      n.memory_usage = clamp(n.memory_usage + (Math.random()-0.5)*4, 10, 90);
+      n.latency_ms = clamp(n.latency_ms + (Math.random()-0.5)*3, 1, 80);
+      if (Math.random() < 0.02 && n.status === 'Online') n.status = 'Degraded';
+      else if (Math.random() < 0.1 && n.status === 'Degraded') n.status = 'Online';
+    }
+    // Increment agent metrics
+    for (const a of agents) {
+      a.metrics.uptime_secs++;
+      if (Math.random() < 0.15) a.metrics.tasks_completed++;
+      a.metrics.cpu_usage_pct = clamp(a.metrics.cpu_usage_pct + (Math.random()-0.5)*5, 2, 80);
+    }
+    // Increment experiment fitness
+    for (const e of experiments) {
+      if (e.status === 'running') e.fitness = clamp(e.fitness + (Math.random()-0.5)*0.01, 0, 1);
+    }
+    // Update time series
+    metricsSeries.load.push(30 + Math.sin(Date.now()/8000)*15 + Math.random()*5);
+    metricsSeries.mem.push(45 + Math.cos(Date.now()/10000)*10 + Math.random()*3);
+    metricsSeries.latency.push(12 + Math.sin(Date.now()/6000)*8 + Math.random()*4);
+    metricsSeries.agents.push(agents.length);
+    if (metricsSeries.load.length > 60) { metricsSeries.load.shift(); metricsSeries.mem.shift(); metricsSeries.latency.shift(); metricsSeries.agents.shift(); }
+    // Random event
+    if (Math.random() < 0.3) {
+      const nd = pick(nodes);
+      const evtType = pick(['HealthUpdate','AgentSpawned','ConsensusReached','ExperimentUpdate','MutationFound','NodeJoined']);
+      wsEvents.unshift({
+        ts: new Date().toLocaleTimeString(), event_type: evtType,
+        data: evtType.includes('Health') ? { node_id:nd.id, status:nd.status, cpu:nd.cpu_usage.toFixed(1)+'%' } :
+              evtType.includes('Agent') ? { agent_type:pick(agents).agent_type, name:pick(agents).name, action:'heartbeat' } :
+              evtType.includes('Consensus') ? { protocol:pick(['Pbft','Raft','Gossip']), round:consensusState.pbft.sequence++ } :
+              evtType.includes('Experiment') ? { id:pick(experiments).id, fitness:(Math.random()*0.8).toFixed(3) } :
+              evtType.includes('Mutation') ? { gen:mutations.length+1, delta:(Math.random()*0.1).toFixed(4) } :
+              { node_id:nd.id, zone:nd.zone }
+      });
+      if (wsEvents.length > 200) wsEvents.length = 200;
+    }
+  }
+
+  return { init, tick, swarmStatus, swarmTopology, agentList, experimentList, mutationHistory, memoryStats, getNodes, getAgents, getMetrics, getConsensus, getGraph, zoneConf };
+})();
+
+// ── Sparkline SVG generator ──────────────────────────
+function sparkline(values, color = 'var(--cyan)', w = 60, h = 24) {
+  if (!values || values.length < 2) return '';
+  const mn = Math.min(...values), mx = Math.max(...values);
+  const range = mx - mn || 1;
+  const pts = values.map((v,i) => `${(i/(values.length-1)*w).toFixed(1)},${(h - (v-mn)/range*h).toFixed(1)}`).join(' ');
+  return `<svg class="metric-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="position:absolute;bottom:0.5rem;right:0.75rem;width:60px;height:24px;opacity:0.6">
+    <defs><linearGradient id="sg-${color.replace(/[^a-z]/g,'')}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity="0.3"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
+    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <polygon points="0,${h} ${pts} ${w},${h}" fill="url(#sg-${color.replace(/[^a-z]/g,'')})" opacity="0.5"/>
+  </svg>`;
+}
+
+// ── Simulation Engine ────────────────────────────────
+const SimEngine = (() => {
+  let intervalId = null;
+  function start() {
+    if (intervalId) return;
+    intervalId = setInterval(() => {
+      DemoData.tick();
+      // Update visible views
+      if (currentSection === 'swarm' && currentView === 'overview') updateSwarmMetrics();
+      if (currentSection === 'events') renderEventStream();
+      // Broadcast to other tabs
+      TabCoord.broadcast({ type:'tick', metrics: DemoData.getMetrics() });
+    }, 2000);
+  }
+  function stop() { if (intervalId) { clearInterval(intervalId); intervalId = null; } }
+  return { start, stop };
+})();
+
+// ── Tab Coordinator (BroadcastChannel) ───────────────
+const TabCoord = (() => {
+  let channel = null;
+  let tabId = '';
+  let tabCount = 1;
+
+  function init() {
+    tabId = crypto.randomUUID ? crypto.randomUUID().slice(0,8) : Math.random().toString(36).slice(2,10);
+    if (typeof BroadcastChannel === 'undefined') return;
+    channel = new BroadcastChannel('rlmx-swarm');
+    channel.onmessage = (evt) => {
+      const msg = evt.data;
+      if (msg.type === 'tab-announce' && msg.tabId !== tabId) {
+        tabCount = Math.max(tabCount, msg.count || 1);
+        updateTabBadge();
+      }
+      if (msg.type === 'event') {
+        wsEvents.unshift(msg.payload);
+        if (currentSection === 'events') renderEventStream();
+      }
+    };
+    // Announce self every 5s
+    setInterval(() => {
+      if (channel) channel.postMessage({ type:'tab-announce', tabId, count: tabCount });
+    }, 5000);
+    broadcast({ type:'tab-announce', tabId, count: 1 });
+  }
+
+  function broadcast(msg) {
+    if (channel) try { channel.postMessage(msg); } catch {}
+  }
+
+  function updateTabBadge() {
+    let badge = document.getElementById('tab-badge');
+    if (tabCount > 1) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.id = 'tab-badge';
+        badge.className = 'tab-badge';
+        document.querySelector('.header-right').prepend(badge);
+      }
+      badge.textContent = tabCount + ' tabs';
+    }
+  }
+
+  function getTabCount() { return tabCount; }
+  return { init, broadcast, getTabCount };
+})();
+
+async function detectEdgeCapabilities() {
+  edgeCaps.wasm = typeof WebAssembly !== 'undefined';
+  if (navigator.gpu) { try { edgeCaps.webgpu = !!(await navigator.gpu.requestAdapter()); } catch {} }
+  try {
+    const t = new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,10,10,1,8,0,65,0,253,15,253,98,11]);
+    edgeCaps.simd = WebAssembly.validate(t);
+  } catch { edgeCaps.simd = false; }
+  edgeCaps.sharedMem = typeof SharedArrayBuffer !== 'undefined';
+  edgeCaps.workers = typeof Worker !== 'undefined';
+  edgeCaps.mode = edgeCaps.webgpu ? 'wasm-webgpu' : edgeCaps.simd ? 'wasm-cpu' : edgeCaps.wasm ? 'wasm-basic' : 'http';
+}
+
+async function loadWasmModule() {
+  if (wasmMod) return wasmMod;
+  try {
+    wasmMod = await import('./ruvllm-wasm/ruvllm_wasm.js');
+    if (typeof wasmMod.default === 'function') await wasmMod.default();
+    return wasmMod;
+  } catch (e) { console.error('WASM load failed:', e); return null; }
+}
+
+async function initRuvllm() {
+  const mod = await loadWasmModule();
+  if (!mod) return false;
+  try { ruvllm = new mod.RuvLLMWasm(); ruvllm.initialize(); return true; }
+  catch (e) { console.error('RuvLLM init failed:', e); return false; }
+}
+
+// ── JSON-RPC ─────────────────────────────────────────
+async function rpc(method, params = {}) {
+  const id = ++reqId;
+  const ts = new Date().toLocaleTimeString();
+  logs.unshift({ ts, method, params, id });
+  try {
+    const res = await fetch(MCP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
+    });
+    const json = await res.json();
+    const e = logs.find(l => l.id === id);
+    if (e) e.response = json;
+    return json;
+  } catch (err) {
+    const e = logs.find(l => l.id === id);
+    if (e) e.response = { error: { message: err.message } };
+    throw err;
+  }
+}
+
+async function callTool(name, args = {}) {
+  if (!initialized) await connect();
+  return rpc('tools/call', { name, arguments: args });
+}
+
+function extractText(res) {
+  return res?.result?.content?.map(c => c.text).join('') ?? '';
+}
+
+// ── MCP Connection ───────────────────────────────────
+async function connect() {
+  setMcpStatus('connecting');
+  try {
+    await rpc('initialize', {
+      protocolVersion: '2025-03-26',
+      clientInfo: { name: 'rlmx-dashboard', version: '2.0' },
+      capabilities: {},
+    });
+    initialized = true;
+    setMcpStatus('connected');
+  } catch {
+    setMcpStatus('disconnected');
+  }
+}
+
+function setMcpStatus(state) {
+  const el = document.getElementById('mcp-status');
+  el.className = 'status-chip ' + state;
+  el.textContent = state === 'connected' ? 'MCP :3000' : state === 'connecting' ? 'connecting...' : 'MCP disconnected';
+}
+
+// ── WebSocket ────────────────────────────────────────
+let ws = null;
+function connectWS() {
+  try {
+    ws = new WebSocket(WS_URL);
+    ws.onopen = () => {
+      document.getElementById('ws-dot').classList.add('connected');
+      document.getElementById('ws-label').textContent = 'ws:3001 live';
+    };
+    ws.onmessage = (evt) => {
+      try {
+        const event = JSON.parse(evt.data);
+        wsEvents.unshift({ ts: new Date().toLocaleTimeString(), ...event });
+        if (wsEvents.length > 200) wsEvents.length = 200;
+        // Update live event stream if visible
+        if (currentSection === 'events') renderEventStream();
+      } catch {}
+    };
+    ws.onclose = () => {
+      document.getElementById('ws-dot').classList.remove('connected');
+      document.getElementById('ws-label').textContent = 'ws:3001';
+      setTimeout(connectWS, 5000);
+    };
+    ws.onerror = () => {};
+  } catch {}
+}
+
+// ── Background Particle Canvas ───────────────────────
+function initBgCanvas() {
+  const c = document.getElementById('bg-canvas');
+  const ctx = c.getContext('2d');
+  let w, h;
+  const particles = [];
+
+  function resize() {
+    w = c.width = window.innerWidth;
+    h = c.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  for (let i = 0; i < 60; i++) {
+    particles.push({
+      x: Math.random() * w, y: Math.random() * h,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: (Math.random() - 0.5) * 0.3,
+      r: Math.random() * 1.5 + 0.5,
+      color: Math.random() > 0.5 ? 'rgba(0,229,255,' : 'rgba(168,85,247,',
+      alpha: Math.random() * 0.3 + 0.05,
+    });
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, w, h);
+    for (const p of particles) {
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0) p.x = w; if (p.x > w) p.x = 0;
+      if (p.y < 0) p.y = h; if (p.y > h) p.y = 0;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = p.color + p.alpha + ')';
+      ctx.fill();
+    }
+    // Draw connections
+    ctx.lineWidth = 0.3;
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i + 1; j < particles.length; j++) {
+        const dx = particles[i].x - particles[j].x;
+        const dy = particles[i].y - particles[j].y;
+        const d = dx * dx + dy * dy;
+        if (d < 15000) {
+          const alpha = (1 - d / 15000) * 0.06;
+          ctx.beginPath();
+          ctx.moveTo(particles[i].x, particles[i].y);
+          ctx.lineTo(particles[j].x, particles[j].y);
+          ctx.strokeStyle = `rgba(0,229,255,${alpha})`;
+          ctx.stroke();
+        }
+      }
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+// ── Topology Canvas Renderer ─────────────────────────
+function drawTopology(canvasId, data) {
+  const c = document.getElementById(canvasId);
+  if (!c) return;
+  const ctx = c.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = c.getBoundingClientRect();
+  c.width = rect.width * dpr;
+  c.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Define zone positions
+  const zones = [
+    { id: 'A', label: 'Zone A · Compute', x: W * 0.2, y: H * 0.3, color: '#00e5ff', nodes: 5, consensus: 'PBFT' },
+    { id: 'B', label: 'Zone B · Inference', x: W * 0.5, y: H * 0.2, color: '#a855f7', nodes: 11, consensus: 'Raft' },
+    { id: 'C', label: 'Zone C · Edge', x: W * 0.8, y: H * 0.35, color: '#10b981', nodes: 6, consensus: 'Gossip' },
+    { id: 'D', label: 'Cloud · Burst', x: W * 0.35, y: H * 0.7, color: '#f59e0b', nodes: 2, consensus: 'On-demand' },
+    { id: 'Br', label: 'Browser · WASM', x: W * 0.65, y: H * 0.75, color: '#ec4899', nodes: 1, consensus: 'Stateless' },
+  ];
+
+  if (data?.zones) {
+    data.zones.forEach((z, i) => {
+      if (zones[i]) {
+        zones[i].nodes = (z.nodes || []).length || zones[i].nodes;
+        zones[i].consensus = z.consensus || zones[i].consensus;
+      }
+    });
+  }
+
+  // Draw connections
+  const conns = [[0,1],[1,2],[0,3],[1,3],[2,4],[1,4],[3,4]];
+  for (const [a, b] of conns) {
+    const za = zones[a], zb = zones[b];
+    const grad = ctx.createLinearGradient(za.x, za.y, zb.x, zb.y);
+    grad.addColorStop(0, za.color + '40');
+    grad.addColorStop(1, zb.color + '40');
+    ctx.beginPath();
+    ctx.moveTo(za.x, za.y);
+    // Curved connection
+    const mx = (za.x + zb.x) / 2 + (Math.random() - 0.5) * 20;
+    const my = (za.y + zb.y) / 2 + (Math.random() - 0.5) * 20;
+    ctx.quadraticCurveTo(mx, my, zb.x, zb.y);
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Draw zones
+  for (const z of zones) {
+    // Glow
+    const grd = ctx.createRadialGradient(z.x, z.y, 0, z.x, z.y, 50);
+    grd.addColorStop(0, z.color + '15');
+    grd.addColorStop(1, 'transparent');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(z.x, z.y, 50, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Node dots
+    for (let i = 0; i < Math.min(z.nodes, 12); i++) {
+      const angle = (Math.PI * 2 * i) / z.nodes;
+      const r = 28 + (i % 2) * 8;
+      const nx = z.x + Math.cos(angle) * r;
+      const ny = z.y + Math.sin(angle) * r;
+      ctx.beginPath();
+      ctx.arc(nx, ny, 3, 0, Math.PI * 2);
+      ctx.fillStyle = z.color + 'aa';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(nx, ny, 5, 0, Math.PI * 2);
+      ctx.strokeStyle = z.color + '30';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Center ring
+    ctx.beginPath();
+    ctx.arc(z.x, z.y, 14, 0, Math.PI * 2);
+    ctx.fillStyle = z.color + '20';
+    ctx.fill();
+    ctx.strokeStyle = z.color + '80';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Label
+    ctx.fillStyle = z.color;
+    ctx.font = '600 11px Outfit, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(z.label, z.x, z.y + 62);
+
+    ctx.fillStyle = '#7a849e';
+    ctx.font = '10px JetBrains Mono, monospace';
+    ctx.fillText(`${z.nodes} nodes · ${z.consensus}`, z.x, z.y + 76);
+  }
+}
+
+// ── Section / View Management ────────────────────────
+let currentSection = 'swarm';
+let currentView = 'overview';
+
+const sections = {
+  swarm: {
+    title: 'Swarm Control',
+    glyph: '&#x2B21;',
+    nav: [
+      { id: 'overview', label: 'Overview', icon: '&#x25C9;' },
+      { id: 'topology', label: 'Topology Map', icon: '&#x2B53;' },
+      { id: 'health', label: 'Health Monitor', icon: '&#x2665;' },
+      { id: 'consensus', label: 'Consensus', icon: '&#x2B22;' },
+    ],
+  },
+  agents: {
+    title: 'Agent Lifecycle',
+    glyph: '&#x2726;',
+    nav: [
+      { id: 'manager', label: 'Agent Manager', icon: '&#x2726;' },
+      { id: 'permissions', label: 'Permission Matrix', icon: '&#x2610;' },
+      { id: 'hierarchy', label: 'Spawn Hierarchy', icon: '&#x2BA1;' },
+    ],
+  },
+  compute: {
+    title: 'Browser Compute',
+    glyph: '&#x2699;',
+    nav: [
+      { id: 'pool', label: 'WASM Pool', icon: '&#x2B22;' },
+      { id: 'benchmark', label: 'Benchmark', icon: '&#x26A1;' },
+      { id: 'workers', label: 'Active Workers', icon: '&#x2699;' },
+    ],
+  },
+  memory: {
+    title: 'Vector Memory',
+    glyph: '&#x25C8;',
+    nav: [
+      { id: 'query', label: 'Query', icon: '&#x2315;' },
+      { id: 'ingest', label: 'Ingest', icon: '&#x2B9E;' },
+      { id: 'stats', label: 'Memory Stats', icon: '&#x2261;' },
+    ],
+  },
+  graph: {
+    title: 'Knowledge Graph',
+    glyph: '&#x2B53;',
+    nav: [
+      { id: 'cypher', label: 'Graph Query', icon: '&#x2B53;' },
+    ],
+  },
+  edge: {
+    title: 'Edge AI',
+    glyph: '&#x26A1;',
+    nav: [
+      { id: 'inference', label: 'Inference', icon: '&#x26A1;' },
+      { id: 'models', label: 'Tiered Models', icon: '&#x2B06;' },
+      { id: 'chat', label: 'Chat Format', icon: '&#x2709;' },
+    ],
+  },
+  research: {
+    title: 'Auto-Research',
+    glyph: '&#x2740;',
+    nav: [
+      { id: 'tracker', label: 'Research Tracker', icon: '&#x2740;' },
+      { id: 'evolution', label: 'Evolution View', icon: '&#x267E;' },
+      { id: 'mutations', label: 'Mutation Log', icon: '&#x2702;' },
+    ],
+  },
+  events: {
+    title: 'Event Stream',
+    glyph: '&#x21C6;',
+    nav: [
+      { id: 'stream', label: 'Live Stream', icon: '&#x21C6;', badge: 'LIVE' },
+    ],
+  },
+  tools: {
+    title: 'MCP Tools',
+    glyph: '&#x2692;',
+    nav: [
+      { id: 'list', label: 'Tool Registry', icon: '&#x2692;' },
+    ],
+  },
+  rpc: {
+    title: 'JSON-RPC',
+    glyph: '&#x2318;',
+    nav: [
+      { id: 'raw', label: 'Raw Console', icon: '&#x2318;' },
+    ],
+  },
+  log: {
+    title: 'Request Log',
+    glyph: '&#x2261;',
+    nav: [
+      { id: 'history', label: 'Request History', icon: '&#x2261;' },
+    ],
+  },
+};
+
+function switchSection(sectionId) {
+  currentSection = sectionId;
+  const sec = sections[sectionId];
+  if (!sec) return;
+
+  // Update rail
+  document.querySelectorAll('.rail-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.section === sectionId);
+  });
+
+  // Update sidebar
+  document.getElementById('sidebar-title').textContent = sec.title;
+  const navEl = document.getElementById('sidebar-nav');
+  navEl.innerHTML = sec.nav.map((item, i) => `
+    <button class="nav-item ${i === 0 ? 'active' : ''}" data-view="${item.id}">
+      <span class="nav-icon">${item.icon}</span>
+      ${item.label}
+      ${item.badge ? `<span class="nav-badge live">${item.badge}</span>` : ''}
+    </button>
+  `).join('');
+
+  navEl.querySelectorAll('.nav-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      navEl.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      switchView(sectionId, btn.dataset.view);
+    });
+  });
+
+  // Show first view
+  switchView(sectionId, sec.nav[0].id);
+}
+
+function switchView(sectionId, viewId) {
+  currentView = viewId;
+  const sec = sections[sectionId];
+  const item = sec.nav.find(n => n.id === viewId);
+  if (!item) return;
+
+  document.getElementById('content-title').innerHTML = `<span class="glyph">${sec.glyph}</span><span>${item.label}</span>`;
+  document.getElementById('breadcrumb-view').textContent = viewId;
+
+  const key = sectionId + '.' + viewId;
+  const renderer = viewRenderers[key];
+  const el = document.getElementById('view-content');
+  const desc = document.getElementById('content-desc');
+
+  if (renderer) {
+    desc.textContent = renderer.desc || '';
+    el.innerHTML = renderer.render();
+    if (renderer.onShow) renderer.onShow();
+  } else {
+    desc.textContent = '';
+    el.innerHTML = `<div class="empty-state"><div class="icon">&#x2B21;</div>View: ${key}</div>`;
+  }
+}
+
+// ── View Renderers ───────────────────────────────────
+const viewRenderers = {
+
+  // ── SWARM OVERVIEW ─────────────────────────────────
+  'swarm.overview': {
+    desc: 'Real-time distributed swarm status across all zones',
+    render: () => `
+      <div class="metric-grid" id="sw-metrics">
+        <div class="metric-card"><div class="metric-label">Total Nodes</div><div class="metric-value cyan" id="m-nodes">--</div><div class="metric-sub">across 5 zones</div></div>
+        <div class="metric-card"><div class="metric-label">Healthy</div><div class="metric-value green" id="m-healthy">--</div><div class="metric-sub">responding to heartbeat</div></div>
+        <div class="metric-card"><div class="metric-label">Active Agents</div><div class="metric-value violet" id="m-agents">--</div><div class="metric-sub">12 agent types</div></div>
+        <div class="metric-card"><div class="metric-label">Consensus</div><div class="metric-value" id="m-consensus">--</div><div class="metric-sub">PBFT + Raft + Gossip</div></div>
+        <div class="metric-card"><div class="metric-label">Uptime</div><div class="metric-value amber" id="m-uptime">--</div><div class="metric-sub">current epoch</div></div>
+        <div class="metric-card"><div class="metric-label">MCP Tools</div><div class="metric-value" id="m-tools">23</div><div class="metric-sub">JSON-RPC 2.0</div></div>
+      </div>
+      <div class="glass-panel">
+        <div class="glass-panel-header">
+          <div class="glass-panel-title">&#x2B21; Topology Overview</div>
+          <button class="btn btn-ghost btn-sm" onclick="refreshSwarmOverview()">Refresh</button>
+        </div>
+        <div class="glass-panel-body">
+          <div class="topo-container"><canvas id="topo-canvas"></canvas></div>
+          <div class="zone-legend">
+            <div class="zone-tag"><div class="zone-dot za"></div>Zone A · Compute (PBFT)</div>
+            <div class="zone-tag"><div class="zone-dot zb"></div>Zone B · Inference (Raft)</div>
+            <div class="zone-tag"><div class="zone-dot zc"></div>Zone C · Edge (Gossip)</div>
+            <div class="zone-tag"><div class="zone-dot zd"></div>Cloud · Burst</div>
+            <div class="zone-tag"><div class="zone-dot zbr"></div>Browser · WASM</div>
+          </div>
+        </div>
+      </div>
+      <div class="mt-md" id="sw-detail"></div>`,
+    onShow: () => {
+      drawTopology('topo-canvas');
+      refreshSwarmOverview();
+    },
+  },
+
+  // ── SWARM TOPOLOGY ─────────────────────────────────
+  'swarm.topology': {
+    desc: 'Interactive swarm topology with zone drill-down',
+    render: () => `
+      <div class="btn-group mb-md">
+        <button class="btn btn-primary" onclick="loadTopology()">Load Topology</button>
+        <button class="btn btn-ghost" onclick="loadSwarmStatus()">Cluster Status</button>
+      </div>
+      <div class="glass-panel mb-md">
+        <div class="glass-panel-header"><div class="glass-panel-title">Zone Topology</div></div>
+        <div class="glass-panel-body">
+          <div class="topo-container" style="height:450px"><canvas id="topo-canvas-full"></canvas></div>
+        </div>
+      </div>
+      <div id="topo-detail"></div>`,
+    onShow: () => { drawTopology('topo-canvas-full'); loadTopology(); },
+  },
+
+  // ── SWARM HEALTH ───────────────────────────────────
+  'swarm.health': {
+    desc: 'Node health monitoring with failure prediction',
+    render: () => `
+      <div class="btn-group mb-md">
+        <button class="btn btn-primary" onclick="loadHealthView()">Refresh Health</button>
+      </div>
+      <div id="health-results"></div>`,
+    onShow: () => loadHealthView(),
+  },
+
+  // ── SWARM CONSENSUS ────────────────────────────────
+  'swarm.consensus': {
+    desc: 'Layered consensus: PBFT (critical), Raft (metadata), Gossip (health)',
+    render: () => {
+      const c = DemoData.getConsensus();
+      return `
+      <div class="split-view">
+        <div class="glass-panel">
+          <div class="glass-panel-header"><div class="glass-panel-title text-cyan">PBFT · Zone A</div></div>
+          <div class="glass-panel-body">
+            <div class="metric-grid" style="grid-template-columns:repeat(3,1fr)">
+              <div class="metric-card"><div class="metric-label">View</div><div class="metric-value cyan">${c.pbft.view}</div></div>
+              <div class="metric-card"><div class="metric-label">Sequence</div><div class="metric-value cyan">${c.pbft.sequence}</div></div>
+              <div class="metric-card"><div class="metric-label">Commits</div><div class="metric-value green">${c.pbft.commits}</div></div>
+            </div>
+            <div class="data-card mt-sm"><div class="data-card-label">Protocol</div><div class="data-card-value">Practical Byzantine Fault Tolerance</div><div class="data-card-meta">Tolerates f Byzantine faults with 3f+1 nodes &middot; Checkpoint every ${c.pbft.checkpoint_interval} ops</div></div>
+            <div class="data-card"><div class="data-card-label">Use Case</div><div class="data-card-value">Critical state mutations, leader election, token issuance</div></div>
+          </div>
+        </div>
+        <div class="glass-panel">
+          <div class="glass-panel-header"><div class="glass-panel-title text-violet">Raft · Zone B</div></div>
+          <div class="glass-panel-body">
+            <div class="metric-grid" style="grid-template-columns:repeat(3,1fr)">
+              <div class="metric-card"><div class="metric-label">Term</div><div class="metric-value violet">${c.raft.term}</div></div>
+              <div class="metric-card"><div class="metric-label">Commit Index</div><div class="metric-value violet">${c.raft.commit_index}</div></div>
+              <div class="metric-card"><div class="metric-label">Voters</div><div class="metric-value">${c.raft.voters}</div></div>
+            </div>
+            <div class="data-card mt-sm"><div class="data-card-label">Protocol</div><div class="data-card-value">Raft Consensus</div><div class="data-card-meta">Majority quorum (n/2 + 1) &middot; Log length: ${c.raft.log_length}</div></div>
+            <div class="data-card"><div class="data-card-label">Use Case</div><div class="data-card-value">Log replication, metadata sync, steady-state coordination</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="glass-panel mt-md">
+        <div class="glass-panel-header"><div class="glass-panel-title text-green">Gossip · Zone C</div></div>
+        <div class="glass-panel-body">
+          <div class="metric-grid" style="grid-template-columns:repeat(3,1fr)">
+            <div class="metric-card"><div class="metric-label">Generation</div><div class="metric-value green">${c.gossip.generation}</div></div>
+            <div class="metric-card"><div class="metric-label">Members</div><div class="metric-value green">${c.gossip.members}</div></div>
+            <div class="metric-card"><div class="metric-label">Fanout</div><div class="metric-value">${c.gossip.fanout}</div></div>
+          </div>
+          <div class="data-card mt-sm"><div class="data-card-label">Protocol</div><div class="data-card-value">Epidemic Gossip Protocol</div><div class="data-card-meta">Interval: ${c.gossip.interval_ms}ms &middot; Eventual convergence within 10 seconds</div></div>
+          <div class="data-card"><div class="data-card-label">Use Case</div><div class="data-card-value">Membership changes, health propagation, soft state</div></div>
+        </div>
+      </div>`;
+    },
+  },
+
+  // ── AGENT MANAGER ──────────────────────────────────
+  'agents.manager': {
+    desc: '12 typed agents with capability-secured permissions (ADR-005)',
+    render: () => {
+      const agentConf = {
+        Coordinator:{zone:'zone-a',tier:3,runtime:0,max:1}, Researcher:{zone:'zone-a',tier:3,runtime:1800,max:3},
+        Router:{zone:'zone-b',tier:1,runtime:0,max:5}, Experimenter:{zone:'zone-a',tier:3,runtime:900,max:8},
+        Worker:{zone:'zone-b',tier:2,runtime:300,max:20}, Monitor:{zone:'zone-c',tier:1,runtime:0,max:5},
+        Reviewer:{zone:'zone-a',tier:2,runtime:600,max:2}, Trainer:{zone:'zone-d',tier:3,runtime:3600,max:1},
+        Validator:{zone:'zone-b',tier:2,runtime:300,max:3}, Replicator:{zone:'zone-b',tier:1,runtime:0,max:5},
+        Embedder:{zone:'zone-a',tier:1,runtime:0,max:3}, Analyst:{zone:'zone-a',tier:2,runtime:600,max:2},
+      };
+      const syscalls = ['VecIns','VecSrch','VecDel','GrpQ','GrpCut','GrpDif','PFork','PSend','PRecv','StMut','Attn','Halt'];
+      const matrix = [[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,0,1,0,0,1,1,1,1,1,1],[0,1,0,1,0,0,1,1,1,0,1,1],[1,1,0,1,0,0,1,1,1,1,1,1],[1,1,0,0,0,0,0,1,1,1,0,0],[0,1,0,0,0,0,0,0,1,1,0,1],[0,1,0,1,0,0,0,0,1,0,1,1],[1,1,0,0,0,0,0,1,1,1,0,0],[0,1,0,1,0,0,0,0,1,0,0,1],[1,1,0,0,0,0,0,1,1,1,0,0],[0,1,0,0,0,0,0,0,1,0,0,0],[0,1,0,1,1,1,0,0,1,1,1,0]];
+      const types = Object.keys(agentConf);
+      return `
+      <div class="glass-panel mb-md">
+        <div class="glass-panel-header"><div class="glass-panel-title">Spawn Agent</div></div>
+        <div class="glass-panel-body">
+          <div class="input-row">
+            <div style="flex:1"><div class="field-label">Type</div><select id="a-type" onchange="updateAgentConf()">
+              ${types.map(t => `<option value="${t.toLowerCase()}" ${t==='Worker'?'selected':''}>${t}</option>`).join('')}
+            </select></div>
+            <div style="flex:1"><div class="field-label">Name</div><input id="a-name" placeholder="auto-generated" /></div>
+            <div style="flex:2"><div class="field-label">Task</div><input id="a-task" placeholder="Task description" /></div>
+          </div>
+          <div class="input-row">
+            <div style="flex:1"><div class="field-label">Zone</div><select id="a-zone">
+              <option value="auto">Auto</option><option value="zone-a">Zone A · Compute</option><option value="zone-b" selected>Zone B · Inference</option>
+              <option value="zone-c">Zone C · Edge</option><option value="zone-d">Cloud · Burst</option><option value="browser">Browser · WASM</option>
+            </select></div>
+            <div style="flex:1"><div class="field-label">Model Tier</div><select id="a-tier">
+              <option value="1">Tier 1 · Small (0.5B)</option><option value="2" selected>Tier 2 · Medium (MLX)</option><option value="3">Tier 3 · Remote (vLLM)</option>
+            </select></div>
+            <div style="width:120px"><div class="field-label">Max Runtime (s)</div><input id="a-runtime" type="number" value="300" /></div>
+            <div style="padding-top:1.2rem"><button class="btn btn-primary" onclick="doAgentSpawn()">Spawn</button></div>
+          </div>
+          <div class="config-preview" id="a-perms"></div>
+        </div>
+      </div>
+      <div class="btn-group mb-md"><button class="btn btn-ghost" onclick="doAgentList()">Refresh List</button></div>
+      <div class="agent-grid" id="a-results"><div class="empty-state"><div class="icon">&#x2726;</div>Loading agents...</div></div>`;
+    },
+    onShow: () => { updateAgentConf(); doAgentList(); },
+  },
+
+  // ── AGENT PERMISSIONS ──────────────────────────────
+  'agents.permissions': {
+    desc: '12x12 capability permission matrix (const MATRIX in registry.rs)',
+    render: () => {
+      const types = ['Coordinator','Researcher','Router','Experimenter','Worker','Monitor','Reviewer','Trainer','Validator','Replicator','Embedder','Analyst'];
+      const syscalls = ['VecInsert','VecSearch','VecDelete','GraphQuery','GraphCut','GraphDiffuse','ProcessFork','ProcessSend','ProcessRecv','StateMutate','AttentionSelect','HaltCheck'];
+      const matrix = [
+        [1,1,1,1,1,1,1,1,1,1,1,1],[1,1,0,1,0,0,1,1,1,1,1,1],[0,1,0,1,0,0,1,1,1,0,1,1],
+        [1,1,0,1,0,0,1,1,1,1,1,1],[1,1,0,0,0,0,0,1,1,1,0,0],[0,1,0,0,0,0,0,0,1,1,0,1],
+        [0,1,0,1,0,0,0,0,1,0,1,1],[1,1,0,0,0,0,0,1,1,1,0,0],[0,1,0,1,0,0,0,0,1,0,0,1],
+        [1,1,0,0,0,0,0,1,1,1,0,0],[0,1,0,0,0,0,0,0,1,0,0,0],[0,1,0,1,1,1,0,0,1,1,1,0],
+      ];
+      let rows = types.map((t, i) => `<tr><td style="font-weight:600;color:var(--cyan);white-space:nowrap">${t}</td>${matrix[i].map(v => `<td style="text-align:center;color:${v ? 'var(--green)' : 'var(--text-faint)'}">${v ? '&#x2713;' : '&#x2715;'}</td>`).join('')}</tr>`).join('');
+      return `<div style="overflow-x:auto"><table class="log-table"><thead><tr><th>Agent</th>${syscalls.map(s => `<th style="font-size:0.5rem;writing-mode:vertical-rl;transform:rotate(180deg);height:80px">${s}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+    },
+  },
+
+  // ── AGENT HIERARCHY ────────────────────────────────
+  'agents.hierarchy': {
+    desc: 'Agent spawn tree rooted at Coordinator (PID 0)',
+    render: () => `
+      <div class="glass-panel">
+        <div class="glass-panel-header"><div class="glass-panel-title">Spawn Hierarchy (DDD-003)</div></div>
+        <div class="glass-panel-body">
+          <pre style="font-size:0.72rem;color:var(--text-dim);line-height:1.8">
+<span style="color:var(--cyan);font-weight:700">Coordinator</span> (PID 0, All permissions, Raft leader)
+├── <span style="color:var(--violet)">Router</span> (1/zone, spawns Workers)
+│   └── <span style="color:var(--text)">Worker</span> (pool 1-N, auto-terminate 5min idle)
+├── <span style="color:var(--green)">Monitor</span> (1/zone, watchdog, never terminates)
+├── <span style="color:var(--amber)">Replicator</span> (1/zone-pair, continuous sync)
+├── <span style="color:var(--text)">Embedder</span> (1/compute-zone, always running)
+├── <span style="color:var(--text-dim)">Validator</span> (periodic or on-demand)
+├── <span style="color:var(--text-dim)">Reviewer</span> (on-demand, max 2)
+├── <span style="color:var(--text-dim)">Analyst</span> (on-demand, max 2)
+├── <span style="color:var(--pink)">Researcher</span> (on objective, max 3)
+│   └── <span style="color:var(--pink)">Experimenter</span> (per hypothesis, max 8 total)
+│       └── <span style="color:var(--text-dim)">sub-Experimenter</span> (grid search depth ≤2)
+└── <span style="color:var(--amber)">Trainer</span> (on job, max 1/GPU-zone)
+          </pre>
+        </div>
+      </div>`,
+  },
+
+  // ── BROWSER COMPUTE POOL ───────────────────────────
+  'compute.pool': {
+    desc: 'Pull-based WASM compute pool — browsers as swarm workers (ADR-009)',
+    render: () => `
+      <div class="metric-grid" id="cp-metrics"></div>
+      <div class="btn-group mb-md mt-md">
+        <button class="btn btn-primary" id="cp-join-btn" onclick="toggleComputePool()">Join as Worker</button>
+        <button class="btn btn-ghost" onclick="refreshComputePool()">Refresh Status</button>
+      </div>
+      <div class="glass-panel mb-md">
+        <div class="glass-panel-header"><div class="glass-panel-title">WASM Capability Detection</div></div>
+        <div class="glass-panel-body" id="cp-caps"></div>
+      </div>
+      <div class="glass-panel">
+        <div class="glass-panel-header"><div class="glass-panel-title">Active Compute Cells</div></div>
+        <div class="glass-panel-body"><div class="pool-grid" id="cp-grid"></div></div>
+      </div>`,
+    onShow: () => {
+      renderComputeCaps();
+      renderComputeGrid();
+    },
+  },
+
+  // ── BENCHMARK ──────────────────────────────────────
+  'compute.benchmark': {
+    desc: 'WASM SIMD matmul benchmark via @ruvector/ruvllm-wasm',
+    render: () => `
+      <div class="btn-group mb-md">
+        <button class="btn btn-primary" onclick="doWasmInit()">Init WASM Engine</button>
+        <button class="btn btn-ghost" onclick="doWasmFeatures()">Feature Report</button>
+        <button class="btn btn-primary" onclick="doWasmBench()">Run MatMul Benchmark</button>
+      </div>
+      <div id="bench-results"><div class="empty-state"><div class="icon">&#x26A1;</div>Initialize WASM engine, then run benchmark</div></div>`,
+  },
+
+  // ── MEMORY QUERY ───────────────────────────────────
+  'memory.query': {
+    desc: 'Semantic vector search with cosine similarity (64-dim)',
+    render: () => `
+      <div class="input-row">
+        <input id="q-input" placeholder="Enter semantic query..." />
+        <button class="btn btn-primary" onclick="doQuery()">Search</button>
+      </div>
+      <div id="q-results"><div class="empty-state"><div class="icon">&#x2315;</div>Enter a query to search vector memory</div></div>`,
+  },
+
+  // ── MEMORY INGEST ──────────────────────────────────
+  'memory.ingest': {
+    desc: 'Insert text into vector memory via VecInsert syscall',
+    render: () => `
+      <div class="field-label">Text to ingest</div>
+      <textarea id="i-input" placeholder="Enter text to ingest into vector memory..."></textarea>
+      <div class="mt-sm"><button class="btn btn-primary" onclick="doIngest()">Ingest</button></div>
+      <div id="i-results" class="mt-md"></div>`,
+  },
+
+  // ── MEMORY STATS ───────────────────────────────────
+  'memory.stats': {
+    desc: '3-tier Hot/Warm/Cold memory classification',
+    render: () => `
+      <button class="btn btn-primary mb-md" onclick="doStats()">Refresh Stats</button>
+      <div id="s-results"><div class="empty-state"><div class="icon">&#x25C8;</div>Click refresh to load memory statistics</div></div>`,
+  },
+
+  // ── GRAPH QUERY ────────────────────────────────────
+  'graph.cypher': {
+    desc: 'Force-directed knowledge graph visualization with Cypher query',
+    render: () => `
+      <div class="input-row">
+        <input id="g-input" placeholder="MATCH (n:Entity) RETURN n" value="MATCH (n)-[r]->(m) RETURN n,r,m" />
+        <button class="btn btn-primary" onclick="doGraph()">Run Query</button>
+        <button class="btn btn-ghost" onclick="renderForceGraph()">Show Graph</button>
+      </div>
+      <div class="glass-panel mb-md">
+        <div class="glass-panel-header"><div class="glass-panel-title">Knowledge Graph</div><span class="text-xs text-dim" id="g-info"></span></div>
+        <div class="glass-panel-body" style="padding:0;position:relative">
+          <canvas id="force-graph" class="graph-canvas"></canvas>
+        </div>
+      </div>
+      <div id="g-results"></div>`,
+    onShow: () => setTimeout(renderForceGraph, 100),
+  },
+
+  // ── EDGE INFERENCE ─────────────────────────────────
+  'edge.inference': {
+    desc: 'Local LLM inference via ruvllm CandleBackend (CPU/Metal/CUDA)',
+    render: () => `
+      <div class="metric-grid mb-md" id="e-caps"></div>
+      <div class="btn-group mb-md">
+        <button class="btn btn-ghost" onclick="doEdgeStatus()">Server Status</button>
+      </div>
+      <div id="e-status" class="mb-md"></div>
+      <div class="glass-panel">
+        <div class="glass-panel-header"><div class="glass-panel-title">Generate (via MCP rlmx_edge_generate)</div></div>
+        <div class="glass-panel-body">
+          <textarea id="e-prompt" placeholder="Enter prompt for edge generation..."></textarea>
+          <div class="input-row mt-sm">
+            <input id="e-max-tokens" type="number" value="256" style="width:100px" />
+            <button class="btn btn-primary" onclick="doEdgeGenerate()">Generate</button>
+          </div>
+        </div>
+      </div>
+      <div id="e-results" class="mt-md"></div>`,
+    onShow: renderEdgeCaps,
+  },
+
+  // ── TIERED MODELS ──────────────────────────────────
+  'edge.models': {
+    desc: 'TieredEngine: Small (0.5B) → Medium (MLX 3-8B) → Remote (vLLM)',
+    render: () => `
+      <div class="split-view">
+        <div class="glass-panel">
+          <div class="glass-panel-header"><div class="glass-panel-title">Inference Tiers (ADR-004)</div></div>
+          <div class="glass-panel-body">
+            <div class="data-card"><div class="data-card-label">Tier 1 · Small</div><div class="data-card-value text-green">0.5B GGUF (CandleBackend)</div><div class="data-card-meta">CPU/Metal · RPi5/NUC · &lt;100ms</div></div>
+            <div class="data-card"><div class="data-card-label">Tier 2 · Medium</div><div class="data-card-value text-violet">3-8B MLX (Apple Silicon)</div><div class="data-card-meta">MlxSubprocess · Mac Studio · ~500ms</div></div>
+            <div class="data-card"><div class="data-card-label">Tier 3 · Remote</div><div class="data-card-value text-cyan">vLLM (GPU server)</div><div class="data-card-meta">VllmClient · Cloud/NUC-GPU · ~2s</div></div>
+          </div>
+        </div>
+        <div class="glass-panel">
+          <div class="glass-panel-header"><div class="glass-panel-title">Escalation Logic</div></div>
+          <div class="glass-panel-body">
+            <div class="data-card"><div class="data-card-label">Threshold</div><div class="data-card-value">0.4 confidence</div><div class="data-card-meta">Below threshold → escalate to next tier</div></div>
+            <div class="data-card"><div class="data-card-label">Router</div><div class="data-card-value">TinyDancerRouter (FastGRNN 14→32→5)</div><div class="data-card-meta">Online learning from (features, strategy, reward) triples</div></div>
+          </div>
+        </div>
+      </div>`,
+  },
+
+  // ── CHAT FORMAT ────────────────────────────────────
+  'edge.chat': {
+    desc: 'Chat template formatting via ruvllm-wasm (in-browser)',
+    render: () => `
+      <div class="glass-panel">
+        <div class="glass-panel-header"><div class="glass-panel-title">WASM Chat Formatter</div></div>
+        <div class="glass-panel-body">
+          <div class="input-row">
+            <select id="e-template">
+              <option value="chatml">ChatML / Qwen</option>
+              <option value="llama3">Llama 3</option>
+              <option value="mistral">Mistral</option>
+              <option value="gemma">Gemma</option>
+              <option value="phi">Phi</option>
+            </select>
+            <button class="btn btn-primary" onclick="doFormatChat()">Format</button>
+          </div>
+          <textarea id="e-chat-input" placeholder="Enter user message to format..."></textarea>
+          <pre class="json-output mt-sm" id="e-chat-output" style="min-height:60px"></pre>
+        </div>
+      </div>`,
+  },
+
+  // ── RESEARCH TRACKER ───────────────────────────────
+  'research.tracker': {
+    desc: 'Evolutionary auto-research with cross-pollination (ADR-006)',
+    render: () => `
+      <div class="glass-panel mb-md">
+        <div class="glass-panel-header"><div class="glass-panel-title">Start Research</div></div>
+        <div class="glass-panel-body">
+          <div class="input-row">
+            <input id="r-topic" placeholder="Research topic..." />
+            <input id="r-hyp" type="number" value="3" style="width:70px" title="Hypotheses" />
+            <button class="btn btn-primary" onclick="doResearchStart()">Start</button>
+          </div>
+        </div>
+      </div>
+      <div class="btn-group mb-md">
+        <button class="btn btn-ghost" onclick="doExperimentList()">List Experiments</button>
+      </div>
+      <div id="re-results"><div class="empty-state"><div class="icon">&#x2740;</div>No active research. Start a topic above.</div></div>`,
+  },
+
+  // ── EVOLUTION VIEW ─────────────────────────────────
+  'research.evolution': {
+    desc: 'Mutation strategy genome evolution & fitness landscape',
+    render: () => `
+      <div class="glass-panel">
+        <div class="glass-panel-header"><div class="glass-panel-title">Evolutionary Pipeline</div></div>
+        <div class="glass-panel-body">
+          <pre style="font-size:0.72rem;color:var(--text-dim);line-height:1.8">
+1. <span style="color:var(--cyan)">Coordinator</span> receives research objective, spawns <span style="color:var(--pink)">Researcher</span>
+2. <span style="color:var(--pink)">Researcher</span> searches prior patterns (VecSearch + SONA), generates N hypotheses
+3. Researcher spawns N <span style="color:var(--violet)">Experimenters</span> (COW-branched state via rlmx_rvf_branch)
+4. Experimenters mutate using local ruvltra model (MutationStrategy genome)
+5. Experimenters request <span style="color:var(--amber)">Trainer</span> spawn (MLX on Mac, CUDA on NUC-GPU)
+6. Trainer runs 5-min experiment, reports val_bpb
+7. <span style="color:var(--green)">Cross-pollination</span> via Gossip: successful mutations propagate
+8. Cloud escalation if swarm stalls (SkyPilot GPU VMs)
+9. Researcher synthesizes, <span style="color:var(--text)">Reviewer</span> validates
+10. Coordinator integrates winner, <span style="color:var(--amber)">Replicator</span> syncs
+          </pre>
+        </div>
+      </div>`,
+  },
+
+  // ── MUTATION LOG ───────────────────────────────────
+  'research.mutations': {
+    desc: 'Evolutionary mutation history & fitness scores',
+    render: () => `
+      <button class="btn btn-primary mb-md" onclick="doMutationHistory()">Load Mutations</button>
+      <div id="mut-results"><div class="empty-state"><div class="icon">&#x2702;</div>Click to load mutation history</div></div>`,
+  },
+
+  // ── EVENT STREAM ───────────────────────────────────
+  'events.stream': {
+    desc: 'Real-time WebSocket event stream (ws://host:3001) — ADR-008',
+    render: () => `
+      <div class="glass-panel">
+        <div class="glass-panel-header">
+          <div class="glass-panel-title">Live Events <span style="color:var(--green);font-size:0.6rem;margin-left:0.5rem">&#x25CF; streaming</span></div>
+          <span class="text-xs text-dim">${wsEvents.length} events</span>
+        </div>
+        <div class="glass-panel-body">
+          <div class="event-stream" id="event-list"></div>
+        </div>
+      </div>`,
+    onShow: renderEventStream,
+  },
+
+  // ── MCP TOOLS ──────────────────────────────────────
+  'tools.list': {
+    desc: 'All 23 MCP tools exposed via JSON-RPC 2.0',
+    render: () => `
+      <button class="btn btn-primary mb-md" onclick="doListTools()">Load Tool Registry</button>
+      <div id="t-results"><div class="empty-state"><div class="icon">&#x2692;</div>Click to list all MCP tools</div></div>`,
+  },
+
+  // ── RAW JSON-RPC ───────────────────────────────────
+  'rpc.raw': {
+    desc: 'Send arbitrary JSON-RPC requests to the MCP server',
+    render: () => `
+      <div class="glass-panel">
+        <div class="glass-panel-header"><div class="glass-panel-title">JSON-RPC Console</div></div>
+        <div class="glass-panel-body">
+          <div class="field-label">Method</div>
+          <input id="r-method" placeholder="tools/call" class="mb-sm" />
+          <div class="field-label">Params (JSON)</div>
+          <textarea id="r-params" placeholder='{"name":"rlmx_query","arguments":{"input":"test"}}'></textarea>
+          <div class="mt-sm"><button class="btn btn-primary" onclick="doRaw()">Send</button></div>
+          <pre class="json-output mt-md" id="r-result"></pre>
+        </div>
+      </div>`,
+  },
+
+  // ── REQUEST LOG ────────────────────────────────────
+  'log.history': {
+    desc: 'History of all JSON-RPC calls this session',
+    render: () => `<div id="l-results"></div>`,
+    onShow: renderLog,
+  },
+
+  // ── COMPUTE WORKERS ────────────────────────────────
+  'compute.workers': {
+    desc: 'Active browser WASM workers in the compute pool',
+    render: () => `
+      <div class="glass-panel">
+        <div class="glass-panel-header"><div class="glass-panel-title">Worker Protocol (ADR-009)</div></div>
+        <div class="glass-panel-body">
+          <div class="data-card"><div class="data-card-label">Architecture</div><div class="data-card-value">Pull-based WebSocket compute pool</div><div class="data-card-meta">Browser tabs poll ws://host:3001/compute for work units</div></div>
+          <div class="data-card"><div class="data-card-label">Task Types</div><div class="data-card-value">Embedding · MatMul · CosineSimilarity · TrmForward</div><div class="data-card-meta">Routed by capability: WebGPU → large MatMul, SIMD → embeddings</div></div>
+          <div class="data-card"><div class="data-card-label">Fault Tolerance</div><div class="data-card-value">Auto re-queue on disconnect (5s grace), 30s timeout reaper</div><div class="data-card-meta">First result wins; duplicates discarded via in_flight.remove()</div></div>
+          <div class="data-card"><div class="data-card-label">Security</div><div class="data-card-value">Minimal CapabilityToken with VecSearch (read) only</div><div class="data-card-meta">Browsers cannot mutate state — Zone::Browser is stateless</div></div>
+        </div>
+      </div>`,
+  },
+};
+
+// ── Action Handlers ──────────────────────────────────
+
+async function refreshSwarmOverview() {
+  let data, agentData;
+  try {
+    const res = await callTool('rlmx_swarm_status', {});
+    data = JSON.parse(extractText(res));
+    if (data.node_count > 0) useLiveData = true;
+  } catch {}
+  if (!data || !data.node_count) data = DemoData.swarmStatus();
+  try {
+    const res2 = await callTool('rlmx_agent_list', {});
+    agentData = JSON.parse(extractText(res2));
+    if (!(agentData.agents || []).length) agentData = null;
+  } catch {}
+  if (!agentData) agentData = DemoData.agentList();
+  document.getElementById('m-nodes').textContent = data.node_count || 0;
+  document.getElementById('m-healthy').textContent = data.healthy_nodes || 0;
+  document.getElementById('m-agents').textContent = agentData.total || (agentData.agents || []).length || 0;
+  document.getElementById('m-uptime').textContent = (data.uptime_secs || 0) + 's';
+  document.getElementById('m-consensus').textContent = (data.zone_count || 5) + ' zones';
+  drawTopology('topo-canvas', data);
+  updateSwarmMetrics();
+}
+
+function updateSwarmMetrics() {
+  const data = DemoData.swarmStatus();
+  const agentData = DemoData.agentList();
+  const el = n => document.getElementById(n);
+  if (el('m-nodes')) el('m-nodes').textContent = data.node_count;
+  if (el('m-healthy')) el('m-healthy').textContent = data.healthy_nodes;
+  if (el('m-agents')) el('m-agents').textContent = agentData?.total || 0;
+  if (el('m-uptime')) el('m-uptime').textContent = data.uptime_secs + 's';
+  // Sparklines
+  const m = DemoData.getMetrics();
+  const cards = document.querySelectorAll('#sw-metrics .metric-card');
+  if (cards[0]) cards[0].querySelector('.metric-spark')?.remove(), cards[0].insertAdjacentHTML('beforeend', sparkline(m.load, '#00e5ff'));
+  if (cards[1]) cards[1].querySelector('.metric-spark')?.remove(), cards[1].insertAdjacentHTML('beforeend', sparkline(m.mem, '#10b981'));
+  if (cards[2]) cards[2].querySelector('.metric-spark')?.remove(), cards[2].insertAdjacentHTML('beforeend', sparkline(m.agents, '#a855f7'));
+  if (cards[4]) cards[4].querySelector('.metric-spark')?.remove(), cards[4].insertAdjacentHTML('beforeend', sparkline(m.latency, '#f59e0b'));
+}
+
+async function loadTopology() {
+  const el = document.getElementById('topo-detail');
+  el.innerHTML = '<div class="empty-state">Loading...</div>';
+  let data;
+  try {
+    const res = await callTool('rlmx_swarm_topology', {});
+    data = JSON.parse(extractText(res));
+    if (!(data.zones || []).some(z => (z.nodes||[]).length)) data = null;
+  } catch {}
+  if (!data) data = DemoData.swarmTopology();
+  drawTopology('topo-canvas-full', data);
+  const zones = data.zones || [];
+  el.innerHTML = zones.map(z => `
+    <div class="data-card">
+      <div class="data-card-label">Zone ${esc(z.id || z.name)} <span style="color:var(--cyan)">${esc(z.consensus || '')}</span></div>
+      <div class="data-card-value">${(z.nodes || []).length} node(s)</div>
+      <div class="data-card-meta">${esc(z.name || '')}</div>
+    </div>`).join('');
+  if (data.connections) {
+    el.innerHTML += '<div class="data-card"><div class="data-card-label">Connections</div><div class="data-card-value">' +
+      data.connections.map(c => `${esc(c.from)} &harr; ${esc(c.to)}: ${c.latency_ms}ms`).join('<br>') +
+      '</div></div>';
+  }
+}
+
+async function loadSwarmStatus() {
+  const el = document.getElementById('health-results') || document.getElementById('topo-detail');
+  el.innerHTML = '<div class="empty-state">Loading...</div>';
+  let data;
+  try {
+    const res = await callTool('rlmx_swarm_status', {});
+    data = JSON.parse(extractText(res));
+    if (!data.node_count) data = null;
+  } catch {}
+  if (!data) data = DemoData.swarmStatus();
+  el.innerHTML = `<pre class="json-output">${esc(JSON.stringify(data, null, 2))}</pre>`;
+}
+
+async function loadHealthView() {
+  const el = document.getElementById('health-results');
+  if (!el) return;
+  let nodes;
+  try {
+    const res = await callTool('rlmx_swarm_status', {});
+    const data = JSON.parse(extractText(res));
+    if (data.node_count > 0) {
+      el.innerHTML = `<pre class="json-output">${esc(JSON.stringify(data, null, 2))}</pre>`;
+      return;
+    }
+  } catch {}
+  {
+    nodes = DemoData.getNodes();
+  }
+  const byZone = {};
+  for (const n of nodes) { (byZone[n.zone] = byZone[n.zone] || []).push(n); }
+  el.innerHTML = Object.entries(byZone).map(([zone, zNodes]) => `
+    <div class="glass-panel mb-md">
+      <div class="glass-panel-header"><div class="glass-panel-title">${esc(zNodes[0]?.zone_name || zone)}</div><span class="text-xs text-dim">${zNodes.length} nodes</span></div>
+      <div class="glass-panel-body">
+        ${zNodes.map(n => `
+          <div class="data-card" style="border-left:3px solid ${n.status==='Online' ? 'var(--green)' : n.status==='Degraded' ? 'var(--amber)' : 'var(--red)'}">
+            <div class="data-card-label">${esc(n.id)} <span style="color:${n.status==='Online' ? 'var(--green)' : 'var(--amber)'}">${esc(n.status)}</span></div>
+            <div class="data-card-value" style="font-size:0.75rem">CPU: ${n.cpu_usage.toFixed(1)}% &middot; Mem: ${n.memory_usage.toFixed(1)}% &middot; Latency: ${n.latency_ms.toFixed(1)}ms</div>
+            <div class="data-card-meta">${esc(n.address)}</div>
+          </div>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function updateAgentConf() {
+  const agentConf = {
+    coordinator:{zone:'zone-a',tier:3,runtime:0,max:1}, researcher:{zone:'zone-a',tier:3,runtime:1800,max:3},
+    router:{zone:'zone-b',tier:1,runtime:0,max:5}, experimenter:{zone:'zone-a',tier:3,runtime:900,max:8},
+    worker:{zone:'zone-b',tier:2,runtime:300,max:20}, monitor:{zone:'zone-c',tier:1,runtime:0,max:5},
+    reviewer:{zone:'zone-a',tier:2,runtime:600,max:2}, trainer:{zone:'zone-d',tier:3,runtime:3600,max:1},
+    validator:{zone:'zone-b',tier:2,runtime:300,max:3}, replicator:{zone:'zone-b',tier:1,runtime:0,max:5},
+    embedder:{zone:'zone-a',tier:1,runtime:0,max:3}, analyst:{zone:'zone-a',tier:2,runtime:600,max:2},
+  };
+  const syscalls = ['VecIns','VecSrch','VecDel','GrpQ','GrpCut','GrpDif','PFork','PSend','PRecv','StMut','Attn','Halt'];
+  const matrix = [[1,1,1,1,1,1,1,1,1,1,1,1],[1,1,0,1,0,0,1,1,1,1,1,1],[0,1,0,1,0,0,1,1,1,0,1,1],[1,1,0,1,0,0,1,1,1,1,1,1],[1,1,0,0,0,0,0,1,1,1,0,0],[0,1,0,0,0,0,0,0,1,1,0,1],[0,1,0,1,0,0,0,0,1,0,1,1],[1,1,0,0,0,0,0,1,1,1,0,0],[0,1,0,1,0,0,0,0,1,0,0,1],[1,1,0,0,0,0,0,1,1,1,0,0],[0,1,0,0,0,0,0,0,1,0,0,0],[0,1,0,1,1,1,0,0,1,1,1,0]];
+  const types = ['coordinator','researcher','router','experimenter','worker','monitor','reviewer','trainer','validator','replicator','embedder','analyst'];
+
+  const sel = document.getElementById('a-type');
+  if (!sel) return;
+  const t = sel.value;
+  const conf = agentConf[t];
+  if (!conf) return;
+  const zoneEl = document.getElementById('a-zone');
+  const tierEl = document.getElementById('a-tier');
+  const rtEl = document.getElementById('a-runtime');
+  if (zoneEl) zoneEl.value = conf.zone;
+  if (tierEl) tierEl.value = conf.tier;
+  if (rtEl) rtEl.value = conf.runtime;
+
+  const idx = types.indexOf(t);
+  const perms = document.getElementById('a-perms');
+  if (perms && idx >= 0) {
+    perms.innerHTML = `<span class="text-xs text-dim" style="margin-right:0.3rem">Permissions:</span>` +
+      syscalls.map((s,i) => `<span class="perm ${matrix[idx][i]?'on':'off'}">${s}</span>`).join('') +
+      `<span class="text-xs text-dim" style="margin-left:0.5rem">Max: ${conf.max}</span>`;
+  }
+}
+
+async function doAgentSpawn() {
+  const type = document.getElementById('a-type').value;
+  const name = document.getElementById('a-name').value.trim() || undefined;
+  const task = document.getElementById('a-task').value.trim() || undefined;
+  const el = document.getElementById('a-results');
+  el.innerHTML = '<div class="empty-state">Spawning...</div>';
+  try {
+    const res = await callTool('rlmx_agent_spawn', { agent_type: type, name, task });
+    const data = JSON.parse(extractText(res));
+    el.innerHTML = `<div class="agent-card"><div class="agent-header"><span class="agent-type-badge" style="color:var(--cyan);background:var(--cyan-glow)">${esc(type)}</span><div class="agent-status"><div class="dot running"></div>${esc(data.status || 'spawned')}</div></div><div class="agent-name">${esc(data.agent_id || '?')}</div></div>`;
+    setTimeout(doAgentList, 500);
+  } catch (e) { el.innerHTML = `<div class="data-card"><div class="data-card-value text-red">${esc(e.message)}</div></div>`; }
+}
+
+async function doAgentList() {
+  const el = document.getElementById('a-results');
+  el.innerHTML = '<div class="empty-state">Loading...</div>';
+  let data;
+  try {
+    const res = await callTool('rlmx_agent_list', {});
+    data = JSON.parse(extractText(res));
+    if (!(data.agents || []).length) data = null;
+  } catch {}
+  if (!data) data = DemoData.agentList();
+  const agents = data.agents || [];
+  if (agents.length === 0) { el.innerHTML = '<div class="empty-state"><div class="icon">&#x2726;</div>No agents running</div>'; return; }
+  el.innerHTML = agents.map(a => `
+    <div class="agent-card">
+      <div class="agent-header">
+        <span class="agent-type-badge" style="color:var(--violet);background:var(--violet-glow)">${esc(a.agent_type || '?')}</span>
+        <div class="agent-status"><div class="dot ${a.status === 'Running' || a.status === 'running' ? 'running' : 'idle'}"></div>${esc(a.status || '?')}</div>
+      </div>
+      <div class="agent-name">${esc(a.name || a.agent_id || '?')}</div>
+      <div class="agent-meta">
+        ID: ${esc(a.agent_id || '?')} &middot; Zone: ${esc(a.zone || '?')}${a.task ? '<br>Task: ' + esc(a.task) : ''}
+        ${a.metrics ? '<br>Tasks: ' + a.metrics.tasks_completed + ' &middot; CPU: ' + (a.metrics.cpu_usage_pct||0).toFixed(1) + '% &middot; Mem: ' + (a.metrics.memory_usage_mb||0).toFixed(0) + 'MB' : ''}
+      </div>
+      <button class="btn btn-danger btn-sm mt-sm" onclick="doAgentTerminate('${esc(a.agent_id || '')}')">Terminate</button>
+    </div>`).join('');
+}
+
+async function doAgentTerminate(id) {
+  if (!id) return;
+  await callTool('rlmx_agent_terminate', { agent_id: id });
+  setTimeout(doAgentList, 300);
+}
+
+// ── Memory Actions ───────────────────────────────────
+async function doQuery() {
+  const input = document.getElementById('q-input').value.trim();
+  if (!input) return;
+  const el = document.getElementById('q-results');
+  el.innerHTML = '<div class="empty-state">Searching...</div>';
+  try {
+    const res = await callTool('rlmx_query', { query: input });
+    const parsed = JSON.parse(extractText(res));
+    if (parsed.results && parsed.results.length > 0) {
+      el.innerHTML = parsed.results.map(r => `
+        <div class="data-card">
+          <div class="data-card-label">Match</div>
+          <div class="score">${(r.relevance_score ?? 0).toFixed(4)}</div>
+          <div class="data-card-value">${esc(r.content || JSON.stringify(r))}</div>
+          <div class="data-card-meta">Tier: ${esc(r.tier || '?')} &middot; ID: ${esc(r.segment_id || '?')}</div>
+        </div>`).join('') +
+        `<div class="text-xs text-dim mt-sm">${parsed.segments_returned} result(s) from ${parsed.total_segments_scanned} segments in ${parsed.latency_ms}ms &middot; Strategy: ${parsed.strategy_used}</div>`;
+    } else { el.innerHTML = `<div class="empty-state">No results (scanned ${parsed.total_segments_scanned || 0} segments)</div>`; }
+  } catch (e) { el.innerHTML = `<div class="data-card"><div class="data-card-value text-red">${esc(e.message)}</div></div>`; }
+}
+
+async function doIngest() {
+  const input = document.getElementById('i-input').value.trim();
+  if (!input) return;
+  const el = document.getElementById('i-results');
+  el.innerHTML = '<div class="empty-state">Ingesting...</div>';
+  try {
+    const res = await callTool('rlmx_ingest', { data: input, plugin: 'text' });
+    const parsed = JSON.parse(extractText(res));
+    el.innerHTML = `<div class="data-card"><div class="data-card-label">Ingested</div><div class="data-card-value text-green">${parsed.segments_created} segment(s) created</div><div class="data-card-meta">IDs: ${(parsed.segment_ids || []).join(', ')}</div></div>`;
+  } catch (e) { el.innerHTML = `<div class="data-card"><div class="data-card-value text-red">${esc(e.message)}</div></div>`; }
+}
+
+async function doStats() {
+  const el = document.getElementById('s-results');
+  el.innerHTML = '<div class="empty-state">Loading...</div>';
+  let s;
+  try {
+    const res = await callTool('rlmx_memory_stats', {});
+    s = JSON.parse(extractText(res));
+    if (!s.total_segments && !s.total) s = null;
+  } catch {}
+  if (!s) s = DemoData.memoryStats();
+  el.innerHTML = `<div class="metric-grid">
+    <div class="metric-card"><div class="metric-label">Total Segments</div><div class="metric-value cyan">${s.total_segments ?? s.total ?? 0}</div></div>
+    <div class="metric-card"><div class="metric-label">Hot</div><div class="metric-value green">${s.hot ?? 0}</div></div>
+    <div class="metric-card"><div class="metric-label">Warm</div><div class="metric-value amber">${s.warm ?? 0}</div></div>
+    <div class="metric-card"><div class="metric-label">Cold</div><div class="metric-value">${s.cold ?? 0}</div></div>
+    <div class="metric-card"><div class="metric-label">Dimensions</div><div class="metric-value violet">${s.dimensions ?? 64}</div></div>
+  </div>`;
+}
+
+async function doGraph() {
+  const input = document.getElementById('g-input').value.trim();
+  if (!input) return;
+  const el = document.getElementById('g-results');
+  el.innerHTML = '<div class="empty-state">Running...</div>';
+  try {
+    const res = await callTool('rlmx_graph_query', { cypher: input });
+    el.innerHTML = `<pre class="json-output">${esc(extractText(res))}</pre>`;
+  } catch (e) { el.innerHTML = `<pre class="json-output text-red">${esc(e.message)}</pre>`; }
+}
+
+// ── Force-directed Graph ─────────────────────────────
+let forceGraphRaf = null;
+function renderForceGraph() {
+  if (forceGraphRaf) { cancelAnimationFrame(forceGraphRaf); forceGraphRaf = null; }
+  const c = document.getElementById('force-graph');
+  if (!c) return;
+  const ctx = c.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = c.getBoundingClientRect();
+  c.width = rect.width * dpr; c.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+
+  const g = DemoData.getGraph();
+  const nodes = g.nodes.map(n => ({ ...n, x: n.x || W/2 + (Math.random()-0.5)*200, y: n.y || H/2 + (Math.random()-0.5)*200, vx:0, vy:0 }));
+  const edges = g.edges;
+  const info = document.getElementById('g-info');
+  if (info) info.textContent = `${nodes.length} nodes · ${edges.length} edges`;
+
+  let dragNode = null, mx = 0, my = 0;
+  c.onmousedown = e => {
+    const r = c.getBoundingClientRect();
+    mx = e.clientX - r.left; my = e.clientY - r.top;
+    dragNode = nodes.find(n => Math.hypot(n.x-mx, n.y-my) < 18) || null;
+  };
+  c.onmousemove = e => {
+    const r = c.getBoundingClientRect();
+    mx = e.clientX - r.left; my = e.clientY - r.top;
+    if (dragNode) { dragNode.x = mx; dragNode.y = my; dragNode.vx = 0; dragNode.vy = 0; }
+  };
+  c.onmouseup = () => { dragNode = null; };
+
+  function step() {
+    // Repulsion
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i+1; j < nodes.length; j++) {
+        let dx = nodes[i].x - nodes[j].x, dy = nodes[i].y - nodes[j].y;
+        let d = Math.sqrt(dx*dx + dy*dy) || 1;
+        let f = 3000 / (d * d);
+        nodes[i].vx += dx/d * f; nodes[i].vy += dy/d * f;
+        nodes[j].vx -= dx/d * f; nodes[j].vy -= dy/d * f;
+      }
+    }
+    // Attraction
+    for (const e of edges) {
+      const a = nodes[e.source], b = nodes[e.target];
+      if (!a || !b) continue;
+      let dx = b.x - a.x, dy = b.y - a.y;
+      let d = Math.sqrt(dx*dx + dy*dy) || 1;
+      let f = (d - 80) * 0.01;
+      a.vx += dx/d * f; a.vy += dy/d * f;
+      b.vx -= dx/d * f; b.vy -= dy/d * f;
+    }
+    // Center gravity
+    for (const n of nodes) {
+      n.vx += (W/2 - n.x) * 0.001;
+      n.vy += (H/2 - n.y) * 0.001;
+    }
+    // Integrate + damp
+    for (const n of nodes) {
+      if (n === dragNode) continue;
+      n.vx *= 0.85; n.vy *= 0.85;
+      n.x += n.vx; n.y += n.vy;
+      n.x = Math.max(30, Math.min(W-30, n.x));
+      n.y = Math.max(30, Math.min(H-30, n.y));
+    }
+  }
+
+  function draw() {
+    step();
+    ctx.clearRect(0, 0, W, H);
+    // Edges
+    ctx.lineWidth = 1;
+    for (const e of edges) {
+      const a = nodes[e.source], b = nodes[e.target];
+      if (!a || !b) continue;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+      ctx.strokeStyle = 'rgba(122,132,158,0.3)'; ctx.stroke();
+    }
+    // Nodes
+    for (const n of nodes) {
+      // Glow
+      ctx.beginPath(); ctx.arc(n.x, n.y, 16, 0, Math.PI*2);
+      ctx.fillStyle = (n.color || '#00e5ff') + '15'; ctx.fill();
+      // Circle
+      ctx.beginPath(); ctx.arc(n.x, n.y, 10, 0, Math.PI*2);
+      ctx.fillStyle = (n.color || '#00e5ff') + '40'; ctx.fill();
+      ctx.strokeStyle = n.color || '#00e5ff'; ctx.lineWidth = 1.5; ctx.stroke();
+      // Label
+      ctx.fillStyle = '#d8dce8'; ctx.font = '10px JetBrains Mono, monospace'; ctx.textAlign = 'center';
+      ctx.fillText(n.label, n.x, n.y + 22);
+    }
+    // Hover highlight
+    const hover = nodes.find(n => Math.hypot(n.x-mx, n.y-my) < 18);
+    if (hover) {
+      ctx.beginPath(); ctx.arc(hover.x, hover.y, 14, 0, Math.PI*2);
+      ctx.strokeStyle = hover.color || '#00e5ff'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.fillStyle = '#d8dce8'; ctx.font = 'bold 11px JetBrains Mono'; ctx.textAlign = 'center';
+      ctx.fillText(hover.label, hover.x, hover.y - 18);
+      ctx.font = '9px JetBrains Mono'; ctx.fillStyle = '#7a849e';
+      ctx.fillText(hover.type, hover.x, hover.y + 34);
+    }
+    forceGraphRaf = requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+// ── Edge AI Actions ──────────────────────────────────
+function renderEdgeCaps() {
+  const el = document.getElementById('e-caps');
+  if (!el) return;
+  const dot = (ok) => `<span style="color:${ok ? 'var(--green)' : 'var(--red)'}">${ok ? 'Yes' : 'No'}</span>`;
+  el.innerHTML = `
+    <div class="metric-card"><div class="metric-label">WASM</div><div class="metric-value">${dot(edgeCaps.wasm)}</div></div>
+    <div class="metric-card"><div class="metric-label">SIMD</div><div class="metric-value">${dot(edgeCaps.simd)}</div></div>
+    <div class="metric-card"><div class="metric-label">WebGPU</div><div class="metric-value">${dot(edgeCaps.webgpu)}</div></div>
+    <div class="metric-card"><div class="metric-label">SharedArrayBuffer</div><div class="metric-value">${dot(edgeCaps.sharedMem)}</div></div>
+    <div class="metric-card"><div class="metric-label">Web Workers</div><div class="metric-value">${dot(edgeCaps.workers)}</div></div>
+    <div class="metric-card"><div class="metric-label">Mode</div><div class="metric-value cyan" style="font-size:0.9rem">${edgeCaps.mode}</div></div>`;
+}
+
+async function doEdgeStatus() {
+  const el = document.getElementById('e-status');
+  el.innerHTML = '<div class="empty-state">Querying...</div>';
+  try {
+    const res = await callTool('rlmx_edge_status', {});
+    const s = JSON.parse(extractText(res));
+    if (s.status === 'unavailable') {
+      el.innerHTML = `<div class="data-card"><div class="data-card-label">Server Engine</div><div class="data-card-value text-dim">${esc(s.message || 'Not configured')}</div></div>`;
+    } else {
+      el.innerHTML = `<div class="data-card"><div class="data-card-label">Server Engine <span class="text-green">${esc(s.status)}</span></div><div class="data-card-value">Model: ${esc(s.model || 'none')}</div><div class="data-card-meta">Backend: ${esc(s.backend || '?')} &middot; Memory: ${s.memory_usage_mb ?? 0} MB &middot; Threads: ${s.threads ?? '?'}</div></div>`;
+    }
+  } catch (e) { el.innerHTML = `<div class="data-card"><div class="data-card-value text-red">${esc(e.message)}</div></div>`; }
+}
+
+async function doEdgeGenerate() {
+  const prompt = document.getElementById('e-prompt').value.trim();
+  if (!prompt) return;
+  const maxTokens = parseInt(document.getElementById('e-max-tokens').value) || 256;
+  const el = document.getElementById('e-results');
+  el.innerHTML = '<div class="empty-state">Generating...</div>';
+  try {
+    const res = await callTool('rlmx_edge_generate', { prompt, max_tokens: maxTokens });
+    const parsed = JSON.parse(extractText(res));
+    if (parsed.status === 'ok') {
+      el.innerHTML = `<div class="data-card"><div class="data-card-label">Generated</div><div class="data-card-value">${esc(parsed.text)}</div><div class="data-card-meta">Model: ${esc(parsed.model || '?')} &middot; Tokens: ${parsed.tokens_generated ?? 0} &middot; ${parsed.latency_ms ?? 0}ms</div></div>`;
+    } else {
+      el.innerHTML = `<div class="data-card"><div class="data-card-value text-dim">${esc(parsed.message || parsed.status)}</div></div>`;
+    }
+  } catch (e) { el.innerHTML = `<div class="data-card"><div class="data-card-value text-red">${esc(e.message)}</div></div>`; }
+}
+
+async function doFormatChat() {
+  const mod = await loadWasmModule();
+  if (!mod) { document.getElementById('e-chat-output').textContent = 'Load WASM first'; return; }
+  const input = document.getElementById('e-chat-input').value.trim();
+  if (!input) return;
+  try {
+    const tpl = mod.ChatTemplateWasm[document.getElementById('e-template').value]();
+    const msgs = [mod.ChatMessageWasm.system('You are a helpful assistant.'), mod.ChatMessageWasm.user(input)];
+    document.getElementById('e-chat-output').textContent = tpl.format(msgs);
+  } catch (e) { document.getElementById('e-chat-output').textContent = 'Error: ' + e.message; }
+}
+
+// ── WASM / Benchmark ─────────────────────────────────
+async function doWasmInit() {
+  const el = document.getElementById('bench-results');
+  el.innerHTML = '<div class="empty-state">Initializing ruvllm-wasm...</div>';
+  const ok = await initRuvllm();
+  if (ok) {
+    const ver = wasmMod.getVersion ? wasmMod.getVersion() : '?';
+    el.innerHTML = `<div class="data-card"><div class="data-card-label">WASM Engine</div><div class="data-card-value text-green">Initialized</div><div class="data-card-meta">Version: ${esc(String(ver))} &middot; @ruvector/ruvllm-wasm v2.0.2</div></div>`;
+  } else {
+    el.innerHTML = `<div class="data-card"><div class="data-card-value text-red">Failed to initialize WASM engine</div></div>`;
+  }
+}
+
+async function doWasmFeatures() {
+  const mod = await loadWasmModule();
+  const el = document.getElementById('bench-results');
+  if (!mod) { el.innerHTML = '<div class="data-card"><div class="data-card-value text-red">Init WASM first</div></div>'; return; }
+  try {
+    const summary = mod.feature_summary ? mod.feature_summary() : '{}';
+    const capLevel = mod.detect_capability_level ? mod.detect_capability_level() : 'unknown';
+    el.innerHTML = `<div class="data-card"><div class="data-card-label">Capability Level</div><div class="data-card-value text-cyan">${esc(capLevel)}</div></div><pre class="json-output">${esc(JSON.stringify(JSON.parse(summary), null, 2))}</pre>`;
+  } catch (e) { el.innerHTML = `<div class="data-card"><div class="data-card-value text-red">${esc(e.message)}</div></div>`; }
+}
+
+async function doWasmBench() {
+  const mod = await loadWasmModule();
+  const el = document.getElementById('bench-results');
+  if (!mod) { el.innerHTML = '<div class="data-card"><div class="data-card-value text-red">Init WASM first</div></div>'; return; }
+  el.innerHTML = '<div class="empty-state">Running 512x512 matmul...</div>';
+  try {
+    const m = 512, n = 512, k = 512;
+    const a = new Float32Array(m * k).map(() => Math.random());
+    const b = new Float32Array(k * n).map(() => Math.random());
+    const t0 = performance.now();
+    let result, method;
+    if (mod.ParallelInference && mod.supports_parallel_inference && mod.supports_parallel_inference(false)) {
+      try {
+        if (!parallelInf) parallelInf = await new mod.ParallelInference();
+        result = await parallelInf.matmul(a, b, m, n, k);
+        method = `Parallel (${parallelInf.workerCount()} workers)`;
+      } catch (pe) { result = null; method = 'Error: ' + pe.message; }
+    } else { result = null; method = 'No parallel inference'; }
+    const elapsed = performance.now() - t0;
+    const gflops = result ? ((2 * m * n * k) / (elapsed / 1000) / 1e9).toFixed(2) : 'N/A';
+    el.innerHTML = `
+      <div class="metric-grid">
+        <div class="metric-card"><div class="metric-label">Method</div><div class="metric-value" style="font-size:0.9rem">${esc(method)}</div></div>
+        <div class="metric-card"><div class="metric-label">Time</div><div class="metric-value cyan">${elapsed.toFixed(1)}ms</div></div>
+        <div class="metric-card"><div class="metric-label">Throughput</div><div class="metric-value violet">${gflops}</div><div class="metric-sub">GFLOPS</div></div>
+        <div class="metric-card"><div class="metric-label">Result Size</div><div class="metric-value">${result ? result.length : 0}</div><div class="metric-sub">floats</div></div>
+      </div>`;
+  } catch (e) { el.innerHTML = `<div class="data-card"><div class="data-card-value text-red">${esc(e.message)}</div></div>`; }
+}
+
+// ── Compute Pool ─────────────────────────────────────
+let computePoolActive = false;
+
+function renderComputeCaps() {
+  const el = document.getElementById('cp-caps');
+  if (!el) return;
+  const dot = (ok) => ok ? '<span class="text-green">&#x2713;</span>' : '<span class="text-red">&#x2715;</span>';
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;font-size:0.72rem">
+      <div>WASM ${dot(edgeCaps.wasm)}</div><div>SIMD ${dot(edgeCaps.simd)}</div><div>WebGPU ${dot(edgeCaps.webgpu)}</div>
+      <div>SharedMem ${dot(edgeCaps.sharedMem)}</div><div>Workers ${dot(edgeCaps.workers)}</div><div>Mode: <span class="text-cyan">${edgeCaps.mode}</span></div>
+    </div>`;
+}
+
+function renderComputeGrid() {
+  const el = document.getElementById('cp-grid');
+  if (!el) return;
+  let cells = '';
+  for (let i = 0; i < 24; i++) {
+    const active = computePoolActive && i === 0;
+    cells += `<div class="pool-cell ${active ? 'active' : ''}">${active ? '&#x26A1;' : ''}</div>`;
+  }
+  el.innerHTML = cells;
+}
+
+function toggleComputePool() {
+  computePoolActive = !computePoolActive;
+  const btn = document.getElementById('cp-join-btn');
+  btn.textContent = computePoolActive ? 'Leave Pool' : 'Join as Worker';
+  btn.className = computePoolActive ? 'btn btn-danger' : 'btn btn-primary';
+  renderComputeGrid();
+  renderComputeCaps();
+}
+
+function refreshComputePool() {
+  const el = document.getElementById('cp-metrics');
+  if (!el) return;
+  el.innerHTML = `
+    <div class="metric-card"><div class="metric-label">Pool Workers</div><div class="metric-value cyan">${computePoolActive ? 1 : 0}</div><div class="metric-sub">this tab: ${computePoolActive ? 'active' : 'idle'}</div></div>
+    <div class="metric-card"><div class="metric-label">Tasks Completed</div><div class="metric-value">0</div></div>
+    <div class="metric-card"><div class="metric-label">Mode</div><div class="metric-value" style="font-size:0.9rem">${edgeCaps.mode}</div></div>`;
+}
+
+// ── Research Actions ─────────────────────────────────
+async function doResearchStart() {
+  const topic = document.getElementById('r-topic').value.trim();
+  if (!topic) return;
+  const hyp = parseInt(document.getElementById('r-hyp').value) || 3;
+  const el = document.getElementById('re-results');
+  el.innerHTML = '<div class="empty-state">Starting...</div>';
+  try {
+    const res = await callTool('rlmx_research_start', { topic, hypotheses: hyp });
+    const data = JSON.parse(extractText(res));
+    el.innerHTML = `<div class="data-card"><div class="data-card-label">Research Started</div><div class="data-card-value">${esc(data.topic || topic)}</div><div class="data-card-meta">ID: ${esc(data.research_id || '?')} &middot; Hypotheses: ${data.hypotheses || hyp}</div><div class="fitness-bar mt-sm"><div class="fitness-fill" style="width:5%"></div></div></div>`;
+  } catch (e) { el.innerHTML = `<div class="data-card"><div class="data-card-value text-red">${esc(e.message)}</div></div>`; }
+}
+
+async function doExperimentList() {
+  const el = document.getElementById('re-results');
+  el.innerHTML = '<div class="empty-state">Loading...</div>';
+  let data;
+  try {
+    const res = await callTool('rlmx_experiment_list', {});
+    data = JSON.parse(extractText(res));
+    if (!(data.experiments || []).length) data = null;
+  } catch {}
+  if (!data) data = DemoData.experimentList();
+  const exps = data.experiments || [];
+  if (!exps.length) { el.innerHTML = '<div class="empty-state"><div class="icon">&#x2740;</div>No experiments yet</div>'; return; }
+  el.innerHTML = exps.map(e => `
+    <div class="data-card">
+      <div class="data-card-label">Experiment <span class="score">${esc(e.status || '?')}</span></div>
+      <div class="data-card-value">${esc(e.hypothesis || e.id || '?')}</div>
+      <div class="data-card-meta">Fitness: ${(e.fitness || 0).toFixed(4)} &middot; Gen: ${e.generation || 0}${e.mutations ? ' &middot; Mutations: ' + e.mutations : ''}</div>
+      <div class="fitness-bar"><div class="fitness-fill" style="width:${Math.min((e.fitness || 0) * 100, 100)}%"></div></div>
+    </div>`).join('');
+}
+
+async function doMutationHistory() {
+  const el = document.getElementById('mut-results');
+  el.innerHTML = '<div class="empty-state">Loading...</div>';
+  let data;
+  try {
+    const res = await callTool('rlmx_mutation_history', { limit: 20 });
+    data = JSON.parse(extractText(res));
+    if (!(data.mutations || []).length) data = null;
+  } catch {}
+  if (!data) data = DemoData.mutationHistory();
+  const muts = data.mutations || [];
+  if (!muts.length) { el.innerHTML = '<pre class="json-output">No mutations</pre>'; return; }
+  el.innerHTML = muts.map(m => `
+    <div class="data-card">
+      <div class="data-card-label">Generation ${m.generation || '?'} <span class="score">${(m.fitness || 0).toFixed(4)}</span></div>
+      <div class="data-card-value">Fitness: ${(m.fitness || 0).toFixed(4)}</div>
+      <div class="data-card-meta">${m.timestamp ? new Date(m.timestamp).toLocaleTimeString() : ''} &middot; ${m.delta ? 'Thresholds: ' + (m.delta.routing_thresholds || '') : ''}</div>
+      <div class="fitness-bar"><div class="fitness-fill" style="width:${Math.min((m.fitness || 0) * 100, 100)}%"></div></div>
+    </div>`).join('');
+}
+
+// ── Event Stream ─────────────────────────────────────
+function renderEventStream() {
+  const el = document.getElementById('event-list');
+  if (!el) return;
+  if (wsEvents.length === 0) { el.innerHTML = '<div class="empty-state">Waiting for WebSocket events on ws://127.0.0.1:3001...</div>'; return; }
+  el.innerHTML = wsEvents.slice(0, 50).map(e => {
+    const evtType = e.event_type || e.type || 'unknown';
+    let cls = 'node';
+    if (evtType.includes('Agent')) cls = 'agent';
+    else if (evtType.includes('Health')) cls = 'health';
+    else if (evtType.includes('Experiment')) cls = 'research';
+    else if (evtType.includes('Mutation')) cls = 'mutation';
+    return `<div class="event-entry"><span class="event-ts">${e.ts}</span><span class="event-type ${cls}">${esc(evtType)}</span><span class="event-detail">${esc(JSON.stringify(e.data || e.payload || {}))}</span></div>`;
+  }).join('');
+}
+
+// ── MCP Tools ────────────────────────────────────────
+async function doListTools() {
+  const el = document.getElementById('t-results');
+  el.innerHTML = '<div class="empty-state">Loading...</div>';
+  try {
+    const res = await rpc('tools/list', {});
+    const tools = res?.result?.tools ?? [];
+    if (!tools.length) { el.innerHTML = '<div class="empty-state">No tools returned</div>'; return; }
+    el.innerHTML = tools.map(t => `
+      <div class="data-card">
+        <div class="data-card-label">MCP Tool</div>
+        <div class="data-card-value text-cyan" style="font-weight:600">${esc(t.name)}</div>
+        <div class="data-card-meta">${esc(t.description || '')}</div>
+      </div>`).join('');
+  } catch (e) { el.innerHTML = `<div class="data-card"><div class="data-card-value text-red">${esc(e.message)}</div></div>`; }
+}
+
+async function doRaw() {
+  const method = document.getElementById('r-method').value.trim();
+  if (!method) return;
+  let params = {};
+  const raw = document.getElementById('r-params').value.trim();
+  if (raw) { try { params = JSON.parse(raw); } catch { alert('Invalid JSON'); return; } }
+  const el = document.getElementById('r-result');
+  el.textContent = 'Sending...';
+  try {
+    const res = await rpc(method, params);
+    el.textContent = JSON.stringify(res, null, 2);
+  } catch (e) { el.textContent = 'Error: ' + e.message; }
+}
+
+function renderLog() {
+  const el = document.getElementById('l-results');
+  if (!el) return;
+  if (logs.length === 0) { el.innerHTML = '<div class="empty-state"><div class="icon">&#x2261;</div>No requests yet</div>'; return; }
+  el.innerHTML = `<table class="log-table"><thead><tr><th>Time</th><th>Method</th><th>Status</th></tr></thead><tbody>${
+    logs.map(l => `<tr><td>${l.ts}</td><td class="log-method">${esc(l.method)}</td><td class="${l.response?.error ? 'log-err' : 'log-ok'}">${l.response ? (l.response.error ? 'ERR' : 'OK') : '...'}</td></tr>`).join('')
+  }</tbody></table>`;
+}
+
+// ── Utility ──────────────────────────────────────────
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+// ── Rail Navigation ──────────────────────────────────
+document.querySelectorAll('.rail-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchSection(btn.dataset.section));
+});
+
+// ── Initialize ───────────────────────────────────────
+detectEdgeCapabilities();
+initBgCanvas();
+DemoData.init();
+TabCoord.init();
+switchSection('swarm');
+connect();
+connectWS();
+SimEngine.start();
+</script>
+</body>
+</html>

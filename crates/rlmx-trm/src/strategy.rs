@@ -186,7 +186,9 @@ mod tests {
             ..TrmConfig::default()
         };
 
-        let result = strategy.execute(input, config).expect("execute should succeed");
+        let result = strategy
+            .execute(input, config)
+            .expect("execute should succeed");
         assert!(result.prediction < 3);
         assert!(result.confidence > 0.0 && result.confidence <= 1.0);
         assert_eq!(result.probabilities.len(), 3);

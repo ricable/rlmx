@@ -73,11 +73,7 @@ impl BranchManager {
     /// This is a simple append-based merge: new segments from the branch are
     /// added to the target. Modified segment tracking is recorded but
     /// conflict resolution is left to higher-level logic.
-    pub fn merge(
-        &mut self,
-        branch_name: &str,
-        target: &mut RvfContainer,
-    ) -> Result<(), RvfError> {
+    pub fn merge(&mut self, branch_name: &str, target: &mut RvfContainer) -> Result<(), RvfError> {
         let branch = self
             .branches
             .get(branch_name)

@@ -76,8 +76,8 @@ impl CapabilityManager {
 
     /// Compute HMAC-SHA256 signature for a token.
     fn sign(&self, token: &CapabilityToken) -> String {
-        let mut mac = HmacSha256::new_from_slice(&self.signing_key)
-            .expect("HMAC accepts any key length");
+        let mut mac =
+            HmacSha256::new_from_slice(&self.signing_key).expect("HMAC accepts any key length");
         mac.update(&token.signing_payload());
         hex::encode(mac.finalize().into_bytes())
     }
@@ -85,8 +85,8 @@ impl CapabilityManager {
     /// Verify that a token's signature is valid.
     fn verify_signature(&self, token: &CapabilityToken) -> bool {
         // Constant-time comparison via hmac verify
-        let mut mac = HmacSha256::new_from_slice(&self.signing_key)
-            .expect("HMAC accepts any key length");
+        let mut mac =
+            HmacSha256::new_from_slice(&self.signing_key).expect("HMAC accepts any key length");
         mac.update(&token.signing_payload());
         let sig_bytes = match hex::decode(&token.issuer_signature) {
             Ok(b) => b,
@@ -137,9 +137,7 @@ impl CapabilityManager {
             .ok_or_else(|| KernelError::CapabilityDenied("unknown token".into()))?;
 
         if token.owner != *owner {
-            return Err(KernelError::CapabilityDenied(
-                "token owner mismatch".into(),
-            ));
+            return Err(KernelError::CapabilityDenied("token owner mismatch".into()));
         }
 
         if !self.verify_signature(token) {
@@ -260,8 +258,12 @@ mod tests {
             Duration::hours(1),
         );
 
-        assert!(mgr.validate(&token.id, &owner, &SyscallPermission::VecInsert).is_ok());
-        assert!(mgr.validate(&token.id, &owner, &SyscallPermission::VecSearch).is_ok());
+        assert!(mgr
+            .validate(&token.id, &owner, &SyscallPermission::VecInsert)
+            .is_ok());
+        assert!(mgr
+            .validate(&token.id, &owner, &SyscallPermission::VecSearch)
+            .is_ok());
         assert!(mgr
             .validate(&token.id, &owner, &SyscallPermission::ProcessFork)
             .is_err());
@@ -279,7 +281,9 @@ mod tests {
             Duration::hours(1),
         );
 
-        assert!(mgr.validate(&token.id, &wrong_owner, &SyscallPermission::VecInsert).is_err());
+        assert!(mgr
+            .validate(&token.id, &wrong_owner, &SyscallPermission::VecInsert)
+            .is_err());
     }
 
     #[test]
@@ -313,12 +317,16 @@ mod tests {
             Duration::hours(1),
         );
 
-        assert!(mgr.validate(&token.id, &owner, &SyscallPermission::VecInsert).is_ok());
+        assert!(mgr
+            .validate(&token.id, &owner, &SyscallPermission::VecInsert)
+            .is_ok());
 
         mgr.revoke(&token.id);
 
         // Token should be revoked and removed from tokens map
-        assert!(mgr.validate(&token.id, &owner, &SyscallPermission::VecInsert).is_err());
+        assert!(mgr
+            .validate(&token.id, &owner, &SyscallPermission::VecInsert)
+            .is_err());
         assert!(mgr.get_token(&token.id).is_none());
     }
 
@@ -345,8 +353,12 @@ mod tests {
             )
             .unwrap();
 
-        assert!(mgr.validate(&child.id, &child_owner, &SyscallPermission::VecInsert).is_ok());
-        assert!(mgr.validate(&child.id, &child_owner, &SyscallPermission::VecSearch).is_err());
+        assert!(mgr
+            .validate(&child.id, &child_owner, &SyscallPermission::VecInsert)
+            .is_ok());
+        assert!(mgr
+            .validate(&child.id, &child_owner, &SyscallPermission::VecSearch)
+            .is_err());
 
         // Child requests ProcessFork which parent does not have -- should fail.
         let bad = mgr.derive_child_token(

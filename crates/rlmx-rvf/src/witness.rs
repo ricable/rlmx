@@ -104,7 +104,9 @@ impl WitnessChain {
         };
 
         self.entries.push(entry);
-        self.entries.last().expect("entries is non-empty after push")
+        self.entries
+            .last()
+            .expect("entries is non-empty after push")
     }
 
     /// Verify the hash-chain integrity (each entry's `prev_hash` matches).
@@ -172,6 +174,7 @@ impl Default for WitnessChain {
 /// Build a canonical byte payload for signing / verifying.
 ///
 /// Covers ALL fields so that tampering with any field is detectable.
+#[allow(clippy::too_many_arguments)]
 fn canonical_payload(
     id: &Uuid,
     timestamp: &DateTime<Utc>,

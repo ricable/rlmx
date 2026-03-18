@@ -67,9 +67,8 @@ impl TrmModel {
         let scale1 = (2.0 / concat_dim as f64).sqrt();
         let scale2 = (2.0 / hidden_dim as f64).sqrt();
 
-        let w1 = Array2::from_shape_fn((concat_dim, hidden_dim), |_| {
-            rng.gen_range(-scale1..scale1)
-        });
+        let w1 =
+            Array2::from_shape_fn((concat_dim, hidden_dim), |_| rng.gen_range(-scale1..scale1));
         let b1 = Array1::zeros(hidden_dim);
 
         let w2 = Array2::from_shape_fn((hidden_dim, config.output_classes), |_| {
@@ -115,7 +114,12 @@ impl TrmModel {
     /// 2. Hidden = ReLU(concat . W1 + b1).
     /// 3. new_y = softmax(hidden . W2 + b2).
     /// 4. new_z = ReLU(hidden . Wz + bz).
-    pub fn forward(&self, x: &Array1<f64>, y: &Array1<f64>, z: &Array1<f64>) -> (Array1<f64>, Array1<f64>) {
+    pub fn forward(
+        &self,
+        x: &Array1<f64>,
+        y: &Array1<f64>,
+        z: &Array1<f64>,
+    ) -> (Array1<f64>, Array1<f64>) {
         // Concatenate
         let concat = concatenate(x, y, z);
 

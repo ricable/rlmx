@@ -125,12 +125,7 @@ impl Default for AttentionSelector {
 // Mechanism catalogue
 // ---------------------------------------------------------------------------
 
-fn mech(
-    name: &str,
-    cat: AttentionCategory,
-    desc: &str,
-    best_for: &[&str],
-) -> AttentionMechanism {
+fn mech(name: &str, cat: AttentionCategory, desc: &str, best_for: &[&str]) -> AttentionMechanism {
     AttentionMechanism {
         name: name.to_string(),
         category: cat,
@@ -142,53 +137,244 @@ fn mech(
 fn build_all_mechanisms() -> Vec<AttentionMechanism> {
     vec![
         // --- Standard (5) ---
-        mech("MultiHead", AttentionCategory::Standard, "Standard multi-head self-attention", &["general", "classification"]),
-        mech("Cross", AttentionCategory::Standard, "Cross-attention between encoder and decoder", &["translation", "cross-modal"]),
-        mech("GroupedQuery", AttentionCategory::Standard, "Grouped-query attention for efficiency", &["general", "inference"]),
-        mech("MultiQuery", AttentionCategory::Standard, "Multi-query attention with shared KV", &["inference", "serving"]),
-        mech("RotaryPositional", AttentionCategory::Standard, "RoPE-enhanced positional attention", &["long-context", "positional"]),
-
+        mech(
+            "MultiHead",
+            AttentionCategory::Standard,
+            "Standard multi-head self-attention",
+            &["general", "classification"],
+        ),
+        mech(
+            "Cross",
+            AttentionCategory::Standard,
+            "Cross-attention between encoder and decoder",
+            &["translation", "cross-modal"],
+        ),
+        mech(
+            "GroupedQuery",
+            AttentionCategory::Standard,
+            "Grouped-query attention for efficiency",
+            &["general", "inference"],
+        ),
+        mech(
+            "MultiQuery",
+            AttentionCategory::Standard,
+            "Multi-query attention with shared KV",
+            &["inference", "serving"],
+        ),
+        mech(
+            "RotaryPositional",
+            AttentionCategory::Standard,
+            "RoPE-enhanced positional attention",
+            &["long-context", "positional"],
+        ),
         // --- Efficient (8) ---
-        mech("Flash", AttentionCategory::Efficient, "FlashAttention: IO-aware exact attention", &["large-context", "training", "inference"]),
-        mech("SlidingWindow", AttentionCategory::Efficient, "Local sliding window attention", &["streaming", "local-context"]),
-        mech("LinearAttention", AttentionCategory::Efficient, "Linear complexity attention via kernel trick", &["long-sequence", "efficient"]),
-        mech("SparseAttention", AttentionCategory::Efficient, "Block-sparse attention patterns", &["long-document", "sparse"]),
-        mech("PagedAttention", AttentionCategory::Efficient, "Paged KV-cache for serving", &["serving", "batched-inference"]),
-        mech("RingAttention", AttentionCategory::Efficient, "Distributed ring attention across devices", &["distributed", "very-long-context"]),
-        mech("ChunkedPrefill", AttentionCategory::Efficient, "Chunked prefill for memory efficiency", &["prefill", "memory-constrained"]),
-        mech("SpeculativePrefill", AttentionCategory::Efficient, "Speculative decoding attention", &["speculative", "fast-decode"]),
-
+        mech(
+            "Flash",
+            AttentionCategory::Efficient,
+            "FlashAttention: IO-aware exact attention",
+            &["large-context", "training", "inference"],
+        ),
+        mech(
+            "SlidingWindow",
+            AttentionCategory::Efficient,
+            "Local sliding window attention",
+            &["streaming", "local-context"],
+        ),
+        mech(
+            "LinearAttention",
+            AttentionCategory::Efficient,
+            "Linear complexity attention via kernel trick",
+            &["long-sequence", "efficient"],
+        ),
+        mech(
+            "SparseAttention",
+            AttentionCategory::Efficient,
+            "Block-sparse attention patterns",
+            &["long-document", "sparse"],
+        ),
+        mech(
+            "PagedAttention",
+            AttentionCategory::Efficient,
+            "Paged KV-cache for serving",
+            &["serving", "batched-inference"],
+        ),
+        mech(
+            "RingAttention",
+            AttentionCategory::Efficient,
+            "Distributed ring attention across devices",
+            &["distributed", "very-long-context"],
+        ),
+        mech(
+            "ChunkedPrefill",
+            AttentionCategory::Efficient,
+            "Chunked prefill for memory efficiency",
+            &["prefill", "memory-constrained"],
+        ),
+        mech(
+            "SpeculativePrefill",
+            AttentionCategory::Efficient,
+            "Speculative decoding attention",
+            &["speculative", "fast-decode"],
+        ),
         // --- Topological (8) ---
-        mech("Topological", AttentionCategory::Topological, "Topology-aware attention over graph structures", &["graph", "topology"]),
-        mech("GraphAttention", AttentionCategory::Topological, "GAT-style attention on graph nodes", &["graph", "node-classification"]),
-        mech("Poincare", AttentionCategory::Topological, "Hyperbolic Poincare-ball attention", &["hierarchical", "taxonomy"]),
-        mech("HyperbolicNeighborhood", AttentionCategory::Topological, "Neighborhood attention in hyperbolic space", &["hierarchical", "embedding"]),
-        mech("SimplicialAttention", AttentionCategory::Topological, "Attention over simplicial complexes", &["higher-order", "topology"]),
-        mech("PersistenceWeighted", AttentionCategory::Topological, "Persistence-diagram weighted attention", &["topological-features", "stability"]),
-        mech("SpectralAttention", AttentionCategory::Topological, "Spectral-domain graph attention", &["frequency", "graph-signal"]),
-        mech("CellularSheaf", AttentionCategory::Topological, "Sheaf-theoretic cellular attention", &["heterogeneous-graph", "sheaf"]),
-
+        mech(
+            "Topological",
+            AttentionCategory::Topological,
+            "Topology-aware attention over graph structures",
+            &["graph", "topology"],
+        ),
+        mech(
+            "GraphAttention",
+            AttentionCategory::Topological,
+            "GAT-style attention on graph nodes",
+            &["graph", "node-classification"],
+        ),
+        mech(
+            "Poincare",
+            AttentionCategory::Topological,
+            "Hyperbolic Poincare-ball attention",
+            &["hierarchical", "taxonomy"],
+        ),
+        mech(
+            "HyperbolicNeighborhood",
+            AttentionCategory::Topological,
+            "Neighborhood attention in hyperbolic space",
+            &["hierarchical", "embedding"],
+        ),
+        mech(
+            "SimplicialAttention",
+            AttentionCategory::Topological,
+            "Attention over simplicial complexes",
+            &["higher-order", "topology"],
+        ),
+        mech(
+            "PersistenceWeighted",
+            AttentionCategory::Topological,
+            "Persistence-diagram weighted attention",
+            &["topological-features", "stability"],
+        ),
+        mech(
+            "SpectralAttention",
+            AttentionCategory::Topological,
+            "Spectral-domain graph attention",
+            &["frequency", "graph-signal"],
+        ),
+        mech(
+            "CellularSheaf",
+            AttentionCategory::Topological,
+            "Sheaf-theoretic cellular attention",
+            &["heterogeneous-graph", "sheaf"],
+        ),
         // --- Temporal (9) ---
-        mech("CausalCone", AttentionCategory::Temporal, "Causal-cone attention respecting time ordering", &["causal", "temporal"]),
-        mech("CriticalPath", AttentionCategory::Temporal, "Attention along critical execution paths", &["scheduling", "critical-path"]),
-        mech("TemporalConvolution", AttentionCategory::Temporal, "Temporal convolution attention", &["time-series", "sequence"]),
-        mech("RecurrentAttention", AttentionCategory::Temporal, "Recurrent gated attention", &["recurrent", "stateful"]),
-        mech("DeltaTime", AttentionCategory::Temporal, "Delta-time weighted attention", &["irregular-time", "event-stream"]),
-        mech("HawkesProcess", AttentionCategory::Temporal, "Hawkes-process intensity attention", &["event", "self-exciting"]),
-        mech("CausalMask", AttentionCategory::Temporal, "Standard causal masking attention", &["autoregressive", "generation"]),
-        mech("RetentiveAttention", AttentionCategory::Temporal, "Retention-based recurrent attention", &["long-context", "recurrent"]),
-        mech("TemporalDifference", AttentionCategory::Temporal, "TD-learning inspired attention", &["reinforcement", "value-estimation"]),
-
+        mech(
+            "CausalCone",
+            AttentionCategory::Temporal,
+            "Causal-cone attention respecting time ordering",
+            &["causal", "temporal"],
+        ),
+        mech(
+            "CriticalPath",
+            AttentionCategory::Temporal,
+            "Attention along critical execution paths",
+            &["scheduling", "critical-path"],
+        ),
+        mech(
+            "TemporalConvolution",
+            AttentionCategory::Temporal,
+            "Temporal convolution attention",
+            &["time-series", "sequence"],
+        ),
+        mech(
+            "RecurrentAttention",
+            AttentionCategory::Temporal,
+            "Recurrent gated attention",
+            &["recurrent", "stateful"],
+        ),
+        mech(
+            "DeltaTime",
+            AttentionCategory::Temporal,
+            "Delta-time weighted attention",
+            &["irregular-time", "event-stream"],
+        ),
+        mech(
+            "HawkesProcess",
+            AttentionCategory::Temporal,
+            "Hawkes-process intensity attention",
+            &["event", "self-exciting"],
+        ),
+        mech(
+            "CausalMask",
+            AttentionCategory::Temporal,
+            "Standard causal masking attention",
+            &["autoregressive", "generation"],
+        ),
+        mech(
+            "RetentiveAttention",
+            AttentionCategory::Temporal,
+            "Retention-based recurrent attention",
+            &["long-context", "recurrent"],
+        ),
+        mech(
+            "TemporalDifference",
+            AttentionCategory::Temporal,
+            "TD-learning inspired attention",
+            &["reinforcement", "value-estimation"],
+        ),
         // --- Structural (9) ---
-        mech("MinCutGated", AttentionCategory::Structural, "MinCut-gated structural attention", &["partitioning", "structural"]),
-        mech("CommunityAttention", AttentionCategory::Structural, "Community-detection guided attention", &["community", "clustering"]),
-        mech("TreeAttention", AttentionCategory::Structural, "Tree-structured hierarchical attention", &["tree", "ast", "hierarchy"]),
-        mech("AxialAttention", AttentionCategory::Structural, "Axial decomposition attention", &["2d-structure", "image"]),
-        mech("BlockDiagonal", AttentionCategory::Structural, "Block-diagonal sparse attention", &["block-structure", "modular"]),
-        mech("CapsuleAttention", AttentionCategory::Structural, "Capsule-network routing attention", &["part-whole", "compositional"]),
-        mech("CrossScale", AttentionCategory::Structural, "Multi-scale cross-resolution attention", &["multi-scale", "resolution"]),
-        mech("MemoryAugmented", AttentionCategory::Structural, "External memory augmented attention", &["memory", "retrieval"]),
-        mech("MixtureOfExperts", AttentionCategory::Structural, "MoE-routed sparse attention", &["routing", "expert-selection"]),
+        mech(
+            "MinCutGated",
+            AttentionCategory::Structural,
+            "MinCut-gated structural attention",
+            &["partitioning", "structural"],
+        ),
+        mech(
+            "CommunityAttention",
+            AttentionCategory::Structural,
+            "Community-detection guided attention",
+            &["community", "clustering"],
+        ),
+        mech(
+            "TreeAttention",
+            AttentionCategory::Structural,
+            "Tree-structured hierarchical attention",
+            &["tree", "ast", "hierarchy"],
+        ),
+        mech(
+            "AxialAttention",
+            AttentionCategory::Structural,
+            "Axial decomposition attention",
+            &["2d-structure", "image"],
+        ),
+        mech(
+            "BlockDiagonal",
+            AttentionCategory::Structural,
+            "Block-diagonal sparse attention",
+            &["block-structure", "modular"],
+        ),
+        mech(
+            "CapsuleAttention",
+            AttentionCategory::Structural,
+            "Capsule-network routing attention",
+            &["part-whole", "compositional"],
+        ),
+        mech(
+            "CrossScale",
+            AttentionCategory::Structural,
+            "Multi-scale cross-resolution attention",
+            &["multi-scale", "resolution"],
+        ),
+        mech(
+            "MemoryAugmented",
+            AttentionCategory::Structural,
+            "External memory augmented attention",
+            &["memory", "retrieval"],
+        ),
+        mech(
+            "MixtureOfExperts",
+            AttentionCategory::Structural,
+            "MoE-routed sparse attention",
+            &["routing", "expert-selection"],
+        ),
     ]
 }
 

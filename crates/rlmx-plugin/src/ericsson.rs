@@ -366,9 +366,8 @@ impl DomainEvaluator for EricssonRanEvaluator {
         let has_kpi_reference = response.contains("KPI")
             || response.contains("accessibility")
             || response.contains("retainability");
-        let has_parameter_reference = response.contains("CIO")
-            || response.contains("tilt")
-            || response.contains("txPower");
+        let has_parameter_reference =
+            response.contains("CIO") || response.contains("tilt") || response.contains("txPower");
         let has_3gpp_reference =
             response.contains("3GPP") || response.contains("TS 38") || response.contains("TS 36");
 
@@ -382,9 +381,18 @@ impl DomainEvaluator for EricssonRanEvaluator {
             score += 0.1;
         }
 
-        metrics.insert("kpi_reference".to_string(), if has_kpi_reference { 1.0 } else { 0.0 });
-        metrics.insert("parameter_reference".to_string(), if has_parameter_reference { 1.0 } else { 0.0 });
-        metrics.insert("standards_reference".to_string(), if has_3gpp_reference { 1.0 } else { 0.0 });
+        metrics.insert(
+            "kpi_reference".to_string(),
+            if has_kpi_reference { 1.0 } else { 0.0 },
+        );
+        metrics.insert(
+            "parameter_reference".to_string(),
+            if has_parameter_reference { 1.0 } else { 0.0 },
+        );
+        metrics.insert(
+            "standards_reference".to_string(),
+            if has_3gpp_reference { 1.0 } else { 0.0 },
+        );
 
         let feedback = if score >= 0.8 {
             "Response demonstrates strong domain expertise with specific technical references."
@@ -609,11 +617,7 @@ impl IngestAdapter for CsvCounterAdapter {
         // First line is the header.
         let header = match lines.next() {
             Some(h) => h.to_string(),
-            None => {
-                return Err(PluginError::IngestError(
-                    "CSV file is empty".to_string(),
-                ))
-            }
+            None => return Err(PluginError::IngestError("CSV file is empty".to_string())),
         };
 
         for line in lines {

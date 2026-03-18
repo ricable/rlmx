@@ -150,16 +150,16 @@ impl Sona {
         };
         // Evict the lowest-quality pattern if at capacity.
         if self.pattern_bank.patterns.len() >= self.pattern_bank.max_patterns {
-            if let Some((idx, _)) = self
-                .pattern_bank
-                .patterns
-                .iter()
-                .enumerate()
-                .min_by(|(_, a), (_, b)| {
-                    a.result_quality
-                        .partial_cmp(&b.result_quality)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
+            if let Some((idx, _)) =
+                self.pattern_bank
+                    .patterns
+                    .iter()
+                    .enumerate()
+                    .min_by(|(_, a), (_, b)| {
+                        a.result_quality
+                            .partial_cmp(&b.result_quality)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
             {
                 self.pattern_bank.patterns.remove(idx);
                 self.pattern_bank.embeddings.remove(idx);
@@ -172,11 +172,7 @@ impl Sona {
     }
 
     /// Find the `k` most similar patterns to a given query embedding.
-    pub fn find_similar_patterns(
-        &mut self,
-        query_embedding: &[f32],
-        k: usize,
-    ) -> Vec<&Pattern> {
+    pub fn find_similar_patterns(&mut self, query_embedding: &[f32], k: usize) -> Vec<&Pattern> {
         let mut scored: Vec<(usize, f64)> = self
             .pattern_bank
             .embeddings
@@ -204,9 +200,7 @@ impl Sona {
     /// Apply a micro-LoRA adaptation based on feedback.
     pub fn adapt(&mut self, feedback: AdaptationFeedback) -> Result<()> {
         if feedback.rank == 0 {
-            return Err(SonaError::AdaptationFailed(
-                "rank must be > 0".to_string(),
-            ));
+            return Err(SonaError::AdaptationFailed("rank must be > 0".to_string()));
         }
 
         let grad_len = feedback.gradient.len();
@@ -328,6 +322,137 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
 }
 
 // ---------------------------------------------------------------------------
+// Pattern Entry & Pattern Bank (keyword-based)
+// ---------------------------------------------------------------------------
+
+/// A lightweight pattern entry for keyword-based lookup.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PatternEntry {
+    pub id: Uuid,
+    pub query_pattern: String,
+    pub action: String,
+    pub result_quality: f64,
+    pub usage_count: u64,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Summary statistics for [`KeywordPatternBank`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PatternBankStats {
+    pub total_patterns: usize,
+    pub avg_quality: f64,
+    pub most_used: Option<String>,
+    pub capacity_pct: f64,
+}
+
+/// A keyword-based pattern bank with bounded capacity and quality-based eviction.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeywordPatternBank {
+    pub patterns: Vec<PatternEntry>,
+    pub max_capacity: usize,
+}
+
+impl KeywordPatternBank {
+    /// Create a new keyword pattern bank with the given capacity.
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            patterns: Vec::new(),
+            max_capacity: capacity,
+        }
+    }
+
+    /// Add a pattern. Evicts the lowest-quality entry if at capacity.
+    pub fn add_pattern(&mut self, query: &str, action: &str, quality: f64) {
+        if self.patterns.len() >= self.max_capacity {
+            // Evict the lowest quality pattern.
+            if let Some((idx, _)) = self.patterns.iter().enumerate().min_by(|(_, a), (_, b)| {
+                a.result_quality
+                    .partial_cmp(&b.result_quality)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            }) {
+                self.patterns.remove(idx);
+            }
+        }
+
+        self.patterns.push(PatternEntry {
+            id: Uuid::new_v4(),
+            query_pattern: query.to_string(),
+            action: action.to_string(),
+            result_quality: quality.clamp(0.0, 1.0),
+            usage_count: 0,
+            created_at: Utc::now(),
+        });
+    }
+
+    /// Find patterns whose query contains any keyword from the given query
+    /// (case-insensitive) and whose quality meets the threshold.
+    pub fn find_similar(&self, query: &str, threshold: f64) -> Vec<&PatternEntry> {
+        let query_lower = query.to_lowercase();
+        let keywords: Vec<&str> = query_lower.split_whitespace().collect();
+
+        self.patterns
+            .iter()
+            .filter(|p| {
+                if p.result_quality < threshold {
+                    return false;
+                }
+                let pattern_lower = p.query_pattern.to_lowercase();
+                keywords.iter().any(|kw| pattern_lower.contains(kw))
+                    || pattern_lower.contains(&query_lower)
+            })
+            .collect()
+    }
+
+    /// Return the highest-quality matching pattern for the given query.
+    pub fn best_action(&self, query: &str) -> Option<&PatternEntry> {
+        let matches = self.find_similar(query, 0.0);
+        matches.into_iter().max_by(|a, b| {
+            a.result_quality
+                .partial_cmp(&b.result_quality)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+    }
+
+    /// Return the number of stored patterns.
+    pub fn len(&self) -> usize {
+        self.patterns.len()
+    }
+
+    /// Return whether the bank is empty.
+    pub fn is_empty(&self) -> bool {
+        self.patterns.is_empty()
+    }
+
+    /// Return summary statistics.
+    pub fn stats(&self) -> PatternBankStats {
+        let total = self.patterns.len();
+        let avg_quality = if total == 0 {
+            0.0
+        } else {
+            self.patterns.iter().map(|p| p.result_quality).sum::<f64>() / total as f64
+        };
+        let most_used = self
+            .patterns
+            .iter()
+            .max_by_key(|p| p.usage_count)
+            .filter(|p| p.usage_count > 0)
+            .map(|p| p.action.clone());
+        let capacity_pct = if self.max_capacity == 0 {
+            0.0
+        } else {
+            (total as f64 / self.max_capacity as f64) * 100.0
+        };
+
+        PatternBankStats {
+            total_patterns: total,
+            avg_quality,
+            most_used,
+            capacity_pct,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -390,5 +515,63 @@ mod tests {
             quality_delta: 0.0,
         };
         assert!(sona.adapt(bad).is_err());
+    }
+
+    // -- KeywordPatternBank tests --
+
+    #[test]
+    fn test_pattern_add() {
+        let mut bank = KeywordPatternBank::new(10);
+        bank.add_pattern("sort a list", "use_quicksort", 0.9);
+        assert_eq!(bank.len(), 1);
+        assert_eq!(bank.patterns[0].action, "use_quicksort");
+    }
+
+    #[test]
+    fn test_pattern_find() {
+        let mut bank = KeywordPatternBank::new(10);
+        bank.add_pattern("sort a list", "use_quicksort", 0.9);
+        bank.add_pattern("deploy to kubernetes", "kubectl_apply", 0.8);
+        bank.add_pattern("sort array elements", "use_mergesort", 0.85);
+
+        let results = bank.find_similar("sort", 0.0);
+        assert_eq!(results.len(), 2);
+        let actions: Vec<&str> = results.iter().map(|p| p.action.as_str()).collect();
+        assert!(actions.contains(&"use_quicksort"));
+        assert!(actions.contains(&"use_mergesort"));
+    }
+
+    #[test]
+    fn test_capacity_eviction() {
+        let mut bank = KeywordPatternBank::new(2);
+        bank.add_pattern("query a", "action_a", 0.5);
+        bank.add_pattern("query b", "action_b", 0.9);
+        assert_eq!(bank.len(), 2);
+
+        // Adding a third should evict the lowest quality (action_a at 0.5).
+        bank.add_pattern("query c", "action_c", 0.7);
+        assert_eq!(bank.len(), 2);
+        let actions: Vec<&str> = bank.patterns.iter().map(|p| p.action.as_str()).collect();
+        assert!(
+            !actions.contains(&"action_a"),
+            "Lowest quality should be evicted"
+        );
+        assert!(actions.contains(&"action_b"));
+        assert!(actions.contains(&"action_c"));
+    }
+
+    #[test]
+    fn test_best_action() {
+        let mut bank = KeywordPatternBank::new(10);
+        bank.add_pattern("sort a list", "use_quicksort", 0.9);
+        bank.add_pattern("sort array elements", "use_mergesort", 0.85);
+
+        let best = bank.best_action("sort");
+        assert!(best.is_some());
+        assert_eq!(best.unwrap().action, "use_quicksort");
+
+        // No match should return None.
+        let none = bank.best_action("xyznonexistent");
+        assert!(none.is_none());
     }
 }

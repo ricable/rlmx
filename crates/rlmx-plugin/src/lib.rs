@@ -56,9 +56,7 @@ mod tests {
         registry
             .register(Box::new(EricssonRanPlugin::new()))
             .unwrap();
-        registry
-            .register(Box::new(MyDomainPlugin::new()))
-            .unwrap();
+        registry.register(Box::new(MyDomainPlugin::new())).unwrap();
 
         let ericsson = registry.get("ericsson-ran").unwrap();
         assert_eq!(ericsson.name(), "ericsson-ran");

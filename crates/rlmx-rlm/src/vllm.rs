@@ -294,7 +294,12 @@ impl VllmClient {
         let futures: Vec<_> = requests
             .into_iter()
             .map(|(messages, temperature, max_tokens)| {
-                self.chat_completion(messages, temperature, max_tokens, Some(ResponseFormat::json()))
+                self.chat_completion(
+                    messages,
+                    temperature,
+                    max_tokens,
+                    Some(ResponseFormat::json()),
+                )
             })
             .collect();
 
@@ -338,10 +343,7 @@ impl VllmClient {
     ) -> Vec<ChatMessage> {
         vec![
             ChatMessage::system(system_prompt),
-            ChatMessage::user(format!(
-                "Context:\n{}\n\nQuery: {}",
-                context, user_query
-            )),
+            ChatMessage::user(format!("Context:\n{}\n\nQuery: {}", context, user_query)),
         ]
     }
 }
@@ -359,8 +361,7 @@ mod tests {
 
     #[test]
     fn test_message_formatting() {
-        let messages =
-            VllmClient::build_messages("You are a helpful assistant.", "What is Rust?");
+        let messages = VllmClient::build_messages("You are a helpful assistant.", "What is Rust?");
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, "system");
         assert_eq!(messages[0].content, "You are a helpful assistant.");

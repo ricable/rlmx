@@ -4,6 +4,7 @@
 //! region memory with vector search, proof engine, in-memory graph, and scheduler.
 
 pub mod capability;
+pub mod events;
 pub mod graph;
 pub mod memory;
 pub mod process;
@@ -14,6 +15,7 @@ pub mod types;
 
 // Re-export primary types for convenient access.
 pub use capability::{CapabilityManager, CapabilityToken};
+pub use events::{create_event_bus, DomainEvent, DomainEventBus};
 pub use graph::Graph;
 pub use memory::{cosine_similarity, text_to_embedding, ContextSegment, MemoryRegion, EMBED_DIM};
 pub use process::{Process, ProcessManager, ProcessStatus};

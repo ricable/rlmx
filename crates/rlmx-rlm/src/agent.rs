@@ -150,7 +150,8 @@ impl RlmAgent {
                 self.depth, self.max_depth
             )
         } else {
-            "You have reached maximum recursion depth. You must NOT delegate; resolve directly.".to_string()
+            "You have reached maximum recursion depth. You must NOT delegate; resolve directly."
+                .to_string()
         };
 
         format!(
@@ -210,9 +211,19 @@ impl RlmAgent {
         actions_taken.push(action.to_prompt_string());
 
         // Execute the action
-        let (answer, confidence) =
-            self.execute_action(action, query, vllm_client, temperature, &mut actions_taken, &mut sub_agent_results, &mut evidence_chain, &mut action_count, &mut retrieval_count)
-                .await?;
+        let (answer, confidence) = self
+            .execute_action(
+                action,
+                query,
+                vllm_client,
+                temperature,
+                &mut actions_taken,
+                &mut sub_agent_results,
+                &mut evidence_chain,
+                &mut action_count,
+                &mut retrieval_count,
+            )
+            .await?;
 
         let latency_ms = start.elapsed().as_millis() as u64;
 
@@ -229,6 +240,7 @@ impl RlmAgent {
     }
 
     /// Execute a parsed RLM action.
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     fn execute_action<'a>(
         &'a self,
         action: RlmAction,
@@ -240,61 +252,63 @@ impl RlmAgent {
         evidence_chain: &'a mut Vec<String>,
         action_count: &'a mut usize,
         retrieval_count: &'a mut usize,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(String, f64), AgentError>> + Send + 'a>> {
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<(String, f64), AgentError>> + Send + 'a>,
+    > {
         Box::pin(async move {
-        // Check global action limit for all action types
-        *action_count += 1;
-        if *action_count > self.max_actions {
-            return Err(AgentError::ExecutionError(
-                "Maximum action depth exceeded".to_string(),
-            ));
-        }
-
-        match action {
-            RlmAction::Final {
-                answer,
-                evidence,
-                confidence,
-            } => {
-                evidence_chain.extend(evidence);
-                Ok((answer, confidence))
+            // Check global action limit for all action types
+            *action_count += 1;
+            if *action_count > self.max_actions {
+                return Err(AgentError::ExecutionError(
+                    "Maximum action depth exceeded".to_string(),
+                ));
             }
 
-            RlmAction::Reason {
-                thought,
-                next_action,
-            } => {
-                evidence_chain.push(format!("Reasoning: {}", thought));
-                actions_taken.push(next_action.to_prompt_string());
-                self.execute_action(
-                    *next_action,
-                    original_query,
-                    vllm_client,
-                    temperature,
-                    actions_taken,
-                    sub_agent_results,
-                    evidence_chain,
-                    action_count,
-                    retrieval_count,
-                )
-                .await
-            }
-
-            RlmAction::Retrieve { query, k, .. } => {
-                // Check retrieval limit
-                *retrieval_count += 1;
-                if *retrieval_count > self.max_retrievals {
-                    return Err(AgentError::ExecutionError(
-                        "Maximum retrieval count exceeded".to_string(),
-                    ));
+            match action {
+                RlmAction::Final {
+                    answer,
+                    evidence,
+                    confidence,
+                } => {
+                    evidence_chain.extend(evidence);
+                    Ok((answer, confidence))
                 }
 
-                // In a real system, this would call the kernel's vec_search syscall.
-                // For now, we record the retrieval attempt.
-                evidence_chain.push(format!("Retrieved {} results for: {}", k, query));
+                RlmAction::Reason {
+                    thought,
+                    next_action,
+                } => {
+                    evidence_chain.push(format!("Reasoning: {}", thought));
+                    actions_taken.push(next_action.to_prompt_string());
+                    self.execute_action(
+                        *next_action,
+                        original_query,
+                        vllm_client,
+                        temperature,
+                        actions_taken,
+                        sub_agent_results,
+                        evidence_chain,
+                        action_count,
+                        retrieval_count,
+                    )
+                    .await
+                }
 
-                // After retrieval, we need another model call to process results
-                let follow_up_messages = vec![
+                RlmAction::Retrieve { query, k, .. } => {
+                    // Check retrieval limit
+                    *retrieval_count += 1;
+                    if *retrieval_count > self.max_retrievals {
+                        return Err(AgentError::ExecutionError(
+                            "Maximum retrieval count exceeded".to_string(),
+                        ));
+                    }
+
+                    // In a real system, this would call the kernel's vec_search syscall.
+                    // For now, we record the retrieval attempt.
+                    evidence_chain.push(format!("Retrieved {} results for: {}", k, query));
+
+                    // After retrieval, we need another model call to process results
+                    let follow_up_messages = vec![
                     ChatMessage::system(self.build_system_prompt()),
                     ChatMessage::user(format!(
                         "You previously searched for \"{}\" and got results. \
@@ -303,88 +317,88 @@ impl RlmAgent {
                     )),
                 ];
 
-                let response = vllm_client
-                    .chat_completion(
-                        follow_up_messages,
+                    let response = vllm_client
+                        .chat_completion(
+                            follow_up_messages,
+                            temperature,
+                            Some(2048),
+                            Some(ResponseFormat::json()),
+                        )
+                        .await
+                        .map_err(AgentError::VllmError)?;
+
+                    let next_action = RlmAction::parse(&response).map_err(|e| {
+                        AgentError::ActionParseError(format!("failed to parse follow-up: {}", e))
+                    })?;
+                    actions_taken.push(next_action.to_prompt_string());
+
+                    self.execute_action(
+                        next_action,
+                        original_query,
+                        vllm_client,
                         temperature,
-                        Some(2048),
-                        Some(ResponseFormat::json()),
+                        actions_taken,
+                        sub_agent_results,
+                        evidence_chain,
+                        action_count,
+                        retrieval_count,
                     )
                     .await
-                    .map_err(AgentError::VllmError)?;
-
-                let next_action = RlmAction::parse(&response).map_err(|e| {
-                    AgentError::ActionParseError(format!("failed to parse follow-up: {}", e))
-                })?;
-                actions_taken.push(next_action.to_prompt_string());
-
-                self.execute_action(
-                    next_action,
-                    original_query,
-                    vllm_client,
-                    temperature,
-                    actions_taken,
-                    sub_agent_results,
-                    evidence_chain,
-                    action_count,
-                    retrieval_count,
-                )
-                .await
-            }
-
-            RlmAction::Delegate {
-                task,
-                capabilities,
-                memory_scope: _,
-            } => {
-                if !self.can_delegate() {
-                    return Err(AgentError::MaxDepthExceeded(self.depth));
                 }
 
-                let sub_role = AgentRole::SubAgent {
-                    parent_id: self.id.clone(),
-                    task_description: task.clone(),
-                };
-                let sub_caps = if capabilities.is_empty() {
-                    self.capabilities.clone()
-                } else {
-                    capabilities
-                };
+                RlmAction::Delegate {
+                    task,
+                    capabilities,
+                    memory_scope: _,
+                } => {
+                    if !self.can_delegate() {
+                        return Err(AgentError::MaxDepthExceeded(self.depth));
+                    }
 
-                let mut sub_agent = RlmAgent::new(sub_role, self.depth + 1, sub_caps)
-                    .with_max_depth(self.max_depth);
+                    let sub_role = AgentRole::SubAgent {
+                        parent_id: self.id.clone(),
+                        task_description: task.clone(),
+                    };
+                    let sub_caps = if capabilities.is_empty() {
+                        self.capabilities.clone()
+                    } else {
+                        capabilities
+                    };
 
-                let sub_result = sub_agent
-                    .run(&task, Vec::new(), vllm_client, temperature)
-                    .await?;
+                    let mut sub_agent = RlmAgent::new(sub_role, self.depth + 1, sub_caps)
+                        .with_max_depth(self.max_depth);
 
-                evidence_chain.push(format!(
-                    "Sub-agent {} returned: {}",
-                    sub_result.agent_id, sub_result.answer
-                ));
-                let answer = sub_result.answer.clone();
-                let confidence = sub_result.confidence;
-                sub_agent_results.push(sub_result);
+                    let sub_result = sub_agent
+                        .run(&task, Vec::new(), vllm_client, temperature)
+                        .await?;
 
-                Ok((answer, confidence))
-            }
+                    evidence_chain.push(format!(
+                        "Sub-agent {} returned: {}",
+                        sub_result.agent_id, sub_result.answer
+                    ));
+                    let answer = sub_result.answer.clone();
+                    let confidence = sub_result.confidence;
+                    sub_agent_results.push(sub_result);
 
-            RlmAction::Commit {
-                action,
-                params,
-                confidence,
-            } => {
-                // In a real system, this would call state_mutate on the kernel.
-                evidence_chain.push(format!(
-                    "Committed action '{}' with params: {}",
-                    action, params
-                ));
-                Ok((
-                    format!("Executed mutation: {} (params: {})", action, params),
+                    Ok((answer, confidence))
+                }
+
+                RlmAction::Commit {
+                    action,
+                    params,
                     confidence,
-                ))
+                } => {
+                    // In a real system, this would call state_mutate on the kernel.
+                    evidence_chain.push(format!(
+                        "Committed action '{}' with params: {}",
+                        action, params
+                    ));
+                    Ok((
+                        format!("Executed mutation: {} (params: {})", action, params),
+                        confidence,
+                    ))
+                }
             }
-        }
         }) // end Box::pin(async move)
     }
 }

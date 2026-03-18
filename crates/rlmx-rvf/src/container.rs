@@ -10,7 +10,7 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::crypto::{hash_sha256, ContainerSignature, verify_with_key};
+use crate::crypto::{hash_sha256, verify_with_key, ContainerSignature};
 use crate::segments::{RvfSegment, SegmentType};
 use crate::witness::WitnessChain;
 use crate::RvfError;
@@ -157,10 +157,8 @@ impl RvfContainer {
 
     /// Compute the canonical content hash of the manifest + segments.
     fn content_hash(&self) -> String {
-        let manifest_json =
-            serde_json::to_string(&self.manifest).unwrap_or_default();
-        let segments_json =
-            serde_json::to_string(&self.segments).unwrap_or_default();
+        let manifest_json = serde_json::to_string(&self.manifest).unwrap_or_default();
+        let segments_json = serde_json::to_string(&self.segments).unwrap_or_default();
         let combined = format!("{}{}", manifest_json, segments_json);
         hash_sha256(combined.as_bytes())
     }

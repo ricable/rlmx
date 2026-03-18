@@ -106,11 +106,7 @@ pub struct RvfSegment {
 
 impl RvfSegment {
     /// Create a new segment, automatically computing the SHA-256 hash of the data.
-    pub fn new(
-        segment_type: SegmentType,
-        data: Vec<u8>,
-        metadata: serde_json::Value,
-    ) -> Self {
+    pub fn new(segment_type: SegmentType, data: Vec<u8>, metadata: serde_json::Value) -> Self {
         let hash = crate::crypto::hash_sha256(&data);
         Self {
             id: Uuid::new_v4(),
@@ -127,7 +123,6 @@ impl RvfSegment {
         computed == self.hash
     }
 }
-
 
 /// Represents a difference between two segments (used by branch diffing).
 #[derive(Debug, Clone)]

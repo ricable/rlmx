@@ -213,14 +213,14 @@ impl WtaNetwork {
         // Apply lateral inhibition: each neuron's activation is reduced by the
         // sum of its neighbours within the inhibition radius.
         let original = effective.clone();
-        for i in 0..n {
+        for (i, eff) in effective.iter_mut().enumerate().take(n) {
             let start = i.saturating_sub(self.inhibition_radius);
             let end = (i + self.inhibition_radius + 1).min(n);
             let inhibition: f64 = (start..end)
                 .filter(|&j| j != i)
                 .map(|j| original[j].max(0.0) * 0.1)
                 .sum();
-            effective[i] -= inhibition;
+            *eff -= inhibition;
         }
 
         // Return index of the maximum activation.
@@ -411,6 +411,164 @@ impl Default for GlobalWorkspace {
 }
 
 // ===========================================================================
+// Forecaster
+// ===========================================================================
+
+/// A single point in a forecast.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ForecastPoint {
+    pub timestamp: DateTime<Utc>,
+    pub value: f64,
+    pub lower_bound: f64,
+    pub upper_bound: f64,
+}
+
+/// A forecast for a named target over a given horizon.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Forecast {
+    pub target: String,
+    pub horizon_hours: u32,
+    pub predictions: Vec<ForecastPoint>,
+    pub confidence: f64,
+    pub generated_at: DateTime<Utc>,
+}
+
+/// Simple linear-extrapolation forecaster with confidence intervals.
+#[derive(Debug, Clone, Default)]
+pub struct Forecaster {
+    /// Historical data points per target.
+    pub history: std::collections::HashMap<String, Vec<(DateTime<Utc>, f64)>>,
+}
+
+impl Forecaster {
+    /// Create a new, empty forecaster.
+    pub fn new() -> Self {
+        Self {
+            history: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Record a data point for the given target.
+    pub fn record(&mut self, target: &str, value: f64) {
+        self.history
+            .entry(target.to_string())
+            .or_default()
+            .push((Utc::now(), value));
+    }
+
+    /// Produce a forecast using simple linear extrapolation.
+    ///
+    /// If fewer than 2 data points exist, returns a flat forecast at the last
+    /// known value (or 0.0) with low confidence.
+    pub fn forecast(&self, target: &str, horizon_hours: u32) -> Forecast {
+        let now = Utc::now();
+        let empty_history = Vec::new();
+        let points = self.history.get(target).unwrap_or(&empty_history);
+
+        if points.len() < 2 {
+            // Not enough data for regression — flat forecast.
+            let last_val = points.last().map(|(_, v)| *v).unwrap_or(0.0);
+            let predictions: Vec<ForecastPoint> = (1..=horizon_hours)
+                .map(|h| {
+                    let ts = now + chrono::Duration::hours(h as i64);
+                    ForecastPoint {
+                        timestamp: ts,
+                        value: last_val,
+                        lower_bound: last_val,
+                        upper_bound: last_val,
+                    }
+                })
+                .collect();
+
+            return Forecast {
+                target: target.to_string(),
+                horizon_hours,
+                predictions,
+                confidence: if points.is_empty() { 0.0 } else { 0.1 },
+                generated_at: now,
+            };
+        }
+
+        // Simple linear regression: y = slope * t + intercept
+        // where t is hours since the first data point.
+        let t0 = points[0].0;
+        let xs: Vec<f64> = points
+            .iter()
+            .map(|(ts, _)| (*ts - t0).num_seconds() as f64 / 3600.0)
+            .collect();
+        let ys: Vec<f64> = points.iter().map(|(_, v)| *v).collect();
+        let n = xs.len() as f64;
+
+        let x_mean = xs.iter().sum::<f64>() / n;
+        let y_mean = ys.iter().sum::<f64>() / n;
+
+        let numerator: f64 = xs
+            .iter()
+            .zip(ys.iter())
+            .map(|(x, y)| (x - x_mean) * (y - y_mean))
+            .sum();
+        let denominator: f64 = xs.iter().map(|x| (x - x_mean).powi(2)).sum();
+
+        let (slope, intercept) = if denominator.abs() < 1e-12 {
+            (0.0, y_mean)
+        } else {
+            let s = numerator / denominator;
+            (s, y_mean - s * x_mean)
+        };
+
+        // Residual standard error for confidence intervals.
+        let residuals: f64 = xs
+            .iter()
+            .zip(ys.iter())
+            .map(|(x, y)| (y - (slope * x + intercept)).powi(2))
+            .sum();
+        let std_err = if n > 2.0 {
+            (residuals / (n - 2.0)).sqrt()
+        } else {
+            0.0
+        };
+
+        // Confidence decays with distance from data.
+        let data_span_hours =
+            xs.last().copied().unwrap_or(0.0) - xs.first().copied().unwrap_or(0.0);
+        let base_confidence = if data_span_hours > 0.0 { 0.8 } else { 0.3 };
+
+        let now_x = (now - t0).num_seconds() as f64 / 3600.0;
+
+        let predictions: Vec<ForecastPoint> = (1..=horizon_hours)
+            .map(|h| {
+                let future_x = now_x + h as f64;
+                let predicted = slope * future_x + intercept;
+                let interval = std_err * 1.96 * (1.0 + h as f64 / horizon_hours.max(1) as f64);
+                let ts = now + chrono::Duration::hours(h as i64);
+                ForecastPoint {
+                    timestamp: ts,
+                    value: predicted,
+                    lower_bound: predicted - interval,
+                    upper_bound: predicted + interval,
+                }
+            })
+            .collect();
+
+        let confidence =
+            (base_confidence - (horizon_hours as f64 * 0.02)).clamp(0.05, base_confidence);
+
+        Forecast {
+            target: target.to_string(),
+            horizon_hours,
+            predictions,
+            confidence,
+            generated_at: now,
+        }
+    }
+
+    /// List all tracked targets.
+    pub fn targets(&self) -> Vec<String> {
+        self.history.keys().cloned().collect()
+    }
+}
+
+// ===========================================================================
 // Tests
 // ===========================================================================
 
@@ -546,5 +704,52 @@ mod tests {
         );
         assert!(contents.contains(&"high"));
         assert!(contents.contains(&"medium"));
+    }
+
+    // -- Forecaster tests --
+
+    #[test]
+    fn test_record_and_forecast() {
+        let mut forecaster = Forecaster::new();
+        forecaster.record("cpu_usage", 50.0);
+        forecaster.record("cpu_usage", 55.0);
+        forecaster.record("cpu_usage", 60.0);
+
+        let fc = forecaster.forecast("cpu_usage", 4);
+        assert_eq!(fc.target, "cpu_usage");
+        assert_eq!(fc.horizon_hours, 4);
+        assert_eq!(fc.predictions.len(), 4);
+        assert!(fc.confidence > 0.0);
+
+        // Values should be extrapolated upward since data is increasing.
+        for p in &fc.predictions {
+            assert!(p.lower_bound <= p.value);
+            assert!(p.value <= p.upper_bound);
+        }
+    }
+
+    #[test]
+    fn test_empty_forecast() {
+        let forecaster = Forecaster::new();
+        let fc = forecaster.forecast("nonexistent", 3);
+        assert_eq!(fc.predictions.len(), 3);
+        assert!((fc.confidence - 0.0).abs() < f64::EPSILON);
+        // All predictions should be 0.0 for unknown target.
+        for p in &fc.predictions {
+            assert!((p.value - 0.0).abs() < f64::EPSILON);
+        }
+    }
+
+    #[test]
+    fn test_multiple_targets() {
+        let mut forecaster = Forecaster::new();
+        forecaster.record("cpu", 50.0);
+        forecaster.record("memory", 70.0);
+
+        let mut targets = forecaster.targets();
+        targets.sort();
+        assert_eq!(targets.len(), 2);
+        assert!(targets.contains(&"cpu".to_string()));
+        assert!(targets.contains(&"memory".to_string()));
     }
 }

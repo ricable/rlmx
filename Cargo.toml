@@ -8,6 +8,9 @@ members = [
     "crates/rlmx-mcp",
     "crates/rlmx-rvf",
     "crates/rlmx-cognitive",
+    "crates/rlmx-agents",
+    "crates/rlmx-swarm",
+    "crates/rlmx-ruvllm",
     "crates/rlmx-cli",
 ]
 

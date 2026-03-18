@@ -13,11 +13,16 @@ pub mod sona;
 
 // Re-export primary types for convenience.
 pub use attention::{AttentionCategory, AttentionMechanism, AttentionSelector};
-pub use dag::{DagOptimizer, ExecutionRecord, StrategyStats};
+pub use dag::{
+    DagOptimizer, ExecutionRecord, StrategyRecord, StrategyStats, StrategyTracker,
+    StrategyTrackerStats,
+};
 pub use nervous::{
-    BtspLearner, BtspMemory, CircadianController, CircadianPhase, GlobalWorkspace, HdcComputer,
-    Hypervector, PhaseSchedule, WorkspaceItem, WtaNetwork,
+    BtspLearner, BtspMemory, CircadianController, CircadianPhase, Forecast, ForecastPoint,
+    Forecaster, GlobalWorkspace, HdcComputer, Hypervector, PhaseSchedule, WorkspaceItem,
+    WtaNetwork,
 };
 pub use sona::{
-    AdaptationFeedback, FisherInformation, LoraDelta, Pattern, PatternBank, Sona, SonaStats,
+    AdaptationFeedback, FisherInformation, KeywordPatternBank, LoraDelta, Pattern, PatternBank,
+    PatternBankStats, PatternEntry, Sona, SonaStats,
 };

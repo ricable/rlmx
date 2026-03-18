@@ -1,0 +1,21 @@
+[package]
+name = "rlmx-ruvllm"
+version = "0.1.0"
+edition = "2021"
+description = "Local LLM inference engine for RLMX edge deployment"
+
+[features]
+default = []
+ruvllm = ["dep:ruvllm"]
+metal = ["ruvllm", "ruvllm/inference-metal"]
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+
+# Optional: actual ruvllm engine (requires RuVector)
+ruvllm = { git = "https://github.com/ruvnet/RuVector.git", optional = true }

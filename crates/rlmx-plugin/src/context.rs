@@ -28,9 +28,10 @@ pub struct ContextSegment {
 }
 
 /// Storage tier classification for context segments.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Tier {
     /// Frequently accessed, kept in fast storage.
+    #[default]
     Hot,
     /// Occasionally accessed, standard storage.
     Warm,
@@ -70,11 +71,5 @@ impl ContextSegment {
     pub fn with_tier(mut self, tier: Tier) -> Self {
         self.tier = tier;
         self
-    }
-}
-
-impl Default for Tier {
-    fn default() -> Self {
-        Tier::Hot
     }
 }

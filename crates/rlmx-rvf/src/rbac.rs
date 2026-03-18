@@ -72,9 +72,9 @@ impl AccessControl {
 
     /// Check whether the given `role` is allowed to perform `operation`.
     pub fn check(&self, role: &Role, operation: &Operation) -> bool {
-        self.policies.iter().any(|p| {
-            p.role == *role && p.allowed_operations.contains(operation)
-        })
+        self.policies
+            .iter()
+            .any(|p| p.role == *role && p.allowed_operations.contains(operation))
     }
 }
 
@@ -93,11 +93,7 @@ fn default_policies() -> Vec<AccessPolicy> {
         },
         AccessPolicy {
             role: Role::Operator,
-            allowed_operations: vec![
-                Operation::Query,
-                Operation::Ingest,
-                Operation::WitnessView,
-            ],
+            allowed_operations: vec![Operation::Query, Operation::Ingest, Operation::WitnessView],
         },
         AccessPolicy {
             role: Role::Engineer,

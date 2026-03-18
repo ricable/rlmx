@@ -134,7 +134,12 @@ impl SafetyEngine {
     }
 
     /// Check if human escalation is required.
-    fn check_human_escalation(&self, action: &str, condition: &str, actions: &[String]) -> SafetyResult {
+    fn check_human_escalation(
+        &self,
+        action: &str,
+        condition: &str,
+        actions: &[String],
+    ) -> SafetyResult {
         // Check if the current action is in the list of actions this constraint applies to.
         if actions.iter().any(|a| a == action) {
             return SafetyResult::RequiresApproval {
@@ -145,12 +150,7 @@ impl SafetyEngine {
     }
 
     /// Check rate limiting for an action.
-    fn check_rate_limit(
-        &self,
-        action: &str,
-        max_count: u32,
-        window_secs: u64,
-    ) -> SafetyResult {
+    fn check_rate_limit(&self, action: &str, max_count: u32, window_secs: u64) -> SafetyResult {
         let mut rate_limits = self.rate_limits.lock().unwrap_or_else(|e| e.into_inner());
         let now = Instant::now();
         let window = Duration::from_secs(window_secs);
@@ -164,7 +164,9 @@ impl SafetyEngine {
             });
 
         // Remove expired timestamps.
-        entry.timestamps.retain(|ts| now.duration_since(*ts) < window);
+        entry
+            .timestamps
+            .retain(|ts| now.duration_since(*ts) < window);
 
         // Check if we're over the limit.
         if entry.timestamps.len() >= max_count as usize {

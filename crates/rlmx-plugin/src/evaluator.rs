@@ -7,12 +7,8 @@ use crate::context::ContextSegment;
 /// Trait for domain-specific evaluation of query responses.
 pub trait DomainEvaluator: Send + Sync {
     /// Evaluate a response given the original query and context segments.
-    fn evaluate(
-        &self,
-        query: &str,
-        response: &str,
-        context: &[ContextSegment],
-    ) -> EvaluationResult;
+    fn evaluate(&self, query: &str, response: &str, context: &[ContextSegment])
+        -> EvaluationResult;
 }
 
 /// Result of a domain evaluation.

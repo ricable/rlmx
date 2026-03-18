@@ -13,6 +13,9 @@ use tracing::{debug, error, info, warn};
 use crate::protocol::{McpError, McpRequest, McpResponse};
 use crate::server::McpServer;
 
+/// Parsed HTTP request: (method, path, headers, body).
+type ParsedHttpRequest = (String, String, Vec<(String, String)>, String);
+
 /// Maximum HTTP body size (10 MB) to prevent OOM from untrusted Content-Length.
 const MAX_BODY_SIZE: usize = 10 * 1024 * 1024;
 
@@ -27,19 +30,26 @@ const MAX_CONCURRENT_CONNECTIONS: usize = 256;
 /// Binds to the given host and port, accepting JSON-RPC requests via
 /// POST /mcp and returning JSON-RPC responses. Each connection is
 /// handled concurrently via `tokio::spawn`.
-pub async fn run_http_server(
-    server: McpServer,
-    host: &str,
-    port: u16,
-) -> Result<(), McpError> {
+pub async fn run_http_server(server: McpServer, host: &str, port: u16) -> Result<(), McpError> {
     let addr = format!("{}:{}", host, port);
     info!(address = %addr, "Starting MCP HTTP transport");
 
-    let listener = TcpListener::bind(&addr).await.map_err(|e| {
-        McpError::internal(format!("Failed to bind to {}: {}", addr, e))
-    })?;
+    let listener = TcpListener::bind(&addr)
+        .await
+        .map_err(|e| McpError::internal(format!("Failed to bind to {}: {}", addr, e)))?;
 
     info!(address = %addr, "MCP HTTP server listening");
+
+    // Start WebSocket event server on ws_port (default: port + 1)
+    let ws_port = server.config().ws_port;
+    let ws_host = host.to_string();
+    tokio::spawn(async move {
+        let ws_server = crate::ws::WsServer::new();
+        if let Err(e) = ws_server.start(&ws_host, ws_port).await {
+            tracing::error!(error = %e, "WebSocket server failed");
+        }
+    });
+    info!(ws_port = ws_port, "WebSocket event server started");
 
     let auth_enabled = server.auth_enabled();
     // Pre-hash the expected token once at startup so we only hash
@@ -82,13 +92,8 @@ pub async fn run_http_server(
 
         tokio::spawn(async move {
             let _permit = permit; // released when task completes
-            if let Err(e) = handle_connection(
-                stream,
-                server_handle,
-                auth_enabled,
-                token_hash.as_deref(),
-            )
-            .await
+            if let Err(e) =
+                handle_connection(stream, server_handle, auth_enabled, token_hash.as_deref()).await
             {
                 error!(peer = %peer_addr, error = ?e, "Connection handler error");
             }
@@ -157,6 +162,47 @@ async fn handle_connection(
         caller_token = None;
     }
 
+    // Handle CORS preflight
+    if method == "OPTIONS" {
+        let response = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nAccess-Control-Max-Age: 86400\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        let _ = stream.write_all(response.as_bytes()).await;
+        return Ok(());
+    }
+
+    // Health check endpoint
+    if method == "GET" && (path == "/health" || path == "/health/") {
+        let health_json = serde_json::json!({
+            "status": "ok",
+            "server": "rlmx-mcp",
+            "version": "0.1.0",
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "tools_registered": true,
+        });
+        let body = serde_json::to_string(&health_json).unwrap_or_default();
+        let response = build_http_json_response(200, &body);
+        let _ = stream.write_all(response.as_bytes()).await;
+        return Ok(());
+    }
+
+    // GET /mcp returns server info (for browser discovery)
+    if method == "GET" && (path == "/mcp" || path == "/mcp/") {
+        let info = serde_json::json!({
+            "name": "rlmx-mcp",
+            "version": "0.1.0",
+            "protocol": "2024-11-05",
+            "description": "RLMX Cognition Kernel MCP Server",
+            "endpoints": {
+                "mcp": "POST /mcp",
+                "health": "GET /health",
+                "ws": "ws://host:3001"
+            }
+        });
+        let body = serde_json::to_string_pretty(&info).unwrap_or_default();
+        let response = build_http_json_response(200, &body);
+        let _ = stream.write_all(response.as_bytes()).await;
+        return Ok(());
+    }
+
     // Only accept POST /mcp
     if method != "POST" || (path != "/mcp" && path != "/mcp/") {
         let response = if method == "GET" && path == "/mcp/sse" {
@@ -188,7 +234,8 @@ async fn handle_connection(
     // Pass the caller's bearer token so RBAC can resolve per-caller roles.
     let mcp_response = {
         let mut srv = server.lock().await;
-        srv.handle_request(&mcp_request, caller_token.as_deref()).await
+        srv.handle_request(&mcp_request, caller_token.as_deref())
+            .await
     };
 
     let json = mcp_response.to_json().unwrap_or_else(|_| {
@@ -213,9 +260,10 @@ async fn read_full_http_request(
     // Read until we have the full header section (terminated by \r\n\r\n).
     let header_end;
     loop {
-        let n = stream.read(&mut tmp).await.map_err(|e| {
-            McpError::internal(format!("Failed to read from connection: {}", e))
-        })?;
+        let n = stream
+            .read(&mut tmp)
+            .await
+            .map_err(|e| McpError::internal(format!("Failed to read from connection: {}", e)))?;
         if n == 0 {
             if buf.is_empty() {
                 return Ok(None);
@@ -250,30 +298,34 @@ async fn read_full_http_request(
     }
 
     // The body starts after the header terminator (4 bytes for \r\n\r\n).
-    let body_start = header_end.checked_add(4)
+    let body_start = header_end
+        .checked_add(4)
         .ok_or_else(|| McpError::internal("header offset overflow"))?;
-    let total_needed = body_start.checked_add(content_length)
+    let total_needed = body_start
+        .checked_add(content_length)
         .ok_or_else(|| McpError::internal("body size overflow"))?;
 
     // Read remaining body bytes if we don't have them yet.
     while buf.len() < total_needed {
-        let n = stream.read(&mut tmp).await.map_err(|e| {
-            McpError::internal(format!("Failed to read body: {}", e))
-        })?;
+        let n = stream
+            .read(&mut tmp)
+            .await
+            .map_err(|e| McpError::internal(format!("Failed to read body: {}", e)))?;
         if n == 0 {
             break; // Connection closed — use what we have.
         }
         buf.extend_from_slice(&tmp[..n]);
     }
 
-    Ok(Some(String::from_utf8_lossy(&buf[..buf.len().min(total_needed)]).into_owned()))
+    Ok(Some(
+        String::from_utf8_lossy(&buf[..buf.len().min(total_needed)]).into_owned(),
+    ))
 }
 
 /// Find the position of the header/body separator (\r\n\r\n).
 /// Returns the index of the first \r in the separator.
 fn find_header_end(buf: &[u8]) -> Option<usize> {
-    buf.windows(4)
-        .position(|w| w == b"\r\n\r\n")
+    buf.windows(4).position(|w| w == b"\r\n\r\n")
 }
 
 /// Parse the Content-Length header value from the raw header section.
@@ -290,7 +342,7 @@ fn parse_content_length(headers: &str) -> Option<usize> {
 /// Minimal HTTP request parser.
 ///
 /// Returns (method, path, headers, body) or None if the request is malformed.
-fn parse_http_request(raw: &str) -> Option<(String, String, Vec<(String, String)>, String)> {
+fn parse_http_request(raw: &str) -> Option<ParsedHttpRequest> {
     let mut lines = raw.lines();
 
     // Parse request line
@@ -355,7 +407,7 @@ fn build_http_json_response(status: u16, json_body: &str) -> String {
     };
 
     format!(
-        "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         status,
         status_text,
         json_body.len(),
@@ -393,6 +445,14 @@ mod tests {
     fn test_find_header_end() {
         let buf = b"GET / HTTP/1.1\r\nHost: x\r\n\r\nbody";
         assert_eq!(find_header_end(buf), Some(23));
+    }
+
+    #[test]
+    fn test_parse_get_health_request() {
+        let raw = "GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        let (method, path, _, _) = parse_http_request(raw).unwrap();
+        assert_eq!(method, "GET");
+        assert_eq!(path, "/health");
     }
 
     #[test]

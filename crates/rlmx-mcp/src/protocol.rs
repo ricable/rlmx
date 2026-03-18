@@ -100,7 +100,11 @@ pub const INTERNAL_ERROR: i32 = -32603;
 
 impl McpRequest {
     /// Create a new MCP request.
-    pub fn new(id: serde_json::Value, method: impl Into<String>, params: Option<serde_json::Value>) -> Self {
+    pub fn new(
+        id: serde_json::Value,
+        method: impl Into<String>,
+        params: Option<serde_json::Value>,
+    ) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),
             id,
@@ -212,10 +216,7 @@ mod tests {
 
     #[test]
     fn test_response_success_formatting() {
-        let resp = McpResponse::success(
-            serde_json::json!(1),
-            serde_json::json!({"status": "ok"}),
-        );
+        let resp = McpResponse::success(serde_json::json!(1), serde_json::json!({"status": "ok"}));
         let json = resp.to_json().unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["jsonrpc"], "2.0");
@@ -233,6 +234,9 @@ mod tests {
         let json = resp.to_json().unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["error"]["code"], METHOD_NOT_FOUND);
-        assert!(parsed["error"]["message"].as_str().unwrap().contains("nonexistent"));
+        assert!(parsed["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("nonexistent"));
     }
 }

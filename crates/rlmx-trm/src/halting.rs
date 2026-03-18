@@ -43,12 +43,7 @@ impl AdaptiveHalter {
     /// 1. `confidence >= config.confidence_threshold`
     /// 2. `cycle >= config.max_cycles`
     /// 3. Improvement from the previous cycle < `config.convergence_epsilon`
-    pub fn should_halt(
-        &mut self,
-        streams: &TrmStreams,
-        cycle: usize,
-        config: &HaltConfig,
-    ) -> bool {
+    pub fn should_halt(&mut self, streams: &TrmStreams, cycle: usize, config: &HaltConfig) -> bool {
         // Rule 0 -- hard safety ceiling (always enforced)
         if cycle + 1 >= HARD_CYCLE_LIMIT {
             return true;

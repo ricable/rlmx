@@ -15,10 +15,7 @@ pub trait IngestAdapter: Send + Sync {
     fn supported_formats(&self) -> Vec<String>;
 
     /// Ingest data from a source path, returning all segments at once.
-    async fn ingest(
-        &self,
-        source: &std::path::Path,
-    ) -> Result<Vec<ContextSegment>, PluginError>;
+    async fn ingest(&self, source: &std::path::Path) -> Result<Vec<ContextSegment>, PluginError>;
 
     /// Ingest data in batches for large sources.
     async fn ingest_batch(

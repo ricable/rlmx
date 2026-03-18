@@ -1,6 +1,6 @@
 //! RLMX MCP Tools
 //!
-//! Implements all 12 RLMX MCP tool definitions and their handlers.
+//! Implements all 23 RLMX MCP tool definitions and their handlers.
 //! Tools that can be wired to kernel subsystems use a shared `ToolState`
 //! backed by `Arc<RwLock<...>>`. Tools that require external services
 //! remain as stubs with `"status": "stub"` in their responses.
@@ -14,11 +14,13 @@ use serde_json::json;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use rlmx_kernel::{Graph, MemoryRegion, SearchFilters, SegmentMetadata, EMBED_DIM, text_to_embedding};
+use rlmx_kernel::{
+    text_to_embedding, Graph, MemoryRegion, SearchFilters, SegmentMetadata, EMBED_DIM,
+};
 
-use crate::protocol::{McpError, McpTool, ToolHandler};
 #[allow(unused_imports)]
 use crate::protocol::INVALID_PARAMS;
+use crate::protocol::{McpError, McpTool, ToolHandler};
 
 // ---------------------------------------------------------------------------
 // Shared kernel state accessible by tool handlers
@@ -34,6 +36,16 @@ pub struct ToolState {
     pub ingest_count: u64,
     /// Running counter of total query operations performed.
     pub query_count: u64,
+    /// Simulated swarm node state.
+    pub swarm_nodes: Vec<serde_json::Value>,
+    /// Running agent list.
+    pub agents: Vec<serde_json::Value>,
+    /// Experiment tracking.
+    pub experiments: Vec<serde_json::Value>,
+    /// Mutation history.
+    pub mutations: Vec<serde_json::Value>,
+    /// Active research tasks.
+    pub research_tasks: Vec<serde_json::Value>,
 }
 
 impl ToolState {
@@ -44,6 +56,11 @@ impl ToolState {
             graph: Graph::new(),
             ingest_count: 0,
             query_count: 0,
+            swarm_nodes: Vec::new(),
+            agents: Vec::new(),
+            experiments: Vec::new(),
+            mutations: Vec::new(),
+            research_tasks: Vec::new(),
         }
     }
 }
@@ -66,10 +83,11 @@ pub fn new_shared_state() -> SharedToolState {
 // Public constructor
 // ---------------------------------------------------------------------------
 
-/// Create all 12 RLMX MCP tools with their handlers, wired to the given
+/// Create all 23 RLMX MCP tools with their handlers, wired to the given
 /// shared kernel state.
 pub fn create_all_tools(state: SharedToolState) -> Vec<McpTool> {
     vec![
+        // Original 12 tools
         create_rlmx_query(Arc::clone(&state)),
         create_rlmx_ingest(Arc::clone(&state)),
         create_rlmx_memory_stats(Arc::clone(&state)),
@@ -82,6 +100,24 @@ pub fn create_all_tools(state: SharedToolState) -> Vec<McpTool> {
         create_rlmx_witness_chain(),
         create_rlmx_sona_stats(),
         create_rlmx_graph_query(Arc::clone(&state)),
+        // Edge tools (13-15) are registered elsewhere; tools 16-26 below
+        // Swarm tools
+        create_rlmx_swarm_status(Arc::clone(&state)),
+        create_rlmx_swarm_topology(Arc::clone(&state)),
+        // Agent tools
+        create_rlmx_agent_spawn(Arc::clone(&state)),
+        create_rlmx_agent_list(Arc::clone(&state)),
+        create_rlmx_agent_terminate(Arc::clone(&state)),
+        // Research tools
+        create_rlmx_research_start(Arc::clone(&state)),
+        create_rlmx_research_status(Arc::clone(&state)),
+        create_rlmx_experiment_list(Arc::clone(&state)),
+        // Evolution tools
+        create_rlmx_mutation_history(Arc::clone(&state)),
+        // Forecasting tools
+        create_rlmx_forecast(Arc::clone(&state)),
+        // Training tools
+        create_rlmx_train(Arc::clone(&state)),
     ]
 }
 
@@ -125,15 +161,18 @@ struct RlmxQueryHandler {
 #[async_trait]
 impl ToolHandler for RlmxQueryHandler {
     async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let query = params.get("query")
+        let query = params
+            .get("query")
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: query"))?;
 
-        let context_window = params.get("context_window")
+        let context_window = params
+            .get("context_window")
             .and_then(|v| v.as_u64())
             .unwrap_or(10) as usize;
 
-        let strategy = params.get("strategy")
+        let strategy = params
+            .get("strategy")
             .and_then(|v| v.as_str())
             .unwrap_or("auto");
 
@@ -144,17 +183,22 @@ impl ToolHandler for RlmxQueryHandler {
         state.query_count += 1;
         let total_segments = state.memory.len();
 
-        let hits = state.memory.search(&embedding, context_window, &SearchFilters::default());
+        let hits = state
+            .memory
+            .search(&embedding, context_window, &SearchFilters::default());
         let elapsed = start.elapsed();
 
-        let results: Vec<serde_json::Value> = hits.iter().map(|hit| {
-            json!({
-                "segment_id": hit.segment_id.to_string(),
-                "content": hit.content,
-                "relevance_score": (hit.score * 1000.0).round() / 1000.0,
-                "tier": format!("{:?}", hit.metadata.segment_type),
+        let results: Vec<serde_json::Value> = hits
+            .iter()
+            .map(|hit| {
+                json!({
+                    "segment_id": hit.segment_id.to_string(),
+                    "content": hit.content,
+                    "relevance_score": (hit.score * 1000.0).round() / 1000.0,
+                    "tier": format!("{:?}", hit.metadata.segment_type),
+                })
             })
-        }).collect();
+            .collect();
 
         let segments_returned = results.len();
 
@@ -206,22 +250,24 @@ struct RlmxIngestHandler {
 #[async_trait]
 impl ToolHandler for RlmxIngestHandler {
     async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let data = params.get("data")
+        let data = params
+            .get("data")
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: data"))?;
 
-        let plugin = params.get("plugin")
+        let plugin = params
+            .get("plugin")
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: plugin"))?;
 
-        let extra_metadata = params.get("metadata")
-            .cloned()
-            .unwrap_or(json!({}));
+        let extra_metadata = params.get("metadata").cloned().unwrap_or(json!({}));
 
         // Split data into segments on double-newline boundaries (or treat as
         // a single segment if no double-newlines are present).
         let chunks: Vec<&str> = if data.contains("\n\n") {
-            data.split("\n\n").filter(|s| !s.trim().is_empty()).collect()
+            data.split("\n\n")
+                .filter(|s| !s.trim().is_empty())
+                .collect()
         } else {
             vec![data]
         };
@@ -287,7 +333,8 @@ struct RlmxMemoryStatsHandler {
 #[async_trait]
 impl ToolHandler for RlmxMemoryStatsHandler {
     async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let include_hnsw = params.get("include_hnsw")
+        let include_hnsw = params
+            .get("include_hnsw")
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
 
@@ -414,11 +461,13 @@ struct RlmxPluginActionHandler;
 #[async_trait]
 impl ToolHandler for RlmxPluginActionHandler {
     async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let plugin = params.get("plugin")
+        let plugin = params
+            .get("plugin")
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: plugin"))?;
 
-        let action = params.get("action")
+        let action = params
+            .get("action")
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: action"))?;
 
@@ -442,7 +491,8 @@ impl ToolHandler for RlmxPluginActionHandler {
 fn create_rlmx_strategy_override() -> McpTool {
     McpTool {
         name: "rlmx_strategy_override".to_string(),
-        description: "Force a specific retrieval strategy (RLM or TRM) for subsequent queries.".to_string(),
+        description: "Force a specific retrieval strategy (RLM or TRM) for subsequent queries."
+            .to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -468,11 +518,13 @@ struct RlmxStrategyOverrideHandler;
 #[async_trait]
 impl ToolHandler for RlmxStrategyOverrideHandler {
     async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let strategy = params.get("strategy")
+        let strategy = params
+            .get("strategy")
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: strategy"))?;
 
-        let duration = params.get("duration_seconds")
+        let duration = params
+            .get("duration_seconds")
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
 
@@ -494,7 +546,9 @@ impl ToolHandler for RlmxStrategyOverrideHandler {
 fn create_rlmx_trm_classify() -> McpTool {
     McpTool {
         name: "rlmx_trm_classify".to_string(),
-        description: "Directly invoke the TRM classifier to classify segments by temporal relevance.".to_string(),
+        description:
+            "Directly invoke the TRM classifier to classify segments by temporal relevance."
+                .to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -521,24 +575,29 @@ struct RlmxTrmClassifyHandler;
 #[async_trait]
 impl ToolHandler for RlmxTrmClassifyHandler {
     async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let segment_ids = params.get("segment_ids")
+        let segment_ids = params
+            .get("segment_ids")
             .and_then(|v| v.as_array())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: segment_ids"))?;
 
-        let horizon = params.get("time_horizon")
+        let horizon = params
+            .get("time_horizon")
             .and_then(|v| v.as_str())
             .unwrap_or("medium");
 
         // TODO: wire to TRM subsystem
-        let classifications: Vec<serde_json::Value> = segment_ids.iter().map(|id| {
-            json!({
-                "segment_id": id,
-                "classification": "relevant",
-                "confidence": 0.87,
-                "decay_rate": 0.02,
-                "horizon": horizon
+        let classifications: Vec<serde_json::Value> = segment_ids
+            .iter()
+            .map(|id| {
+                json!({
+                    "segment_id": id,
+                    "classification": "relevant",
+                    "confidence": 0.87,
+                    "decay_rate": 0.02,
+                    "horizon": horizon
+                })
             })
-        }).collect();
+            .collect();
 
         Ok(json!({
             "status": "stub",
@@ -556,7 +615,9 @@ impl ToolHandler for RlmxTrmClassifyHandler {
 fn create_rlmx_rvf_seal() -> McpTool {
     McpTool {
         name: "rlmx_rvf_seal".to_string(),
-        description: "Package data as an RVF (RLMX Versioned Format) container with integrity seals.".to_string(),
+        description:
+            "Package data as an RVF (RLMX Versioned Format) container with integrity seals."
+                .to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -587,15 +648,18 @@ struct RlmxRvfSealHandler;
 #[async_trait]
 impl ToolHandler for RlmxRvfSealHandler {
     async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let segment_ids = params.get("segment_ids")
+        let segment_ids = params
+            .get("segment_ids")
             .and_then(|v| v.as_array())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: segment_ids"))?;
 
-        let label = params.get("label")
+        let label = params
+            .get("label")
             .and_then(|v| v.as_str())
             .unwrap_or("unnamed");
 
-        let seal_type = params.get("seal_type")
+        let seal_type = params
+            .get("seal_type")
             .and_then(|v| v.as_str())
             .unwrap_or("blake3");
 
@@ -620,7 +684,9 @@ impl ToolHandler for RlmxRvfSealHandler {
 fn create_rlmx_rvf_branch() -> McpTool {
     McpTool {
         name: "rlmx_rvf_branch".to_string(),
-        description: "Create a copy-on-write (COW) branch from an RVF container for experimentation.".to_string(),
+        description:
+            "Create a copy-on-write (COW) branch from an RVF container for experimentation."
+                .to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -644,11 +710,13 @@ struct RlmxRvfBranchHandler;
 #[async_trait]
 impl ToolHandler for RlmxRvfBranchHandler {
     async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let container_id = params.get("container_id")
+        let container_id = params
+            .get("container_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: container_id"))?;
 
-        let branch_label = params.get("branch_label")
+        let branch_label = params
+            .get("branch_label")
             .and_then(|v| v.as_str())
             .unwrap_or("experiment");
 
@@ -671,7 +739,8 @@ impl ToolHandler for RlmxRvfBranchHandler {
 fn create_rlmx_witness_chain() -> McpTool {
     McpTool {
         name: "rlmx_witness_chain".to_string(),
-        description: "Retrieve the audit trail (witness chain) for a segment or container.".to_string(),
+        description: "Retrieve the audit trail (witness chain) for a segment or container."
+            .to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -696,7 +765,8 @@ struct RlmxWitnessChainHandler;
 #[async_trait]
 impl ToolHandler for RlmxWitnessChainHandler {
     async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let target_id = params.get("target_id")
+        let target_id = params
+            .get("target_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: target_id"))?;
 
@@ -739,7 +809,8 @@ struct RlmxSonaStatsHandler;
 #[async_trait]
 impl ToolHandler for RlmxSonaStatsHandler {
     async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let time_range = params.get("time_range")
+        let time_range = params
+            .get("time_range")
             .and_then(|v| v.as_str())
             .unwrap_or("24h");
 
@@ -799,20 +870,20 @@ struct RlmxGraphQueryHandler {
 #[async_trait]
 impl ToolHandler for RlmxGraphQueryHandler {
     async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let cypher = params.get("cypher")
+        let cypher = params
+            .get("cypher")
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: cypher"))?;
 
-        let limit = params.get("limit")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(100) as usize;
+        let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
 
         let start = Instant::now();
         let state = self.state.read().await;
 
-        let rows = state.graph.cypher_query(cypher).map_err(|e| {
-            McpError::new(INVALID_PARAMS, format!("Cypher query error: {}", e))
-        })?;
+        let rows = state
+            .graph
+            .cypher_query(cypher)
+            .map_err(|e| McpError::new(INVALID_PARAMS, format!("Cypher query error: {}", e)))?;
 
         let elapsed = start.elapsed();
         let truncated: Vec<&serde_json::Value> = rows.iter().take(limit).collect();
@@ -827,6 +898,873 @@ impl ToolHandler for RlmxGraphQueryHandler {
         }))
     }
 }
+
+// ---------------------------------------------------------------------------
+// 16. rlmx_swarm_status  — Viewer+ — returns swarm health overview
+// ---------------------------------------------------------------------------
+
+fn create_rlmx_swarm_status(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_swarm_status".to_string(),
+        description:
+            "Retrieve overall swarm status including node counts, health, and consensus info."
+                .to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {}
+        }),
+        handler: Box::new(RlmxSwarmStatusHandler { state }),
+    }
+}
+
+struct RlmxSwarmStatusHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for RlmxSwarmStatusHandler {
+    async fn handle(&self, _params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let state = self.state.read().await;
+        let node_count = state.swarm_nodes.len();
+
+        if node_count == 0 {
+            return Ok(json!({
+                "status": "inactive",
+                "node_count": 0,
+                "healthy_nodes": 0,
+                "zones": [],
+                "uptime_secs": 0,
+                "consensus_type": "raft"
+            }));
+        }
+
+        let healthy = state
+            .swarm_nodes
+            .iter()
+            .filter(|n| n.get("healthy").and_then(|v| v.as_bool()).unwrap_or(false))
+            .count();
+
+        let zones: Vec<&serde_json::Value> = state
+            .swarm_nodes
+            .iter()
+            .filter_map(|n| n.get("zone"))
+            .collect();
+
+        Ok(json!({
+            "status": "active",
+            "node_count": node_count,
+            "healthy_nodes": healthy,
+            "zones": zones,
+            "uptime_secs": 3600,
+            "consensus_type": "raft"
+        }))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 17. rlmx_swarm_topology  — Viewer+ — returns zone/connection topology
+// ---------------------------------------------------------------------------
+
+fn create_rlmx_swarm_topology(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_swarm_topology".to_string(),
+        description:
+            "Retrieve the swarm topology including zones, nodes, and inter-zone connections."
+                .to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string",
+                    "enum": ["json", "dot"],
+                    "description": "Output format: JSON object or Graphviz DOT",
+                    "default": "json"
+                }
+            }
+        }),
+        handler: Box::new(RlmxSwarmTopologyHandler { state }),
+    }
+}
+
+struct RlmxSwarmTopologyHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for RlmxSwarmTopologyHandler {
+    async fn handle(&self, _params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let state = self.state.read().await;
+
+        // Distribute actual agents into zones if any exist
+        let mut zone_a_nodes = Vec::new();
+        let mut zone_b_nodes = Vec::new();
+        let mut zone_c_nodes = Vec::new();
+
+        for node in &state.swarm_nodes {
+            match node.get("zone").and_then(|z| z.as_str()) {
+                Some("B") => zone_b_nodes.push(node.clone()),
+                Some("C") => zone_c_nodes.push(node.clone()),
+                _ => zone_a_nodes.push(node.clone()),
+            }
+        }
+
+        let total_nodes = state.swarm_nodes.len();
+        let healthy_nodes = state
+            .swarm_nodes
+            .iter()
+            .filter(|n| n.get("healthy").and_then(|v| v.as_bool()).unwrap_or(true))
+            .count();
+
+        Ok(json!({
+            "zones": [
+                { "id": "A", "name": "Compute", "nodes": zone_a_nodes, "consensus": "raft" },
+                { "id": "B", "name": "Inference", "nodes": zone_b_nodes, "consensus": "raft" },
+                { "id": "C", "name": "Edge", "nodes": zone_c_nodes, "consensus": "raft" }
+            ],
+            "connections": [
+                { "from": "A", "to": "B", "latency_ms": 2 },
+                { "from": "B", "to": "C", "latency_ms": 15 },
+                { "from": "A", "to": "C", "latency_ms": 18 }
+            ],
+            "total_nodes": total_nodes,
+            "healthy_nodes": healthy_nodes
+        }))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 18. rlmx_agent_spawn  — Engineer+ — spawn a new agent
+// ---------------------------------------------------------------------------
+
+const VALID_AGENT_TYPES: &[&str] = &[
+    "coordinator",
+    "researcher",
+    "router",
+    "experimenter",
+    "worker",
+    "monitor",
+    "reviewer",
+    "trainer",
+    "validator",
+    "replicator",
+    "embedder",
+    "analyst",
+];
+
+fn create_rlmx_agent_spawn(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_agent_spawn".to_string(),
+        description: "Spawn a new agent of the specified type into the swarm.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "agent_type": {
+                    "type": "string",
+                    "enum": VALID_AGENT_TYPES,
+                    "description": "Type of agent to spawn"
+                },
+                "node_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Target node to spawn the agent on"
+                },
+                "config": {
+                    "type": "object",
+                    "description": "Agent-specific configuration"
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Optional human-readable name for the agent"
+                },
+                "task": {
+                    "type": "string",
+                    "description": "Optional initial task assignment"
+                },
+                "zone": {
+                    "type": "string",
+                    "description": "Optional zone to place the agent in (A, B, or C)"
+                }
+            },
+            "required": ["agent_type"]
+        }),
+        handler: Box::new(RlmxAgentSpawnHandler { state }),
+    }
+}
+
+struct RlmxAgentSpawnHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for RlmxAgentSpawnHandler {
+    async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let agent_type = params
+            .get("agent_type")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| McpError::invalid_params("Missing required parameter: agent_type"))?;
+
+        if !VALID_AGENT_TYPES.contains(&agent_type) {
+            return Err(McpError::invalid_params(format!(
+                "Invalid agent_type '{}'. Valid types: {}",
+                agent_type,
+                VALID_AGENT_TYPES.join(", ")
+            )));
+        }
+
+        let name = params
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or(agent_type);
+        let task = params.get("task").and_then(|v| v.as_str()).unwrap_or("");
+        let zone = params.get("zone").and_then(|v| v.as_str()).unwrap_or("A");
+
+        let agent_id = Uuid::new_v4().to_string();
+        let agent_entry = json!({
+            "agent_id": agent_id,
+            "agent_type": agent_type,
+            "name": name,
+            "status": "running",
+            "task": task,
+            "zone": zone,
+            "spawned_at": Utc::now().to_rfc3339(),
+        });
+
+        let mut state = self.state.write().await;
+        state.agents.push(agent_entry.clone());
+
+        tracing::info!(agent_id = %agent_id, agent_type = %agent_type, "Agent spawned");
+
+        Ok(json!({
+            "agent_id": agent_id,
+            "agent_type": agent_type,
+            "name": name,
+            "status": "running",
+            "zone": zone,
+            "spawned_at": agent_entry["spawned_at"],
+        }))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 19. rlmx_agent_list  — Operator+ — list running agents
+// ---------------------------------------------------------------------------
+
+fn create_rlmx_agent_list(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_agent_list".to_string(),
+        description: "List all agents with optional filtering by type and status.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "node_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Filter agents by the node they run on"
+                },
+                "agent_type": {
+                    "type": "string",
+                    "description": "Filter agents by type"
+                },
+                "status": {
+                    "type": "string",
+                    "description": "Filter agents by status (running, terminated)"
+                }
+            }
+        }),
+        handler: Box::new(RlmxAgentListHandler { state }),
+    }
+}
+
+struct RlmxAgentListHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for RlmxAgentListHandler {
+    async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let type_filter = params.get("agent_type").and_then(|v| v.as_str());
+        let status_filter = params.get("status").and_then(|v| v.as_str());
+
+        let state = self.state.read().await;
+
+        let filtered: Vec<&serde_json::Value> = state
+            .agents
+            .iter()
+            .filter(|a| {
+                if let Some(t) = type_filter {
+                    if a.get("agent_type").and_then(|v| v.as_str()) != Some(t) {
+                        return false;
+                    }
+                }
+                if let Some(s) = status_filter {
+                    if a.get("status").and_then(|v| v.as_str()) != Some(s) {
+                        return false;
+                    }
+                }
+                true
+            })
+            .collect();
+
+        let active = state
+            .agents
+            .iter()
+            .filter(|a| a.get("status").and_then(|v| v.as_str()) == Some("running"))
+            .count();
+
+        // Count agents by type
+        let mut by_type = serde_json::Map::new();
+        for agent in &state.agents {
+            if let Some(t) = agent.get("agent_type").and_then(|v| v.as_str()) {
+                let count = by_type.entry(t.to_string()).or_insert_with(|| json!(0));
+                *count = json!(count.as_u64().unwrap_or(0) + 1);
+            }
+        }
+
+        Ok(json!({
+            "agents": filtered,
+            "total": state.agents.len(),
+            "active": active,
+            "by_type": by_type
+        }))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 20. rlmx_agent_terminate  — Admin+ — terminate an agent
+// ---------------------------------------------------------------------------
+
+fn create_rlmx_agent_terminate(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_agent_terminate".to_string(),
+        description: "Terminate a running agent by its ID.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "agent_id": {
+                    "type": "string",
+                    "description": "The ID of the agent to terminate"
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Reason for termination (recorded in audit log)"
+                }
+            },
+            "required": ["agent_id"]
+        }),
+        handler: Box::new(RlmxAgentTerminateHandler { state }),
+    }
+}
+
+struct RlmxAgentTerminateHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for RlmxAgentTerminateHandler {
+    async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let agent_id = params
+            .get("agent_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| McpError::invalid_params("Missing required parameter: agent_id"))?;
+
+        let mut state = self.state.write().await;
+
+        let agent = state
+            .agents
+            .iter_mut()
+            .find(|a| a.get("agent_id").and_then(|v| v.as_str()) == Some(agent_id));
+
+        match agent {
+            Some(a) => {
+                a["status"] = json!("terminated");
+                a["terminated_at"] = json!(Utc::now().to_rfc3339());
+                tracing::info!(agent_id = %agent_id, "Agent terminated");
+                Ok(json!({
+                    "status": "terminated",
+                    "agent_id": agent_id,
+                    "terminated_at": a["terminated_at"],
+                }))
+            }
+            None => Err(McpError::invalid_params(format!(
+                "Agent not found: {}",
+                agent_id
+            ))),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 21. rlmx_research_start  — Engineer+ — start a research task
+// ---------------------------------------------------------------------------
+
+fn create_rlmx_research_start(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_research_start".to_string(),
+        description:
+            "Start a new research task that spawns a researcher agent to investigate a topic."
+                .to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "goal": {
+                    "type": "string",
+                    "description": "High-level research goal"
+                },
+                "topic": {
+                    "type": "string",
+                    "description": "The research topic to investigate"
+                },
+                "max_generations": {
+                    "type": "integer",
+                    "description": "Maximum evolutionary generations to run",
+                    "default": 10
+                },
+                "budget_minutes": {
+                    "type": "integer",
+                    "description": "Maximum wall-clock minutes for the research run",
+                    "default": 60
+                },
+                "hypotheses": {
+                    "type": "integer",
+                    "description": "Number of hypotheses to generate",
+                    "default": 3
+                },
+                "nodes": {
+                    "type": "integer",
+                    "description": "Number of compute nodes to allocate",
+                    "default": 1
+                }
+            },
+            "required": ["topic"]
+        }),
+        handler: Box::new(RlmxResearchStartHandler { state }),
+    }
+}
+
+struct RlmxResearchStartHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for RlmxResearchStartHandler {
+    async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let topic = params
+            .get("topic")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| McpError::invalid_params("Missing required parameter: topic"))?;
+
+        let hypotheses = params
+            .get("hypotheses")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(3);
+        let nodes = params.get("nodes").and_then(|v| v.as_u64()).unwrap_or(1);
+
+        let research_id = Uuid::new_v4().to_string();
+        let researcher_agent_id = Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+
+        // Spawn a researcher agent
+        let agent_entry = json!({
+            "agent_id": researcher_agent_id,
+            "agent_type": "researcher",
+            "name": format!("researcher-{}", &research_id[..8]),
+            "status": "running",
+            "task": format!("Research: {}", topic),
+            "zone": "A",
+            "spawned_at": now,
+        });
+
+        let research_task = json!({
+            "research_id": research_id,
+            "topic": topic,
+            "status": "started",
+            "hypotheses": hypotheses,
+            "nodes": nodes,
+            "researcher_agent_id": researcher_agent_id,
+            "started_at": now,
+        });
+
+        let mut state = self.state.write().await;
+        state.agents.push(agent_entry);
+        state.research_tasks.push(research_task);
+
+        tracing::info!(research_id = %research_id, topic = %topic, "Research task started");
+
+        Ok(json!({
+            "research_id": research_id,
+            "topic": topic,
+            "status": "started",
+            "researcher_agent_id": researcher_agent_id,
+        }))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 22. rlmx_research_status  — Operator+ — check research task status
+// ---------------------------------------------------------------------------
+
+fn create_rlmx_research_status(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_research_status".to_string(),
+        description: "Check the status of an active research task.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "research_id": {
+                    "type": "string",
+                    "description": "The ID of the research task to check"
+                }
+            },
+            "required": ["research_id"]
+        }),
+        handler: Box::new(RlmxResearchStatusHandler { state }),
+    }
+}
+
+struct RlmxResearchStatusHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for RlmxResearchStatusHandler {
+    async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let research_id = params
+            .get("research_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| McpError::invalid_params("Missing required parameter: research_id"))?;
+
+        let state = self.state.read().await;
+        let task = state
+            .research_tasks
+            .iter()
+            .find(|t| t.get("research_id").and_then(|v| v.as_str()) == Some(research_id));
+
+        match task {
+            Some(t) => Ok(t.clone()),
+            None => Err(McpError::invalid_params(format!(
+                "Research task not found: {}",
+                research_id
+            ))),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 23. rlmx_experiment_list  — Viewer+ — list experiments
+// ---------------------------------------------------------------------------
+
+fn create_rlmx_experiment_list(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_experiment_list".to_string(),
+        description: "List all tracked experiments with optional status filtering.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "research_id": {
+                    "type": "string",
+                    "description": "Filter experiments by parent research task ID"
+                },
+                "status": {
+                    "type": "string",
+                    "description": "Filter experiments by status (active, completed, failed)"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of experiments to return",
+                    "default": 50
+                }
+            }
+        }),
+        handler: Box::new(RlmxExperimentListHandler { state }),
+    }
+}
+
+struct RlmxExperimentListHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for RlmxExperimentListHandler {
+    async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let status_filter = params.get("status").and_then(|v| v.as_str());
+
+        let state = self.state.read().await;
+
+        let filtered: Vec<&serde_json::Value> = state
+            .experiments
+            .iter()
+            .filter(|e| {
+                if let Some(s) = status_filter {
+                    return e.get("status").and_then(|v| v.as_str()) == Some(s);
+                }
+                true
+            })
+            .collect();
+
+        Ok(json!({
+            "experiments": filtered,
+            "total": filtered.len(),
+        }))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 24. rlmx_mutation_history  — Viewer+ — view mutation history
+// ---------------------------------------------------------------------------
+
+fn create_rlmx_mutation_history(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_mutation_history".to_string(),
+        description: "Retrieve mutation history for evolutionary optimization tracking."
+            .to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "research_id": {
+                    "type": "string",
+                    "description": "Filter mutations by parent research task ID"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of mutations to return",
+                    "default": 50
+                },
+                "generation": {
+                    "type": "integer",
+                    "description": "Filter by specific generation number"
+                }
+            }
+        }),
+        handler: Box::new(RlmxMutationHistoryHandler { state }),
+    }
+}
+
+struct RlmxMutationHistoryHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for RlmxMutationHistoryHandler {
+    async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
+        let generation_filter = params.get("generation").and_then(|v| v.as_u64());
+
+        let state = self.state.read().await;
+
+        if state.mutations.is_empty() {
+            // Return simulated initial mutations when no history exists
+            return Ok(json!({
+                "mutations": [
+                    {
+                        "id": "mut-0001",
+                        "generation": 0,
+                        "type": "initialization",
+                        "description": "Initial population seeded",
+                        "fitness": 0.5,
+                        "timestamp": Utc::now().to_rfc3339()
+                    }
+                ],
+                "total": 1,
+                "latest_generation": 0
+            }));
+        }
+
+        let filtered: Vec<&serde_json::Value> = state
+            .mutations
+            .iter()
+            .filter(|m| {
+                if let Some(gen) = generation_filter {
+                    return m.get("generation").and_then(|v| v.as_u64()) == Some(gen);
+                }
+                true
+            })
+            .take(limit)
+            .collect();
+
+        let latest_gen = state
+            .mutations
+            .iter()
+            .filter_map(|m| m.get("generation").and_then(|v| v.as_u64()))
+            .max()
+            .unwrap_or(0);
+
+        Ok(json!({
+            "mutations": filtered,
+            "total": filtered.len(),
+            "latest_generation": latest_gen
+        }))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 25. rlmx_forecast  — Operator+ — generate simulated forecasts
+// ---------------------------------------------------------------------------
+
+fn create_rlmx_forecast(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_forecast".to_string(),
+        description: "Generate a forecast for swarm health, query load, or mutation quality."
+            .to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "metric": {
+                    "type": "string",
+                    "enum": ["swarm_health", "query_load", "mutation_quality"],
+                    "description": "The metric to forecast"
+                },
+                "horizon_hours": {
+                    "type": "integer",
+                    "description": "Forecast horizon in hours",
+                    "default": 24
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Forecasting model to use (e.g., arima, prophet)",
+                    "default": "arima"
+                }
+            },
+            "required": ["metric"]
+        }),
+        handler: Box::new(RlmxForecastHandler { state }),
+    }
+}
+
+struct RlmxForecastHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for RlmxForecastHandler {
+    async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        // Accept both "metric" (ADR-010) and "target" (legacy) param names
+        let target = params
+            .get("metric")
+            .or_else(|| params.get("target"))
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| McpError::invalid_params("Missing required parameter: metric"))?;
+
+        let horizon_hours = params
+            .get("horizon_hours")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(24);
+
+        let _state = self.state.read().await;
+
+        // Generate simulated forecast data points
+        let points: Vec<serde_json::Value> = (0..std::cmp::min(horizon_hours, 168))
+            .step_by(std::cmp::max(1, (horizon_hours / 12) as usize))
+            .map(|h| {
+                let base = match target {
+                    "swarm_health" => 0.95,
+                    "query_load" => 150.0,
+                    "mutation_quality" => 0.72,
+                    _ => 0.5,
+                };
+                let noise = (h as f64 * 0.01).sin() * 0.05;
+                json!({
+                    "hour": h,
+                    "value": ((base + noise) * 1000.0).round() / 1000.0,
+                    "lower_bound": ((base - 0.1 + noise) * 1000.0).round() / 1000.0,
+                    "upper_bound": ((base + 0.1 + noise) * 1000.0).round() / 1000.0,
+                })
+            })
+            .collect();
+
+        Ok(json!({
+            "target": target,
+            "horizon_hours": horizon_hours,
+            "confidence": 0.85,
+            "model": "arima-simulated",
+            "forecast": points,
+            "generated_at": Utc::now().to_rfc3339()
+        }))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 26. rlmx_train  — Engineer+ — start a training run
+// ---------------------------------------------------------------------------
+
+fn create_rlmx_train(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_train".to_string(),
+        description: "Start a model training run on a swarm node.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "description": "Training configuration (dataset, hyperparams, epochs, etc.)"
+                },
+                "node_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Target node for training (auto-selected if omitted)"
+                },
+                "backend": {
+                    "type": "string",
+                    "enum": ["candle", "mlx", "remote"],
+                    "description": "Compute backend for training",
+                    "default": "candle"
+                }
+            },
+            "required": ["config"]
+        }),
+        handler: Box::new(RlmxTrainHandler { state }),
+    }
+}
+
+struct RlmxTrainHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for RlmxTrainHandler {
+    async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let config = params
+            .get("config")
+            .ok_or_else(|| McpError::invalid_params("Missing required parameter: config"))?;
+
+        let node_id = params
+            .get("node_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("auto");
+
+        let backend = params
+            .get("backend")
+            .and_then(|v| v.as_str())
+            .unwrap_or("candle");
+
+        // Check if training subsystem is available
+        let _state = self.state.read().await;
+
+        // Training subsystem not yet wired — follow the edge-tools
+        // "unavailable" pattern per ADR-010.
+        let training_id = Uuid::new_v4().to_string();
+        let resolved_node_id = if node_id == "auto" {
+            Uuid::new_v4().to_string()
+        } else {
+            node_id.to_string()
+        };
+
+        Ok(json!({
+            "training_id": training_id,
+            "node_id": resolved_node_id,
+            "backend": backend,
+            "config": config,
+            "status": "unavailable",
+            "message": "Training subsystem not yet available"
+        }))
+    }
+}
+
+// RBAC mappings for server.rs tool_to_operation match:
+// rlmx_swarm_status, rlmx_swarm_topology => Query (Viewer+)
+// rlmx_agent_spawn, rlmx_research_start, rlmx_train => ParameterModify (Engineer+)
+// rlmx_agent_list, rlmx_research_status, rlmx_forecast => Ingest (Operator+)
+// rlmx_experiment_list, rlmx_mutation_history => Query (Viewer+)
+// rlmx_agent_terminate => ContainerSeal (Admin+)
 
 /// Return the tool names for validation purposes.
 pub fn tool_names() -> Vec<&'static str> {
@@ -843,6 +1781,17 @@ pub fn tool_names() -> Vec<&'static str> {
         "rlmx_witness_chain",
         "rlmx_sona_stats",
         "rlmx_graph_query",
+        "rlmx_swarm_status",
+        "rlmx_swarm_topology",
+        "rlmx_agent_spawn",
+        "rlmx_agent_list",
+        "rlmx_agent_terminate",
+        "rlmx_research_start",
+        "rlmx_research_status",
+        "rlmx_experiment_list",
+        "rlmx_mutation_history",
+        "rlmx_forecast",
+        "rlmx_train",
     ]
 }
 
@@ -851,14 +1800,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_all_12_tools_have_valid_schemas() {
+    fn test_all_25_tools_have_valid_schemas() {
         let state = new_shared_state();
         let tools = create_all_tools(state);
-        assert_eq!(tools.len(), 12, "Expected exactly 12 tools");
+        assert_eq!(
+            tools.len(),
+            23,
+            "Expected exactly 23 tools (26 total minus 3 edge tools registered in server)"
+        );
 
         for tool in &tools {
             assert!(!tool.name.is_empty(), "Tool name must not be empty");
-            assert!(!tool.description.is_empty(), "Tool description must not be empty");
+            assert!(
+                !tool.description.is_empty(),
+                "Tool description must not be empty"
+            );
 
             // Verify the schema is a valid JSON object with "type": "object"
             let schema = &tool.input_schema;
@@ -884,24 +1840,36 @@ mod tests {
 
         // Ingest some data.
         let ingest_tool = tools.iter().find(|t| t.name == "rlmx_ingest").unwrap();
-        let ingest_result = ingest_tool.handler.handle(json!({
-            "data": "Rust is a systems programming language focused on safety and performance.",
-            "plugin": "text"
-        })).await.unwrap();
+        let ingest_result = ingest_tool
+            .handler
+            .handle(json!({
+                "data": "Rust is a systems programming language focused on safety and performance.",
+                "plugin": "text"
+            }))
+            .await
+            .unwrap();
         assert_eq!(ingest_result["status"], "ingested");
         assert_eq!(ingest_result["segments_created"], 1);
 
         // Query for it.
         let query_tool = tools.iter().find(|t| t.name == "rlmx_query").unwrap();
-        let query_result = query_tool.handler.handle(json!({
-            "query": "Rust programming language"
-        })).await.unwrap();
+        let query_result = query_tool
+            .handler
+            .handle(json!({
+                "query": "Rust programming language"
+            }))
+            .await
+            .unwrap();
         assert_eq!(query_result["segments_returned"], 1);
         let results = query_result["results"].as_array().unwrap();
         assert!(!results.is_empty());
         // The relevance score should be > 0 since the texts share words.
         let score = results[0]["relevance_score"].as_f64().unwrap();
-        assert!(score > 0.0, "Expected positive relevance score, got {}", score);
+        assert!(
+            score > 0.0,
+            "Expected positive relevance score, got {}",
+            score
+        );
     }
 
     #[tokio::test]
@@ -910,16 +1878,23 @@ mod tests {
         let tools = create_all_tools(Arc::clone(&state));
 
         // Stats before ingestion.
-        let stats_tool = tools.iter().find(|t| t.name == "rlmx_memory_stats").unwrap();
+        let stats_tool = tools
+            .iter()
+            .find(|t| t.name == "rlmx_memory_stats")
+            .unwrap();
         let before = stats_tool.handler.handle(json!({})).await.unwrap();
         assert_eq!(before["total_segments"], 0);
 
         // Ingest.
         let ingest_tool = tools.iter().find(|t| t.name == "rlmx_ingest").unwrap();
-        ingest_tool.handler.handle(json!({
-            "data": "Hello world",
-            "plugin": "text"
-        })).await.unwrap();
+        ingest_tool
+            .handler
+            .handle(json!({
+                "data": "Hello world",
+                "plugin": "text"
+            }))
+            .await
+            .unwrap();
 
         // Stats after ingestion.
         let after = stats_tool.handler.handle(json!({})).await.unwrap();
@@ -942,9 +1917,13 @@ mod tests {
         let tools = create_all_tools(Arc::clone(&state));
         let graph_tool = tools.iter().find(|t| t.name == "rlmx_graph_query").unwrap();
 
-        let result = graph_tool.handler.handle(json!({
-            "cypher": "MATCH (n:Person)-[r:WORKS_AT]->(m:Company) RETURN n,m"
-        })).await.unwrap();
+        let result = graph_tool
+            .handler
+            .handle(json!({
+                "cypher": "MATCH (n:Person)-[r:WORKS_AT]->(m:Company) RETURN n,m"
+            }))
+            .await
+            .unwrap();
 
         assert_eq!(result["rows_returned"], 1);
         let rows = result["results"].as_array().unwrap();
@@ -957,9 +1936,12 @@ mod tests {
         let tools = create_all_tools(Arc::clone(&state));
         let graph_tool = tools.iter().find(|t| t.name == "rlmx_graph_query").unwrap();
 
-        let result = graph_tool.handler.handle(json!({
-            "cypher": "SELECT * FROM table"
-        })).await;
+        let result = graph_tool
+            .handler
+            .handle(json!({
+                "cypher": "SELECT * FROM table"
+            }))
+            .await;
 
         assert!(result.is_err(), "Invalid Cypher should return an error");
     }
@@ -970,9 +1952,13 @@ mod tests {
         let tools = create_all_tools(state);
         let query_tool = tools.iter().find(|t| t.name == "rlmx_query").unwrap();
 
-        let result = query_tool.handler.handle(json!({
-            "query": "anything"
-        })).await.unwrap();
+        let result = query_tool
+            .handler
+            .handle(json!({
+                "query": "anything"
+            }))
+            .await
+            .unwrap();
 
         assert_eq!(result["segments_returned"], 0);
         assert_eq!(result["total_segments_scanned"], 0);
@@ -1003,5 +1989,155 @@ mod tests {
 
         let err = result.unwrap_err();
         assert_eq!(err.code, INVALID_PARAMS);
+    }
+
+    #[tokio::test]
+    async fn test_agent_spawn_and_list() {
+        let state = new_shared_state();
+        let tools = create_all_tools(Arc::clone(&state));
+
+        // Spawn an agent.
+        let spawn_tool = tools.iter().find(|t| t.name == "rlmx_agent_spawn").unwrap();
+        let spawn_result = spawn_tool
+            .handler
+            .handle(json!({
+                "agent_type": "coordinator",
+                "name": "test-coord",
+                "zone": "B"
+            }))
+            .await
+            .unwrap();
+        assert_eq!(spawn_result["status"], "running");
+        assert_eq!(spawn_result["agent_type"], "coordinator");
+        assert_eq!(spawn_result["zone"], "B");
+        let agent_id = spawn_result["agent_id"].as_str().unwrap();
+        assert!(!agent_id.is_empty());
+
+        // List agents and verify the spawned agent appears.
+        let list_tool = tools.iter().find(|t| t.name == "rlmx_agent_list").unwrap();
+        let list_result = list_tool.handler.handle(json!({})).await.unwrap();
+        assert_eq!(list_result["total"], 1);
+        assert_eq!(list_result["active"], 1);
+        let agents = list_result["agents"].as_array().unwrap();
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents[0]["agent_id"], agent_id);
+    }
+
+    #[tokio::test]
+    async fn test_agent_terminate() {
+        let state = new_shared_state();
+        let tools = create_all_tools(Arc::clone(&state));
+
+        // Spawn an agent.
+        let spawn_tool = tools.iter().find(|t| t.name == "rlmx_agent_spawn").unwrap();
+        let spawn_result = spawn_tool
+            .handler
+            .handle(json!({
+                "agent_type": "worker"
+            }))
+            .await
+            .unwrap();
+        let agent_id = spawn_result["agent_id"].as_str().unwrap().to_string();
+
+        // Terminate the agent.
+        let term_tool = tools
+            .iter()
+            .find(|t| t.name == "rlmx_agent_terminate")
+            .unwrap();
+        let term_result = term_tool
+            .handler
+            .handle(json!({
+                "agent_id": agent_id
+            }))
+            .await
+            .unwrap();
+        assert_eq!(term_result["status"], "terminated");
+
+        // Verify the agent shows as terminated in list.
+        let list_tool = tools.iter().find(|t| t.name == "rlmx_agent_list").unwrap();
+        let list_result = list_tool.handler.handle(json!({})).await.unwrap();
+        assert_eq!(list_result["active"], 0);
+        let agents = list_result["agents"].as_array().unwrap();
+        assert_eq!(agents[0]["status"], "terminated");
+    }
+
+    #[tokio::test]
+    async fn test_research_start_creates_researcher() {
+        let state = new_shared_state();
+        let tools = create_all_tools(Arc::clone(&state));
+
+        let research_tool = tools
+            .iter()
+            .find(|t| t.name == "rlmx_research_start")
+            .unwrap();
+        let result = research_tool
+            .handler
+            .handle(json!({
+                "topic": "neural scaling laws"
+            }))
+            .await
+            .unwrap();
+
+        assert_eq!(result["status"], "started");
+        assert_eq!(result["topic"], "neural scaling laws");
+        let research_id = result["research_id"].as_str().unwrap();
+        let researcher_agent_id = result["researcher_agent_id"].as_str().unwrap();
+        assert!(!research_id.is_empty());
+        assert!(!researcher_agent_id.is_empty());
+
+        // Verify the researcher agent was spawned.
+        let list_tool = tools.iter().find(|t| t.name == "rlmx_agent_list").unwrap();
+        let list_result = list_tool
+            .handler
+            .handle(json!({
+                "agent_type": "researcher"
+            }))
+            .await
+            .unwrap();
+        let agents = list_result["agents"].as_array().unwrap();
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents[0]["agent_type"], "researcher");
+    }
+
+    #[tokio::test]
+    async fn test_swarm_status_returns_default() {
+        let state = new_shared_state();
+        let tools = create_all_tools(state);
+
+        let status_tool = tools
+            .iter()
+            .find(|t| t.name == "rlmx_swarm_status")
+            .unwrap();
+        let result = status_tool.handler.handle(json!({})).await.unwrap();
+
+        assert_eq!(result["status"], "inactive");
+        assert_eq!(result["node_count"], 0);
+        assert_eq!(result["healthy_nodes"], 0);
+        assert_eq!(result["consensus_type"], "raft");
+        assert!(result["zones"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_swarm_topology_3_zones() {
+        let state = new_shared_state();
+        let tools = create_all_tools(state);
+
+        let topo_tool = tools
+            .iter()
+            .find(|t| t.name == "rlmx_swarm_topology")
+            .unwrap();
+        let result = topo_tool.handler.handle(json!({})).await.unwrap();
+
+        let zones = result["zones"].as_array().unwrap();
+        assert_eq!(zones.len(), 3, "Expected exactly 3 zones");
+        assert_eq!(zones[0]["id"], "A");
+        assert_eq!(zones[0]["name"], "Compute");
+        assert_eq!(zones[1]["id"], "B");
+        assert_eq!(zones[1]["name"], "Inference");
+        assert_eq!(zones[2]["id"], "C");
+        assert_eq!(zones[2]["name"], "Edge");
+
+        let connections = result["connections"].as_array().unwrap();
+        assert_eq!(connections.len(), 3, "Expected 3 inter-zone connections");
     }
 }

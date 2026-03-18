@@ -133,12 +133,7 @@ impl MemoryRegion {
 
     /// Search for the top-k most similar segments to the query embedding,
     /// applying optional filters.
-    pub fn search(
-        &self,
-        query: &[f32],
-        k: usize,
-        filters: &SearchFilters,
-    ) -> Vec<SearchHit> {
+    pub fn search(&self, query: &[f32], k: usize, filters: &SearchFilters) -> Vec<SearchHit> {
         let mut scored: Vec<(f64, &ContextSegment)> = self
             .segments
             .iter()

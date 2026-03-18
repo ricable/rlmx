@@ -66,7 +66,7 @@ pub enum MinCutAlgorithm {
 // ---------------------------------------------------------------------------
 
 /// Permission for a specific syscall family.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SyscallPermission {
     VecInsert,
     VecSearch,
@@ -141,18 +141,46 @@ impl Default for ProofRequest {
 /// The result of executing a syscall.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SyscallResult {
-    VecInserted { segment_id: Uuid },
-    VecSearchResults { results: Vec<SearchHit> },
-    VecDeleted { success: bool },
-    GraphQueryResult { rows: Vec<serde_json::Value> },
-    GraphCutResult { cut_weight: f64, partitions: Vec<Vec<Uuid>> },
-    GraphDiffused { output_signal: Vec<f64> },
-    ProcessForked { child_id: ProcessId },
-    MessageSent { delivered: bool },
-    MessageReceived { message: Option<KernelMessage> },
-    StateMutated { witness_id: Uuid, success: bool },
-    AttentionSelected { selected_indices: Vec<usize>, mechanism: String },
-    HaltDecision { should_halt: bool, reason: String },
+    VecInserted {
+        segment_id: Uuid,
+    },
+    VecSearchResults {
+        results: Vec<SearchHit>,
+    },
+    VecDeleted {
+        success: bool,
+    },
+    GraphQueryResult {
+        rows: Vec<serde_json::Value>,
+    },
+    GraphCutResult {
+        cut_weight: f64,
+        partitions: Vec<Vec<Uuid>>,
+    },
+    GraphDiffused {
+        output_signal: Vec<f64>,
+    },
+    ProcessForked {
+        child_id: ProcessId,
+    },
+    MessageSent {
+        delivered: bool,
+    },
+    MessageReceived {
+        message: Option<KernelMessage>,
+    },
+    StateMutated {
+        witness_id: Uuid,
+        success: bool,
+    },
+    AttentionSelected {
+        selected_indices: Vec<usize>,
+        mechanism: String,
+    },
+    HaltDecision {
+        should_halt: bool,
+        reason: String,
+    },
 }
 
 /// A single search hit with score.

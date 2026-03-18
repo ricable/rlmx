@@ -13,9 +13,13 @@ rlmx-kernel = { path = "../rlmx-kernel" }
 rlmx-mcp = { path = "../rlmx-mcp" }
 rlmx-rvf = { path = "../rlmx-rvf" }
 rlmx-plugin = { path = "../rlmx-plugin" }
+rlmx-swarm = { path = "../rlmx-swarm" }
+rlmx-agents = { path = "../rlmx-agents" }
+rlmx-ruvllm = { path = "../rlmx-ruvllm", default-features = false }
 tokio = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }
 serde_json = { workspace = true }
 rand = { workspace = true }
 ed25519-dalek = { version = "2", features = ["rand_core"] }
+uuid = { workspace = true }
