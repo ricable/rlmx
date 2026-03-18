@@ -1,0 +1,19 @@
+[package]
+name = "rlmx-kernel"
+version = "0.1.0"
+edition = "2021"
+description = "RuVix cognition kernel - core syscalls, process model, memory, and proof engine"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }
+rand = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

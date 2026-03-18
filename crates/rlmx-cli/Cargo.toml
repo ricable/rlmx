@@ -1,0 +1,16 @@
+[package]
+name = "rlmx-cli"
+version = "0.1.0"
+edition = "2021"
+description = "RLMX command-line interface"
+
+[[bin]]
+name = "rlmx"
+path = "src/main.rs"
+
+[dependencies]
+rlmx-kernel = { path = "../rlmx-kernel" }
+tokio = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+serde_json = { workspace = true }
