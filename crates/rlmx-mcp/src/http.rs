@@ -30,7 +30,24 @@ const MAX_CONCURRENT_CONNECTIONS: usize = 256;
 /// Binds to the given host and port, accepting JSON-RPC requests via
 /// POST /mcp and returning JSON-RPC responses. Each connection is
 /// handled concurrently via `tokio::spawn`.
+/// Run the HTTP transport server.
+///
+/// Takes ownership of the `McpServer` and wraps it in `Arc<RwLock<McpServer>>`
+/// so it can be safely shared across spawned connection tasks.
 pub async fn run_http_server(server: McpServer, host: &str, port: u16) -> Result<(), McpError> {
+    run_http_server_with_state(server, host, port, None).await
+}
+
+/// Run the HTTP transport server with an optional shared tool state.
+///
+/// When `shared_state` is provided, the WebSocket event bus is wired into it
+/// so that research tools can broadcast events to connected dashboards.
+pub async fn run_http_server_with_state(
+    server: McpServer,
+    host: &str,
+    port: u16,
+    shared_state: Option<crate::tools::SharedToolState>,
+) -> Result<(), McpError> {
     let addr = format!("{}:{}", host, port);
     info!(address = %addr, "Starting MCP HTTP transport");
 
@@ -43,8 +60,16 @@ pub async fn run_http_server(server: McpServer, host: &str, port: u16) -> Result
     // Start WebSocket event server on ws_port (default: port + 1)
     let ws_port = server.config().ws_port;
     let ws_host = host.to_string();
+    let ws_server = crate::ws::WsServer::new();
+    let event_tx = ws_server.event_sender();
+
+    // Wire the event bus into the shared tool state so research tools can broadcast
+    if let Some(ref state) = shared_state {
+        let mut s = state.write().await;
+        s.event_bus = Some(event_tx);
+    }
+
     tokio::spawn(async move {
-        let ws_server = crate::ws::WsServer::new();
         if let Err(e) = ws_server.start(&ws_host, ws_port).await {
             tracing::error!(error = %e, "WebSocket server failed");
         }

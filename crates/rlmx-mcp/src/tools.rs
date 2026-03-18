@@ -1,6 +1,6 @@
 //! RLMX MCP Tools
 //!
-//! Implements all 23 RLMX MCP tool definitions and their handlers.
+//! Implements all 28 RLMX MCP tool definitions and their handlers.
 //! Tools that can be wired to kernel subsystems use a shared `ToolState`
 //! backed by `Arc<RwLock<...>>`. Tools that require external services
 //! remain as stubs with `"status": "stub"` in their responses.
@@ -46,6 +46,12 @@ pub struct ToolState {
     pub mutations: Vec<serde_json::Value>,
     /// Active research tasks.
     pub research_tasks: Vec<serde_json::Value>,
+    /// WebSocket event bus for broadcasting swarm events to the dashboard.
+    pub event_bus: Option<crate::ws::SwarmEventBus>,
+    /// Sandbox profiles registry.
+    pub sandbox_profiles: Vec<serde_json::Value>,
+    /// Running sandbox instances.
+    pub sandbox_instances: Vec<serde_json::Value>,
 }
 
 impl ToolState {
@@ -61,6 +67,9 @@ impl ToolState {
             experiments: Vec::new(),
             mutations: Vec::new(),
             research_tasks: Vec::new(),
+            event_bus: None,
+            sandbox_profiles: Vec::new(),
+            sandbox_instances: Vec::new(),
         }
     }
 }
@@ -118,6 +127,12 @@ pub fn create_all_tools(state: SharedToolState) -> Vec<McpTool> {
         create_rlmx_forecast(Arc::clone(&state)),
         // Training tools
         create_rlmx_train(Arc::clone(&state)),
+        // Sandbox tools (ADR-011)
+        create_rlmx_sandbox_spawn(Arc::clone(&state)),
+        create_rlmx_sandbox_terminate(Arc::clone(&state)),
+        create_rlmx_sandbox_status(Arc::clone(&state)),
+        create_rlmx_sandbox_list(Arc::clone(&state)),
+        create_rlmx_fleet_deploy(Arc::clone(&state)),
     ]
 }
 
@@ -1766,6 +1781,378 @@ impl ToolHandler for RlmxTrainHandler {
 // rlmx_experiment_list, rlmx_mutation_history => Query (Viewer+)
 // rlmx_agent_terminate => ContainerSeal (Admin+)
 
+// ---------------------------------------------------------------------------
+// 24. rlmx_sandbox_spawn — spawn a sandbox instance from a profile
+// ---------------------------------------------------------------------------
+
+fn create_rlmx_sandbox_spawn(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_sandbox_spawn".to_string(),
+        description: "Spawn a new sandbox instance from a registered profile.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "profile": {
+                    "type": "string",
+                    "description": "Name of the sandbox profile to spawn"
+                }
+            },
+            "required": ["profile"]
+        }),
+        handler: Box::new(SandboxSpawnHandler { state }),
+    }
+}
+
+struct SandboxSpawnHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for SandboxSpawnHandler {
+    async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let profile_name = params
+            .get("profile")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| McpError::invalid_params("Missing required parameter: profile"))?;
+
+        let mut state = self.state.write().await;
+        let sandbox_id = Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+
+        // Check if profile exists
+        let profile = state
+            .sandbox_profiles
+            .iter()
+            .find(|p| p.get("name").and_then(|v| v.as_str()) == Some(profile_name));
+
+        let profile_data = match profile {
+            Some(p) => p.clone(),
+            None => {
+                return Ok(json!({
+                    "status": "error",
+                    "message": format!("Profile not found: {}", profile_name)
+                }));
+            }
+        };
+
+        let instance = json!({
+            "sandbox_id": sandbox_id,
+            "profile": profile_name,
+            "state": "Provisioning",
+            "agent_type": profile_data.get("agent_type").and_then(|v| v.as_str()).unwrap_or("unknown"),
+            "zone": profile_data.get("zone_preference").and_then(|v| v.as_str()).unwrap_or("zone-a"),
+            "created_at": now,
+            "metrics": {
+                "cpu_usage_pct": 0.0,
+                "memory_usage_mb": 0,
+                "uptime_secs": 0,
+                "tasks_completed": 0
+            }
+        });
+
+        state.sandbox_instances.push(instance);
+
+        // Broadcast event if event bus available
+        if let Some(ref bus) = state.event_bus {
+            use crate::ws::SwarmEvent;
+            let _ = bus.send(SwarmEvent::AgentSpawned {
+                agent_id: Uuid::parse_str(&sandbox_id).unwrap_or_else(|_| Uuid::new_v4()),
+                agent_type: format!("sandbox:{}", profile_name),
+                node_id: Uuid::new_v4(),
+            });
+        }
+
+        Ok(json!({
+            "status": "spawned",
+            "sandbox_id": sandbox_id,
+            "profile": profile_name,
+            "state": "Provisioning"
+        }))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 25. rlmx_sandbox_terminate — terminate a sandbox instance
+// ---------------------------------------------------------------------------
+
+fn create_rlmx_sandbox_terminate(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_sandbox_terminate".to_string(),
+        description: "Terminate a running sandbox instance.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "sandbox_id": {
+                    "type": "string",
+                    "description": "ID of the sandbox instance to terminate"
+                }
+            },
+            "required": ["sandbox_id"]
+        }),
+        handler: Box::new(SandboxTerminateHandler { state }),
+    }
+}
+
+struct SandboxTerminateHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for SandboxTerminateHandler {
+    async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let sandbox_id = params
+            .get("sandbox_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| McpError::invalid_params("Missing required parameter: sandbox_id"))?;
+
+        let mut state = self.state.write().await;
+
+        let instance = state
+            .sandbox_instances
+            .iter_mut()
+            .find(|i| i.get("sandbox_id").and_then(|v| v.as_str()) == Some(sandbox_id));
+
+        match instance {
+            Some(inst) => {
+                inst["state"] = json!("Terminated");
+                Ok(json!({
+                    "status": "terminated",
+                    "sandbox_id": sandbox_id
+                }))
+            }
+            None => Ok(json!({
+                "status": "error",
+                "message": format!("Sandbox not found: {}", sandbox_id)
+            })),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 26. rlmx_sandbox_status — get sandbox instance status
+// ---------------------------------------------------------------------------
+
+fn create_rlmx_sandbox_status(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_sandbox_status".to_string(),
+        description: "Get the status and metrics of a sandbox instance.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "sandbox_id": {
+                    "type": "string",
+                    "description": "ID of the sandbox instance"
+                }
+            },
+            "required": ["sandbox_id"]
+        }),
+        handler: Box::new(SandboxStatusHandler { state }),
+    }
+}
+
+struct SandboxStatusHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for SandboxStatusHandler {
+    async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let sandbox_id = params
+            .get("sandbox_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| McpError::invalid_params("Missing required parameter: sandbox_id"))?;
+
+        let state = self.state.read().await;
+        let instance = state
+            .sandbox_instances
+            .iter()
+            .find(|i| i.get("sandbox_id").and_then(|v| v.as_str()) == Some(sandbox_id));
+
+        match instance {
+            Some(inst) => Ok(inst.clone()),
+            None => Ok(json!({
+                "status": "error",
+                "message": format!("Sandbox not found: {}", sandbox_id)
+            })),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 27. rlmx_sandbox_list — list all sandbox instances
+// ---------------------------------------------------------------------------
+
+fn create_rlmx_sandbox_list(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_sandbox_list".to_string(),
+        description: "List all sandbox instances with optional state filter.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "state_filter": {
+                    "type": "string",
+                    "description": "Filter by sandbox state (Provisioning, Running, Terminated, etc.)"
+                }
+            }
+        }),
+        handler: Box::new(SandboxListHandler { state }),
+    }
+}
+
+struct SandboxListHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for SandboxListHandler {
+    async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let state_filter = params.get("state_filter").and_then(|v| v.as_str());
+
+        let state = self.state.read().await;
+
+        let instances: Vec<&serde_json::Value> = if let Some(filter) = state_filter {
+            state
+                .sandbox_instances
+                .iter()
+                .filter(|i| i.get("state").and_then(|v| v.as_str()) == Some(filter))
+                .collect()
+        } else {
+            state.sandbox_instances.iter().collect()
+        };
+
+        let profiles: Vec<&serde_json::Value> = state.sandbox_profiles.iter().collect();
+
+        Ok(json!({
+            "sandbox_count": instances.len(),
+            "sandboxes": instances,
+            "profile_count": profiles.len(),
+            "profiles": profiles
+        }))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 28. rlmx_fleet_deploy — deploy a fleet manifest
+// ---------------------------------------------------------------------------
+
+fn create_rlmx_fleet_deploy(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_fleet_deploy".to_string(),
+        description: "Deploy a fleet manifest, spawning multiple sandbox instances.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Fleet name"
+                },
+                "version": {
+                    "type": "string",
+                    "description": "Fleet version",
+                    "default": "1.0"
+                },
+                "sandboxes": {
+                    "type": "array",
+                    "description": "Array of {profile, count} specs",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "profile": { "type": "string" },
+                            "count": { "type": "integer" }
+                        },
+                        "required": ["profile", "count"]
+                    }
+                }
+            },
+            "required": ["name", "sandboxes"]
+        }),
+        handler: Box::new(FleetDeployHandler { state }),
+    }
+}
+
+struct FleetDeployHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for FleetDeployHandler {
+    async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let fleet_name = params
+            .get("name")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| McpError::invalid_params("Missing required parameter: name"))?;
+
+        let sandboxes = params
+            .get("sandboxes")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| McpError::invalid_params("Missing required parameter: sandboxes"))?;
+
+        let mut state = self.state.write().await;
+        let now = Utc::now().to_rfc3339();
+        let mut spawned_ids = Vec::new();
+        let mut errors = Vec::new();
+
+        for spec in sandboxes {
+            let profile_name = spec
+                .get("profile")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let count = spec.get("count").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
+
+            let profile_exists = state
+                .sandbox_profiles
+                .iter()
+                .any(|p| p.get("name").and_then(|v| v.as_str()) == Some(profile_name));
+
+            if !profile_exists {
+                errors.push(format!("Profile not found: {}", profile_name));
+                continue;
+            }
+
+            let profile_data = state
+                .sandbox_profiles
+                .iter()
+                .find(|p| p.get("name").and_then(|v| v.as_str()) == Some(profile_name))
+                .cloned();
+
+            for _ in 0..count {
+                let sandbox_id = Uuid::new_v4().to_string();
+                let instance = json!({
+                    "sandbox_id": sandbox_id,
+                    "profile": profile_name,
+                    "fleet": fleet_name,
+                    "state": "Provisioning",
+                    "agent_type": profile_data.as_ref()
+                        .and_then(|p| p.get("agent_type"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown"),
+                    "zone": profile_data.as_ref()
+                        .and_then(|p| p.get("zone_preference"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("zone-a"),
+                    "created_at": now,
+                    "metrics": {
+                        "cpu_usage_pct": 0.0,
+                        "memory_usage_mb": 0,
+                        "uptime_secs": 0,
+                        "tasks_completed": 0
+                    }
+                });
+                state.sandbox_instances.push(instance);
+                spawned_ids.push(sandbox_id);
+            }
+        }
+
+        Ok(json!({
+            "status": if errors.is_empty() { "deployed" } else { "partial" },
+            "fleet": fleet_name,
+            "spawned": spawned_ids.len(),
+            "sandbox_ids": spawned_ids,
+            "errors": errors
+        }))
+    }
+}
+
 /// Return the tool names for validation purposes.
 pub fn tool_names() -> Vec<&'static str> {
     vec![
@@ -1792,6 +2179,11 @@ pub fn tool_names() -> Vec<&'static str> {
         "rlmx_mutation_history",
         "rlmx_forecast",
         "rlmx_train",
+        "rlmx_sandbox_spawn",
+        "rlmx_sandbox_terminate",
+        "rlmx_sandbox_status",
+        "rlmx_sandbox_list",
+        "rlmx_fleet_deploy",
     ]
 }
 
@@ -1805,8 +2197,8 @@ mod tests {
         let tools = create_all_tools(state);
         assert_eq!(
             tools.len(),
-            23,
-            "Expected exactly 23 tools (26 total minus 3 edge tools registered in server)"
+            28,
+            "Expected exactly 28 tools (26 original minus 3 edge + 5 sandbox tools)"
         );
 
         for tool in &tools {

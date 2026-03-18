@@ -60,22 +60,66 @@ impl MlxSubprocess {
         }
     }
 
-    /// Generate text using MLX.
+    /// Generate text using MLX via Python subprocess.
     ///
     /// Returns `RuvllmError::NotAvailable` when the MLX runtime is not present.
-    /// When available, this is currently a stub that returns an empty response.
+    /// Calls `python3` with `mlx_lm` to generate text using the configured model.
     pub async fn generate(
         &self,
-        _prompt: &str,
-        _max_tokens: usize,
+        prompt: &str,
+        max_tokens: usize,
     ) -> Result<MlxResponse, RuvllmError> {
         if !self.available {
             return Err(RuvllmError::NotAvailable);
         }
+
+        let script = format!(
+            r#"
+import json, sys
+try:
+    from mlx_lm import load, generate
+    model, tokenizer = load("{model}")
+    text = generate(model, tokenizer, prompt={prompt}, max_tokens={max_tokens})
+    # Compute a rough confidence from output length ratio
+    expected = {max_tokens}
+    actual = len(tokenizer.encode(text)) if text else 0
+    confidence = min(1.0, actual / max(1, expected)) * 0.8 + 0.15
+    print(json.dumps({{"text": text, "confidence": confidence, "tokens_generated": actual}}))
+except Exception as e:
+    print(json.dumps({{"error": str(e)}}), file=sys.stderr)
+    sys.exit(1)
+"#,
+            model = self.model_name,
+            prompt = serde_json::to_string(prompt).unwrap_or_else(|_| "\"\"".into()),
+            max_tokens = max_tokens,
+        );
+
+        let output = tokio::process::Command::new("python3")
+            .arg("-c")
+            .arg(&script)
+            .output()
+            .await
+            .map_err(|e| {
+                RuvllmError::GenerationError(format!("Failed to run MLX subprocess: {}", e))
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(RuvllmError::GenerationError(format!(
+                "MLX generation failed: {}",
+                stderr
+            )));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).map_err(|e| {
+            RuvllmError::GenerationError(format!("Failed to parse MLX output: {}", e))
+        })?;
+
         Ok(MlxResponse {
-            text: String::new(),
-            confidence: 0.0,
-            tokens_generated: 0,
+            text: parsed["text"].as_str().unwrap_or("").to_string(),
+            confidence: parsed["confidence"].as_f64().unwrap_or(0.5),
+            tokens_generated: parsed["tokens_generated"].as_u64().unwrap_or(0) as usize,
         })
     }
 }

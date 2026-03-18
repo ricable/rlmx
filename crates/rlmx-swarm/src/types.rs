@@ -149,6 +149,15 @@ pub enum SwarmEvent {
         experiment_id: String,
         description: String,
     },
+    SandboxSpawned {
+        sandbox_id: String,
+        profile: String,
+        node_id: Option<String>,
+    },
+    SandboxTerminated {
+        sandbox_id: String,
+        reason: String,
+    },
 }
 
 /// Maps kernel `Strategy` names to their preferred zone placement order.

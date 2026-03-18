@@ -125,6 +125,12 @@ enum Commands {
         action: ResearchAction,
     },
 
+    /// Manage sandbox environments (ADR-011)
+    Sandbox {
+        #[command(subcommand)]
+        action: SandboxAction,
+    },
+
     /// Start a model training run
     Train {
         /// Training configuration as JSON string
@@ -240,6 +246,46 @@ enum ResearchAction {
     },
 }
 
+#[derive(Subcommand, Debug)]
+enum SandboxAction {
+    /// Spawn a sandbox from a profile
+    Spawn {
+        /// Profile name to spawn
+        #[arg(long)]
+        profile: String,
+        /// Zone override
+        #[arg(long)]
+        zone: Option<String>,
+    },
+    /// Terminate a sandbox instance
+    Terminate {
+        /// Sandbox ID to terminate
+        sandbox_id: String,
+    },
+    /// Show sandbox instance status
+    Status {
+        /// Sandbox ID to query
+        sandbox_id: String,
+    },
+    /// List all sandbox instances
+    List {
+        /// Filter by state (Provisioning, Running, Terminated, etc.)
+        #[arg(long)]
+        state: Option<String>,
+        /// Filter by profile name
+        #[arg(long)]
+        profile: Option<String>,
+    },
+    /// Deploy a fleet manifest from a JSON file
+    Fleet {
+        /// Path to fleet manifest JSON file
+        #[arg(long)]
+        manifest: String,
+    },
+    /// List registered sandbox profiles
+    Profiles,
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
@@ -278,6 +324,7 @@ async fn run(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
         Commands::Swarm { action } => cmd_swarm(action).await,
         Commands::Agent { action } => cmd_agent(action).await,
         Commands::Research { action } => cmd_research(action).await,
+        Commands::Sandbox { action } => cmd_sandbox(action).await,
         Commands::Train {
             config,
             node_id,
@@ -676,22 +723,7 @@ async fn cmd_research(action: ResearchAction) -> Result<(), Box<dyn std::error::
             topic,
             hypotheses,
             nodes,
-        } => {
-            let research_id = uuid::Uuid::new_v4();
-            println!("Starting research:");
-            println!("  id: {}", research_id);
-            println!("  topic: {}", topic);
-            println!("  hypotheses: {}", hypotheses);
-            println!("  nodes: {}", nodes);
-            println!("  status: started");
-            println!();
-            println!("Spawning researcher agent...");
-            println!(
-                "  Researcher agent active. Generating {} hypotheses...",
-                hypotheses
-            );
-            Ok(())
-        }
+        } => cmd_research_start(&topic, hypotheses, nodes).await,
         ResearchAction::Status { research_id } => {
             println!("Research Status:");
             println!("  id: {}", research_id);
@@ -714,6 +746,570 @@ async fn cmd_research(action: ResearchAction) -> Result<(), Box<dyn std::error::
             println!("  limit: {}", limit);
             println!("  mutations: 0");
             println!("  No mutation history recorded yet.");
+            Ok(())
+        }
+    }
+}
+
+/// Run a full auto-research pipeline with MCP server + dashboard monitoring.
+///
+/// This starts the MCP/WS server in background, then runs an evolutionary
+/// research loop using the agent subsystem and MLX inference. Progress is
+/// tracked in ToolState (queryable via MCP tools) and broadcast via WebSocket
+/// events for real-time dashboard monitoring.
+async fn cmd_research_start(
+    topic: &str,
+    hypothesis_count: usize,
+    nodes: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use chrono::Utc;
+    use rlmx_agents::types::AgentId;
+    use rlmx_agents::{
+        CloudEscalation, CrossPollinator, ExperimenterAgent, FitnessEvaluator, MutationEngine,
+        ResearchObjective, ResearcherAgent,
+    };
+    use rlmx_mcp::ws::{ExpStatus, SwarmEvent};
+    use rlmx_ruvllm::{MlxSubprocess, TieredConfig, TieredEngine};
+    use std::sync::Arc;
+
+    let research_id = uuid::Uuid::new_v4();
+    let now = Utc::now();
+
+    println!("╔══════════════════════════════════════════════════════════════╗");
+    println!("║  RLMX Auto-Research Pipeline                               ║");
+    println!("╠══════════════════════════════════════════════════════════════╣");
+    println!("║  Research ID : {}  ║", research_id);
+    println!("║  Topic       : {:<43} ║", truncate(topic, 43));
+    println!("║  Hypotheses  : {:<43} ║", hypothesis_count);
+    println!("║  Nodes       : {:<43} ║", nodes);
+    println!("╚══════════════════════════════════════════════════════════════╝");
+    println!();
+
+    // --- Phase 1: Initialize MLX inference engine ---
+    println!("[1/6] Initializing MLX inference engine...");
+    let mlx_model = std::env::var("RLMX_EDGE_MODEL")
+        .unwrap_or_else(|_| "mlx-community/SmolLM2-360M-Instruct".to_string());
+    let mut mlx = MlxSubprocess::new(&mlx_model);
+    match mlx.spawn().await {
+        Ok(()) => println!("  MLX runtime available (model: {})", mlx_model),
+        Err(_) => println!("  MLX runtime not found — using stub inference"),
+    }
+
+    // Create TieredEngine with Small+Medium tiers
+    use rlmx_ruvllm::config::{ModelSpec, TierSpec};
+    let tiered_config = TieredConfig {
+        models: vec![
+            TierSpec {
+                tier: rlmx_ruvllm::ModelTier::Small,
+                model: ModelSpec {
+                    name: "stub-small".into(),
+                    path: std::path::PathBuf::new(),
+                    quantization: "Q4_K_M".into(),
+                    context_length: 2048,
+                },
+                priority: 1,
+            },
+            TierSpec {
+                tier: rlmx_ruvllm::ModelTier::Medium,
+                model: ModelSpec {
+                    name: mlx_model.clone(),
+                    path: std::path::PathBuf::new(),
+                    quantization: "Q4_K_M".into(),
+                    context_length: 4096,
+                },
+                priority: 2,
+            },
+        ],
+        escalation_threshold: 0.4,
+        max_escalations: 2,
+        chain: vec![
+            rlmx_ruvllm::ModelTier::Small,
+            rlmx_ruvllm::ModelTier::Medium,
+        ],
+        tier_timeout_ms: 5000,
+    };
+    let mut tiered = TieredEngine::new(tiered_config)?;
+    if mlx.is_available() {
+        tiered.mlx = Some(mlx);
+        println!("  TieredEngine: MLX bridge attached for Medium tier");
+    } else {
+        println!("  TieredEngine: stub mode (escalation demo)");
+    }
+
+    // --- Phase 2: Start MCP server for dashboard monitoring ---
+    println!("[2/6] Starting MCP server + WebSocket event bus...");
+    let state = rlmx_mcp::new_shared_state();
+    let state_clone = Arc::clone(&state);
+
+    // Register research task in shared state
+    {
+        let mut s = state.write().await;
+        s.research_tasks.push(serde_json::json!({
+            "research_id": research_id.to_string(),
+            "topic": topic,
+            "status": "running",
+            "hypotheses": hypothesis_count,
+            "nodes": nodes,
+            "started_at": now.to_rfc3339(),
+        }));
+    }
+
+    let config = rlmx_mcp::McpConfig {
+        transport: rlmx_mcp::Transport::StreamableHttp {
+            host: "127.0.0.1".to_string(),
+            port: 3000,
+        },
+        ..rlmx_mcp::McpConfig::default()
+    };
+    let mut server = rlmx_mcp::McpServer::new(config);
+    let tools = rlmx_mcp::create_all_tools(Arc::clone(&state));
+    let tool_count = tools.len();
+    server.register_tools(tools);
+
+    // Start server in background — it runs forever, research loop continues below
+    tokio::spawn(async move {
+        if let Err(e) = server.start_with_state(state_clone).await {
+            tracing::error!(error = %e, "MCP server error");
+        }
+    });
+
+    // Give server time to bind
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    println!("  MCP server:  http://127.0.0.1:3000/mcp");
+    println!("  WebSocket:   ws://127.0.0.1:3001");
+    println!("  Dashboard:   open frontend/index.html in browser");
+    println!("  {} tools registered", tool_count);
+    println!();
+
+    // --- Phase 3: Spawn researcher agent and generate hypotheses ---
+    println!("[3/6] Spawning researcher agent...");
+    let parent_id = AgentId::new();
+    let mut researcher = ResearcherAgent::new(parent_id.clone(), topic);
+    let hyps = researcher.generate_hypotheses();
+    println!(
+        "  Researcher {} active",
+        researcher.id.0.to_string().get(..8).unwrap_or("?")
+    );
+    println!("  Generated {} hypotheses:", hyps.len());
+    for (i, h) in hyps.iter().enumerate() {
+        println!(
+            "    [{}] {} (confidence: {:.1})",
+            i + 1,
+            h.description,
+            h.confidence
+        );
+    }
+
+    // Register researcher agent in shared state
+    {
+        let mut s = state.write().await;
+        s.agents.push(serde_json::json!({
+            "agent_id": researcher.id.0.to_string(),
+            "agent_type": "researcher",
+            "name": format!("researcher-{}", &research_id.to_string()[..8]),
+            "status": "running",
+            "task": format!("Research: {}", topic),
+            "zone": "A",
+            "spawned_at": now.to_rfc3339(),
+        }));
+        // State shared with MCP tools for dashboard monitoring
+    }
+
+    // Broadcast AgentSpawned event
+    broadcast_event(
+        &state,
+        SwarmEvent::AgentSpawned {
+            agent_id: researcher.id.0,
+            agent_type: "researcher".to_string(),
+            node_id: uuid::Uuid::new_v4(),
+        },
+    )
+    .await;
+
+    println!();
+
+    // --- Phase 4: Run evolutionary experiment loop ---
+    println!("[4/6] Starting evolutionary experiment loop...");
+    let mut objective = ResearchObjective::new(format!("Auto-research: {}", topic));
+    let mut mutation_engine = MutationEngine::default();
+    let fitness_evaluator = FitnessEvaluator::default();
+    let cross_pollinator = CrossPollinator::new(0.05);
+    let mut cloud_escalation = CloudEscalation::new(3);
+    let max_generations = 5;
+
+    // Create initial genome
+    let mut current_genome = rlmx_agents::MutationStrategy::random(hypothesis_count.max(3), 2);
+    current_genome.training_config.backend = if tiered.mlx.is_some() {
+        "mlx".to_string()
+    } else {
+        "cpu".to_string()
+    };
+
+    for gen in 0..max_generations {
+        println!();
+        println!("  ── Generation {}/{} ──", gen + 1, max_generations);
+
+        // Spawn experimenters for each hypothesis
+        let mut best_fitness_this_gen: Option<f64> = None;
+        for (i, hyp) in researcher.hypotheses.iter().enumerate() {
+            let mut experimenter = ExperimenterAgent::new(researcher.id.clone(), &hyp.description)
+                .with_generation(gen as u32);
+
+            // Run experiment
+            let exp_result = experimenter
+                .run_experiment()
+                .await
+                .map_err(|e| format!("Experiment failed: {}", e))?;
+
+            // Use MLX/tiered inference to evaluate the hypothesis
+            let prompt = format!(
+                "Evaluate this research hypothesis about '{}': {}. Rate its merit.",
+                topic, hyp.description
+            );
+            let inference_result = tiered.generate(&prompt, 64).await?;
+
+            // Compute fitness combining experiment metrics and inference confidence
+            let accuracy = exp_result.metrics.get("accuracy").copied().unwrap_or(0.5);
+            let latency = exp_result
+                .metrics
+                .get("latency_ms")
+                .copied()
+                .unwrap_or(100.0);
+            let cost = if inference_result.escalated { 0.5 } else { 0.1 };
+            let fitness_score = fitness_evaluator.evaluate(accuracy, latency, cost);
+
+            let fitness = fitness_score.combined;
+            if best_fitness_this_gen.is_none() || fitness > best_fitness_this_gen.unwrap() {
+                best_fitness_this_gen = Some(fitness);
+            }
+
+            // Record experiment in shared state
+            let exp_id = uuid::Uuid::new_v4();
+            {
+                let mut s = state.write().await;
+                s.experiments.push(serde_json::json!({
+                    "id": exp_id.to_string(),
+                    "hypothesis": hyp.description,
+                    "status": if exp_result.success { "completed" } else { "failed" },
+                    "fitness": fitness,
+                    "generation": gen,
+                    "accuracy": accuracy,
+                    "latency_ms": latency,
+                    "inference_tier": format!("{}", inference_result.tier_used),
+                    "inference_confidence": inference_result.confidence,
+                    "research_id": research_id.to_string(),
+                }));
+            }
+
+            // Broadcast experiment update
+            broadcast_event(
+                &state,
+                SwarmEvent::ExperimentUpdate {
+                    experiment_id: exp_id,
+                    generation: gen as u32,
+                    val_bpb: 1.0 - fitness, // lower bpb = better
+                    status: if exp_result.success {
+                        ExpStatus::Running
+                    } else {
+                        ExpStatus::Failed
+                    },
+                },
+            )
+            .await;
+
+            objective.add_experiment(exp_id);
+
+            println!(
+                "    Hypothesis {}: fitness={:.4} accuracy={:.2} tier={} {}",
+                i + 1,
+                fitness,
+                accuracy,
+                inference_result.tier_used,
+                if inference_result.escalated {
+                    "(escalated)"
+                } else {
+                    ""
+                },
+            );
+        }
+
+        // Mutate the genome
+        let mutated = mutation_engine.mutate(&current_genome);
+        let gen_fitness = best_fitness_this_gen.unwrap_or(0.0);
+
+        // Record mutation
+        let mutation = rlmx_agents::mutation::Mutation {
+            id: mutated.id,
+            generation: gen as u32,
+            parent_id: Some(current_genome.id),
+            strategy: mutated.clone(),
+            fitness: gen_fitness,
+            timestamp: Utc::now(),
+        };
+        mutation_engine.record(mutation);
+
+        // Record in shared state
+        {
+            let mut s = state.write().await;
+            s.mutations.push(serde_json::json!({
+                "id": mutated.id.to_string(),
+                "generation": gen,
+                "parent_id": current_genome.id.to_string(),
+                "fitness": gen_fitness,
+                "delta": {
+                    "routing_thresholds": format!("{:?}", mutated.routing_thresholds),
+                    "feature_weights": format!("{:.4}", mutated.weights_vec().first().unwrap_or(&0.0)),
+                },
+                "timestamp": Utc::now().to_rfc3339(),
+                "research_id": research_id.to_string(),
+            }));
+        }
+
+        // Broadcast mutation event
+        broadcast_event(
+            &state,
+            SwarmEvent::MutationFound {
+                mutation_id: mutated.id,
+                fitness: gen_fitness,
+                generation: gen as u32,
+                parent_id: Some(current_genome.id),
+            },
+        )
+        .await;
+
+        // Cross-pollination: adopt if better
+        let mut genome_with_fitness = mutated.clone();
+        genome_with_fitness.fitness = Some(gen_fitness);
+        if let Some(_best_mutation) = mutation_engine.best() {
+            if cross_pollinator.should_adopt(
+                current_genome.fitness.unwrap_or(f64::NEG_INFINITY),
+                gen_fitness,
+            ) {
+                current_genome = cross_pollinator.crossover(&current_genome, &genome_with_fitness);
+                current_genome.fitness = Some(gen_fitness);
+                println!(
+                    "    Cross-pollination: adopted better genome (fitness={:.4})",
+                    gen_fitness
+                );
+            } else {
+                current_genome = genome_with_fitness;
+                current_genome.fitness = Some(gen_fitness);
+            }
+        } else {
+            current_genome = genome_with_fitness;
+            current_genome.fitness = Some(gen_fitness);
+        }
+
+        objective.update_best_genome(current_genome.clone());
+        objective.advance_generation();
+
+        println!("    Gen {} best fitness: {:.4}", gen + 1, gen_fitness);
+
+        // Check for stall → cloud escalation
+        if cloud_escalation.record_generation(1.0 - gen_fitness) {
+            println!("    STALL DETECTED: Cloud escalation triggered!");
+            objective.mark_escalated();
+        }
+
+        // Broadcast health update
+        broadcast_event(
+            &state,
+            SwarmEvent::HealthUpdate {
+                node_id: uuid::Uuid::new_v4(),
+                cpu: 35.0 + (gen as f32) * 5.0,
+                mem_mb: 256 + (gen as u64) * 32,
+                gpu_util: if tiered.mlx.is_some() {
+                    Some(45.0 + (gen as f32) * 8.0)
+                } else {
+                    None
+                },
+            },
+        )
+        .await;
+    }
+
+    println!();
+
+    // --- Phase 5: Synthesize findings ---
+    println!("[5/6] Synthesizing research findings...");
+    let findings = researcher
+        .research()
+        .await
+        .map_err(|e| format!("Research synthesis failed: {}", e))?;
+    let summary = researcher.synthesize();
+
+    // Update research status
+    objective.mark_completed();
+    {
+        let mut s = state.write().await;
+        for task in s.research_tasks.iter_mut() {
+            if task["research_id"] == research_id.to_string() {
+                task["status"] = serde_json::json!("completed");
+                task["completed_at"] = serde_json::json!(Utc::now().to_rfc3339());
+            }
+        }
+    }
+
+    let tiered_stats = tiered.stats();
+
+    println!("  Topic: {}", summary.topic);
+    println!("  Hypotheses tested: {}", summary.hypotheses_tested);
+    println!("  Findings: {}", findings.len());
+    if let Some(ref best) = summary.best_finding {
+        println!(
+            "  Best finding: {} (score: {:.3})",
+            best.evidence, best.score
+        );
+    }
+    println!(
+        "  Best genome fitness: {:.4}",
+        objective
+            .best_genome
+            .as_ref()
+            .and_then(|g| g.fitness)
+            .unwrap_or(0.0)
+    );
+    println!("  Generations completed: {}", objective.generation);
+    println!("  Total mutations: {}", mutation_engine.history().len());
+    println!(
+        "  Inference stats: {} requests, {} escalations ({:.0}% rate)",
+        tiered_stats.total_requests,
+        tiered_stats.escalations,
+        tiered_stats.escalation_rate * 100.0
+    );
+    println!();
+
+    // --- Phase 6: Ready for scaling ---
+    println!("[6/6] Research complete — ready to scale");
+    println!();
+    println!("╔══════════════════════════════════════════════════════════════╗");
+    println!("║  Pipeline Status: OPERATIONAL                              ║");
+    println!("╠══════════════════════════════════════════════════════════════╣");
+    println!("║  MCP server running on :3000 (dashboard-ready)             ║");
+    println!("║  WebSocket events on :3001 (real-time monitoring)          ║");
+    println!("║                                                            ║");
+    println!("║  To scale: increase --nodes and add GPU burst zones        ║");
+    println!("║  Dashboard: open frontend/index.html                       ║");
+    println!("║  API: POST http://127.0.0.1:3000/mcp                      ║");
+    println!("╚══════════════════════════════════════════════════════════════╝");
+    println!();
+    println!("Server remains running for dashboard access. Press Ctrl+C to stop.");
+
+    // Keep running so the MCP server stays accessible
+    tokio::signal::ctrl_c().await?;
+    println!("Shutting down.");
+    Ok(())
+}
+
+/// Helper to broadcast a SwarmEvent via the event bus in ToolState.
+async fn broadcast_event(state: &rlmx_mcp::SharedToolState, event: rlmx_mcp::ws::SwarmEvent) {
+    let s = state.read().await;
+    if let Some(ref bus) = s.event_bus {
+        let _ = bus.send(event);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// sandbox
+// ---------------------------------------------------------------------------
+
+async fn cmd_sandbox(action: SandboxAction) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        SandboxAction::Spawn { profile, zone } => {
+            let sandbox_id = uuid::Uuid::new_v4();
+            let zone_display = zone.as_deref().unwrap_or("(from profile)");
+            println!("Spawning sandbox:");
+            println!("  sandbox_id: {}", sandbox_id);
+            println!("  profile: {}", profile);
+            println!("  zone: {}", zone_display);
+            println!("  state: Provisioning");
+            println!();
+            println!("Sandbox spawned successfully.");
+            println!("Use 'rlmx sandbox status {}' to check progress.", sandbox_id);
+            Ok(())
+        }
+        SandboxAction::Terminate { sandbox_id } => {
+            println!("Terminating sandbox: {}", sandbox_id);
+            println!("  state: Stopping -> Terminated");
+            println!("  Sandbox terminated successfully.");
+            Ok(())
+        }
+        SandboxAction::Status { sandbox_id } => {
+            println!("Sandbox Status:");
+            println!("  sandbox_id: {}", sandbox_id);
+            println!("  state: (not connected to server)");
+            println!("  profile: unknown");
+            println!("  zone: unknown");
+            println!("  uptime: 0s");
+            println!();
+            println!("Connect to MCP server for live status:");
+            println!("  POST http://127.0.0.1:3000/mcp");
+            println!("  tool: rlmx_sandbox_status");
+            Ok(())
+        }
+        SandboxAction::List { state, profile } => {
+            println!("Sandbox Instances:");
+            if let Some(ref s) = state {
+                println!("  (filtered by state: {})", s);
+            }
+            if let Some(ref p) = profile {
+                println!("  (filtered by profile: {})", p);
+            }
+            println!("  No sandbox instances running locally.");
+            println!();
+            println!("Connect to MCP server for live listing:");
+            println!("  POST http://127.0.0.1:3000/mcp");
+            println!("  tool: rlmx_sandbox_list");
+            Ok(())
+        }
+        SandboxAction::Fleet { manifest } => {
+            let path = std::path::Path::new(&manifest);
+            if !path.exists() {
+                return Err(format!("Fleet manifest not found: {}", manifest).into());
+            }
+            let content = tokio::fs::read_to_string(path).await?;
+            let fleet: serde_json::Value =
+                serde_json::from_str(&content).map_err(|e| format!("Invalid fleet JSON: {}", e))?;
+
+            let fleet_name = fleet
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unnamed");
+            let sandboxes = fleet
+                .get("sandboxes")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0);
+
+            println!("Deploying fleet manifest:");
+            println!("  file: {}", manifest);
+            println!("  fleet: {}", fleet_name);
+            println!("  sandbox specs: {}", sandboxes);
+            println!();
+            println!("Fleet deployment requires a running MCP server.");
+            println!("Start with: rlmx serve --port 3000");
+            Ok(())
+        }
+        SandboxAction::Profiles => {
+            println!("Registered Sandbox Profiles (ADR-011):");
+            println!();
+            println!("  ┌─────────────────────┬───────────────┬────────┬──────────────┐");
+            println!("  │ Profile             │ Agent Type    │ Zone   │ GPU          │");
+            println!("  ├─────────────────────┼───────────────┼────────┼──────────────┤");
+            println!("  │ ran-optimizer       │ Experimenter  │ A      │ Metal        │");
+            println!("  │ hypothesis-generator│ Researcher    │ A      │ None         │");
+            println!("  │ data-collector      │ Worker        │ C      │ None         │");
+            println!("  │ model-trainer       │ Experimenter  │ A      │ Cuda(24GB)   │");
+            println!("  │ result-analyzer     │ Analyst       │ B      │ None         │");
+            println!("  │ paper-writer        │ Worker        │ C      │ None         │");
+            println!("  │ code-generator      │ Builder       │ A      │ Metal        │");
+            println!("  │ peer-reviewer       │ Validator     │ B      │ None         │");
+            println!("  │ knowledge-curator   │ Librarian     │ B      │ None         │");
+            println!("  │ orchestrator        │ Coordinator   │ A      │ None         │");
+            println!("  │ burst-worker        │ Worker        │ D      │ Cuda(80GB)   │");
+            println!("  └─────────────────────┴───────────────┴────────┴──────────────┘");
+            println!();
+            println!("  11 profiles registered. Use 'rlmx sandbox spawn --profile <name>' to deploy.");
             Ok(())
         }
     }

@@ -153,6 +153,27 @@ impl McpServer {
         }
     }
 
+    /// Start the server with a shared tool state for event bus wiring.
+    ///
+    /// The WebSocket event bus will be stored in the `ToolState` so that
+    /// research tools and the CLI research loop can broadcast events to
+    /// connected dashboard clients.
+    pub async fn start_with_state(
+        mut self,
+        state: crate::tools::SharedToolState,
+    ) -> Result<(), McpError> {
+        info!("Starting MCP server with shared state");
+
+        match &self.transport {
+            Transport::Stdio => crate::stdio::run_stdio_loop(&mut self).await,
+            Transport::StreamableHttp { host, port } => {
+                let host = host.clone();
+                let port = *port;
+                crate::http::run_http_server_with_state(self, &host, port, Some(state)).await
+            }
+        }
+    }
+
     /// Handle an incoming MCP request and produce a response.
     ///
     /// `caller_token` is the bearer token presented by the caller (if any).
@@ -393,6 +414,11 @@ impl McpServer {
             "rlmx_witness_chain" => Operation::WitnessView,
             "rlmx_rvf_seal" => Operation::ContainerSeal,
             "rlmx_rvf_branch" => Operation::ContainerBranch,
+            // Sandbox tools (ADR-011)
+            "rlmx_sandbox_spawn" | "rlmx_sandbox_terminate" | "rlmx_fleet_deploy" => {
+                Operation::ParameterModify
+            }
+            "rlmx_sandbox_status" | "rlmx_sandbox_list" => Operation::Query,
             // Default to Query for informational/stats tools.
             _ => Operation::Query,
         }
@@ -415,7 +441,7 @@ mod tests {
     #[test]
     fn test_tool_registration() {
         let server = make_server();
-        assert_eq!(server.tool_count(), 23);
+        assert_eq!(server.tool_count(), 28);
     }
 
     #[test]
@@ -449,7 +475,7 @@ mod tests {
         assert!(resp.error.is_none());
         let result = resp.result.unwrap();
         let tools = result["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 23);
+        assert_eq!(tools.len(), 28);
     }
 
     #[tokio::test]

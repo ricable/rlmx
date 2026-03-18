@@ -17,6 +17,7 @@ rlmx-swarm = { path = "../rlmx-swarm" }
 rlmx-agents = { path = "../rlmx-agents" }
 rlmx-ruvllm = { path = "../rlmx-ruvllm", default-features = false }
 tokio = { workspace = true }
+chrono = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }
 serde_json = { workspace = true }

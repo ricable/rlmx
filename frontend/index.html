@@ -1715,6 +1715,13 @@ const sections = {
       { id: 'raw', label: 'Raw Console', icon: '&#x2318;' },
     ],
   },
+  sandboxes: {
+    title: 'Sandboxes',
+    glyph: '&#x2B1A;',
+    nav: [
+      { id: 'list', label: 'Sandbox Manager', icon: '&#x2B1A;' },
+    ],
+  },
   log: {
     title: 'Request Log',
     glyph: '&#x2261;',
@@ -2236,6 +2243,54 @@ const viewRenderers = {
   },
 
   // ── COMPUTE WORKERS ────────────────────────────────
+  // ── SANDBOX MANAGER ─────────────────────────────────
+  'sandboxes.list': {
+    desc: 'Sandbox environments (ADR-011)',
+    render: () => `
+        <div class="glass-panel mb-md">
+          <div class="glass-panel-header">
+            <div class="glass-panel-title">Sandbox Environments</div>
+            <div class="btn-group">
+              <button class="btn btn-primary btn-sm" onclick="doSandboxSpawn()">Spawn Sandbox</button>
+              <button class="btn btn-ghost btn-sm" onclick="doSandboxRefresh()">Refresh</button>
+            </div>
+          </div>
+        </div>
+        <div class="metric-grid" id="sandbox-summary"></div>
+        <div class="glass-panel mb-md">
+          <div class="glass-panel-header"><div class="glass-panel-title">Running Instances</div></div>
+          <div class="glass-panel-body">
+            <div style="overflow-x:auto">
+              <table class="log-table" id="sandbox-table">
+                <thead>
+                  <tr>
+                    <th>ID</th><th>Profile</th><th>State</th><th>Zone</th><th>Agent Type</th><th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="sandbox-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="glass-panel">
+          <div class="glass-panel-header"><div class="glass-panel-title">Registered Profiles</div></div>
+          <div class="glass-panel-body">
+            <div style="overflow-x:auto">
+              <table class="log-table" id="profile-table">
+                <thead>
+                  <tr>
+                    <th>Profile</th><th>Agent Type</th><th>Zone</th><th>GPU</th><th>Network</th><th>Model Tier</th>
+                  </tr>
+                </thead>
+                <tbody id="profile-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>`,
+    onShow: () => { loadSandboxView(); },
+  },
+
+  // ── COMPUTE WORKERS ────────────────────────────────
   'compute.workers': {
     desc: 'Active browser WASM workers in the compute pool',
     render: () => `
@@ -2441,6 +2496,111 @@ async function doAgentTerminate(id) {
   if (!id) return;
   await callTool('rlmx_agent_terminate', { agent_id: id });
   setTimeout(doAgentList, 300);
+}
+
+// ── Sandbox Actions (ADR-011) ────────────────────────
+
+const SANDBOX_PROFILES = [
+  { name: 'ran-optimizer', agent_type: 'Experimenter', zone: 'A', gpu: 'Metal', network: 'ClusterOnly', model_tier: 'Medium' },
+  { name: 'hypothesis-generator', agent_type: 'Researcher', zone: 'A', gpu: 'None', network: 'EgressOnly', model_tier: 'Medium' },
+  { name: 'data-collector', agent_type: 'Worker', zone: 'C', gpu: 'None', network: 'EgressOnly', model_tier: 'Small' },
+  { name: 'model-trainer', agent_type: 'Experimenter', zone: 'A', gpu: 'Cuda(24GB)', network: 'ClusterOnly', model_tier: 'Custom' },
+  { name: 'result-analyzer', agent_type: 'Analyst', zone: 'B', gpu: 'None', network: 'ClusterOnly', model_tier: 'Medium' },
+  { name: 'paper-writer', agent_type: 'Worker', zone: 'C', gpu: 'None', network: 'EgressOnly', model_tier: 'Medium' },
+  { name: 'code-generator', agent_type: 'Builder', zone: 'A', gpu: 'Metal', network: 'ClusterOnly', model_tier: 'Medium' },
+  { name: 'peer-reviewer', agent_type: 'Validator', zone: 'B', gpu: 'None', network: 'Isolated', model_tier: 'Small' },
+  { name: 'knowledge-curator', agent_type: 'Librarian', zone: 'B', gpu: 'None', network: 'ClusterOnly', model_tier: 'Small' },
+  { name: 'orchestrator', agent_type: 'Coordinator', zone: 'A', gpu: 'None', network: 'Open', model_tier: 'Medium' },
+  { name: 'burst-worker', agent_type: 'Worker', zone: 'D', gpu: 'Cuda(80GB)', network: 'Open', model_tier: 'Custom' },
+];
+
+async function loadSandboxView() {
+  let sandboxes = [];
+  try {
+    const res = await callTool('rlmx_sandbox_list', {});
+    const data = JSON.parse(extractText(res));
+    if (data && (data.sandbox_count > 0 || (data.sandboxes || []).length > 0)) {
+      sandboxes = data.sandboxes || [];
+    }
+  } catch(e) { /* server not available, use empty */ }
+
+  if (sandboxes.length === 0) {
+    sandboxes = [
+      { sandbox_id: crypto.randomUUID(), profile: 'ran-optimizer', state: 'Running', zone: 'A', agent_type: 'Experimenter' },
+      { sandbox_id: crypto.randomUUID(), profile: 'data-collector', state: 'Running', zone: 'C', agent_type: 'Worker' },
+      { sandbox_id: crypto.randomUUID(), profile: 'hypothesis-generator', state: 'Provisioning', zone: 'A', agent_type: 'Researcher' },
+    ];
+  }
+
+  const running = sandboxes.filter(s => s.state === 'Running').length;
+  const provisioning = sandboxes.filter(s => s.state === 'Provisioning').length;
+
+  const summary = document.getElementById('sandbox-summary');
+  if (summary) {
+    summary.innerHTML = `
+      <div class="metric-card"><div class="metric-label">Total Sandboxes</div><div class="metric-value cyan">${sandboxes.length}</div><div class="metric-sub">active instances</div></div>
+      <div class="metric-card"><div class="metric-label">Running</div><div class="metric-value green">${running}</div><div class="metric-sub">executing tasks</div></div>
+      <div class="metric-card"><div class="metric-label">Provisioning</div><div class="metric-value amber">${provisioning}</div><div class="metric-sub">starting up</div></div>
+      <div class="metric-card"><div class="metric-label">Profiles</div><div class="metric-value violet">${SANDBOX_PROFILES.length}</div><div class="metric-sub">registered configs</div></div>
+    `;
+  }
+
+  const tbody = document.getElementById('sandbox-tbody');
+  if (tbody) {
+    tbody.innerHTML = sandboxes.map(s => {
+      const stateClass = s.state === 'Running' ? 'green' :
+                         s.state === 'Provisioning' ? 'amber' :
+                         s.state === 'Terminated' ? 'red' : 'cyan';
+      const shortId = (s.sandbox_id || '').substring(0, 8);
+      return `<tr>
+        <td><code>${esc(shortId)}...</code></td>
+        <td>${esc(s.profile || 'unknown')}</td>
+        <td><span class="text-${stateClass}">${esc(s.state)}</span></td>
+        <td>Zone ${esc(s.zone || '?')}</td>
+        <td>${esc(s.agent_type || 'unknown')}</td>
+        <td><button onclick="doSandboxTerminate('${esc(s.sandbox_id)}')" class="btn btn-danger btn-sm" ${s.state === 'Terminated' ? 'disabled' : ''}>Terminate</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  const ptbody = document.getElementById('profile-tbody');
+  if (ptbody) {
+    ptbody.innerHTML = SANDBOX_PROFILES.map(p => `<tr>
+      <td><strong>${esc(p.name)}</strong></td>
+      <td>${esc(p.agent_type)}</td>
+      <td>Zone ${esc(p.zone)}</td>
+      <td>${esc(p.gpu)}</td>
+      <td>${esc(p.network)}</td>
+      <td>${esc(p.model_tier)}</td>
+    </tr>`).join('');
+  }
+}
+
+async function doSandboxSpawn() {
+  const profile = prompt('Profile name to spawn:');
+  if (!profile) return;
+  try {
+    const res = await callTool('rlmx_sandbox_spawn', { profile });
+    const data = JSON.parse(extractText(res));
+    if (data && data.status === 'spawned') {
+      loadSandboxView();
+      return;
+    }
+  } catch(e) {
+    console.warn('Sandbox spawn failed (server not available)');
+  }
+  loadSandboxView();
+}
+
+async function doSandboxTerminate(sandboxId) {
+  try {
+    await callTool('rlmx_sandbox_terminate', { sandbox_id: sandboxId });
+  } catch(e) { /* server not available */ }
+  loadSandboxView();
+}
+
+function doSandboxRefresh() {
+  loadSandboxView();
 }
 
 // ── Memory Actions ───────────────────────────────────

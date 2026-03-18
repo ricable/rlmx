@@ -8,22 +8,17 @@ use serde::{Deserialize, Serialize};
 use crate::events::{self, DomainEvent, DomainEventBus};
 
 /// Scheduling strategy selection.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub enum Strategy {
     /// Use the RLM (Reinforcement Learning Model) scheduler.
     Rlm,
     /// Use the TRM (Tree of Reasoning Models) scheduler with a specific model.
     Trm(String),
     /// Automatically select the best strategy based on query characteristics.
+    #[default]
     Auto,
     /// Hybrid: use a triage model to classify, then dispatch.
     Hybrid { triage: String, threshold: f32 },
-}
-
-impl Default for Strategy {
-    fn default() -> Self {
-        Strategy::Auto
-    }
 }
 
 /// Configuration for the kernel scheduler.

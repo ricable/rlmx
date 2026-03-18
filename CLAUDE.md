@@ -25,7 +25,7 @@
 
 RLMX ("RuVix") is a **cognition kernel** — an OS-kernel-inspired runtime for LLM agents. It provides capability-secured syscall primitives that agents call instead of accessing arbitrary APIs. Written in Rust (edition 2021), async on Tokio.
 
-**11 crates, 23 MCP tools, 12 agent types, 5 swarm zones, 462+ tests, 20+ dashboard views.**
+**11 crates, 28 MCP tools, 12 agent types, 5 swarm zones, 504+ tests, 20+ dashboard views, 11 sandbox profiles.**
 
 The system supports five inference paths:
 - **Cloud/Dev**: `VllmClient` → vLLM on Metal (Mac) or NVIDIA GPU (prod)
@@ -39,7 +39,7 @@ The system supports five inference paths:
 ```bash
 # Standard development
 cargo build --workspace              # Build all 11 crates
-cargo test --workspace               # Run all tests (462+)
+cargo test --workspace               # Run all tests (504+)
 cargo test -p rlmx-kernel            # Run tests for a single crate
 cargo clippy --workspace -- -D warnings  # Lint (must be zero warnings)
 cargo fmt --check                    # Check formatting
@@ -86,8 +86,9 @@ rlmx-cognitive        (standalone — self-learning)
 
 Additional directories:
 - `frontend/` — Single-page web UI (13 views) + WASM module
+- `frontend/dashboard/` — Svelte 5 + TailwindCSS v4 dashboard (Vite, :5173)
 - `deploy/` — Systemd service for RPi5
-- `docs/ADR/` — 10 Architecture Decision Records
+- `docs/ADR/` — 11 Architecture Decision Records
 - `docs/DDD/` — 7 Domain-Driven Design documents
 - `.cargo/` — Cross-compilation config
 
@@ -97,10 +98,10 @@ Additional directories:
 **12-syscall dispatch** with `DomainEventBus` (6 cross-context events). `TinyDancerRouter` (FastGRNN 14→32→5) with online learning and 0.6 confidence gating. `Strategy` enum includes `Swarm { scatter_zones, gather_strategy, timeout_ms }`.
 
 ### MCP Server (`rlmx-mcp`)
-**23 JSON-RPC 2.0 tools**, HTTP :3000, WebSocket :3001 with typed `SwarmEvent` enum (7 variants), auth, heartbeat, backpressure. RBAC: 6 roles, clients cannot self-escalate.
+**28 JSON-RPC 2.0 tools**, HTTP :3000, WebSocket :3001 with typed `SwarmEvent` enum (9 variants), auth, heartbeat, backpressure. RBAC: 6 roles, clients cannot self-escalate. Sandbox tools: `rlmx_sandbox_spawn`, `_terminate`, `_status`, `_list`, `rlmx_fleet_deploy`.
 
 ### Swarm (`rlmx-swarm`)
-**4-zone topology** (A=Compute/PBFT, B=Inference/Raft, C=Edge/Gossip, D=Burst). Strategy-to-Zone mapping with fallbacks. `BrowserComputePool` with priority queue and fault tolerance. `SimulatedSwarm` with per-zone latency config.
+**4-zone topology** (A=Compute/PBFT, B=Inference/Raft, C=Edge/Gossip, D=Burst). Strategy-to-Zone mapping with fallbacks. `BrowserComputePool` with priority queue and fault tolerance. `SimulatedSwarm` with per-zone latency config. **Sandbox orchestration** (ADR-011): `SandboxManager` with `SandboxProfile`, `ResourceEnvelope`, `NetworkPolicy`, `FleetManifest`. 11 profiles mapping to AgentType + zone + ModelTier.
 
 ### Agents (`rlmx-agents`)
 **12 typed roles** with const 12x12 permission matrix. `AgentLifecycle` state machine. Auto-research: `ResearchObjective`, `MutationStrategy` genome, `CrossPollinator`, `FitnessEvaluator`, `CloudEscalation`.
@@ -145,7 +146,7 @@ SONA (micro-LoRA + EWC++), DagOptimizer, NervousSystem (BTSP, HDC, WTA, circadia
 1. **Never break the stub build**: `cargo build --workspace` without features MUST compile clean.
 2. **Never add `println!` to library crates**: use `tracing::*`.
 3. **Never bypass RBAC**: Admin/System only via server-side `token_roles`.
-4. **Keep tests passing**: `cargo test --workspace` must pass all 462+ tests.
+4. **Keep tests passing**: `cargo test --workspace` must pass all 504+ tests.
 5. **Zero clippy warnings**: `cargo clippy --workspace -- -D warnings` must be clean.
 6. **Edge tools return `"status": "unavailable"`** when no engine is configured.
 7. **GGUF models require companion tokenizers**: `<model>-tokenizer.json` next to `.gguf`.
@@ -170,9 +171,9 @@ SONA (micro-LoRA + EWC++), DagOptimizer, NervousSystem (BTSP, HDC, WTA, circadia
 | `crates/rlmx-kernel/src/scheduler.rs` | Strategy enum, GatherStrategy, Scheduler |
 | `crates/rlmx-kernel/src/router.rs` | TinyDancerRouter (FastGRNN 14→32→5) |
 | `crates/rlmx-kernel/src/events.rs` | DomainEvent (6 variants), DomainEventBus |
-| `crates/rlmx-mcp/src/tools.rs` | All 23 MCP tool definitions |
+| `crates/rlmx-mcp/src/tools.rs` | All 28 MCP tool definitions |
 | `crates/rlmx-mcp/src/server.rs` | RBAC, tool dispatch, McpConfig |
-| `crates/rlmx-mcp/src/ws.rs` | WebSocket server, SwarmEvent (7 variants) |
+| `crates/rlmx-mcp/src/ws.rs` | WebSocket server, SwarmEvent (9 variants) |
 | `crates/rlmx-swarm/src/consensus.rs` | PBFT/Raft/Gossip layers |
 | `crates/rlmx-swarm/src/browser_pool.rs` | BrowserComputePool, priority queue |
 | `crates/rlmx-swarm/src/orchestrator.rs` | SwarmOrchestrator, route_syscall() |
@@ -181,10 +182,11 @@ SONA (micro-LoRA + EWC++), DagOptimizer, NervousSystem (BTSP, HDC, WTA, circadia
 | `crates/rlmx-agents/src/lifecycle.rs` | AgentLifecycle state machine |
 | `crates/rlmx-ruvllm/src/tiered.rs` | TieredEngine, escalation |
 | `crates/rlmx-ruvllm/src/mlx_bridge.rs` | MlxSubprocess for Apple Silicon |
-| `crates/rlmx-cli/src/main.rs` | CLI: serve, swarm, agent, research, edge |
+| `crates/rlmx-swarm/src/sandbox.rs` | SandboxManager, SandboxProfile, FleetManifest (ADR-011) |
+| `crates/rlmx-cli/src/main.rs` | CLI: serve, swarm, agent, research, sandbox, edge |
 | `frontend/index.html` | Web dashboard (20+ views, demo data, force graph, sparklines) |
 | `frontend/ruvllm-wasm/` | @ruvector/ruvllm-wasm v2.0.2 pre-built WASM module |
-| `docs/ADR/` | 10 Architecture Decision Records |
+| `docs/ADR/` | 11 Architecture Decision Records |
 | `docs/DDD/` | 7 Domain-Driven Design documents |
 
 ## Concurrency: 1 MESSAGE = ALL RELATED OPERATIONS
@@ -215,7 +217,7 @@ SONA (micro-LoRA + EWC++), DagOptimizer, NervousSystem (BTSP, HDC, WTA, circadia
 ```bash
 # === Build & Test ===
 cargo build --workspace                          # Build all 11 crates (stub, no ruvllm)
-cargo test --workspace                           # Run all 462+ tests
+cargo test --workspace                           # Run all 504+ tests
 cargo clippy --workspace -- -D warnings          # Lint (must be zero warnings)
 cargo fmt --check                                # Check formatting
 cargo fmt                                        # Auto-format

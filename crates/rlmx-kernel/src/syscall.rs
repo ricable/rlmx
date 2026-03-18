@@ -127,21 +127,19 @@ pub async fn dispatch(syscall: &Syscall, ctx: &KernelContext) -> KernelResult<Sy
     );
 
     // Emit domain-specific events for certain syscalls on success.
-    if let Ok(ref res) = result {
-        if let SyscallResult::StateMutated {
-            witness_id,
-            success,
-        } = res
-        {
-            events::emit(
-                &ctx.event_bus,
-                DomainEvent::StateMutated {
-                    witness_id: *witness_id,
-                    success: *success,
-                    timestamp: Utc::now(),
-                },
-            );
-        }
+    if let Ok(SyscallResult::StateMutated {
+        witness_id,
+        success,
+    }) = result
+    {
+        events::emit(
+            &ctx.event_bus,
+            DomainEvent::StateMutated {
+                witness_id,
+                success,
+                timestamp: Utc::now(),
+            },
+        );
     }
 
     result

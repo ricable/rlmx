@@ -64,6 +64,15 @@ pub enum SwarmEvent {
         generation: u32,
         parent_id: Option<Uuid>,
     },
+    SandboxSpawned {
+        sandbox_id: Uuid,
+        profile: String,
+        node_id: Option<Uuid>,
+    },
+    SandboxTerminated {
+        sandbox_id: Uuid,
+        reason: String,
+    },
 }
 
 impl SwarmEvent {
@@ -77,6 +86,8 @@ impl SwarmEvent {
             SwarmEvent::HealthUpdate { .. } => "HealthUpdate",
             SwarmEvent::ExperimentUpdate { .. } => "ExperimentUpdate",
             SwarmEvent::MutationFound { .. } => "MutationFound",
+            SwarmEvent::SandboxSpawned { .. } => "SandboxSpawned",
+            SwarmEvent::SandboxTerminated { .. } => "SandboxTerminated",
         }
     }
 
@@ -87,6 +98,7 @@ impl SwarmEvent {
             | SwarmEvent::NodeLeft { node_id, .. }
             | SwarmEvent::AgentSpawned { node_id, .. }
             | SwarmEvent::HealthUpdate { node_id, .. } => Some(*node_id),
+            SwarmEvent::SandboxSpawned { node_id, .. } => *node_id,
             _ => None,
         }
     }
@@ -185,6 +197,8 @@ impl Default for ClientState {
                 "HealthUpdate".into(),
                 "ExperimentUpdate".into(),
                 "MutationFound".into(),
+                "SandboxSpawned".into(),
+                "SandboxTerminated".into(),
             ],
             filters: WsFilters::default(),
         }
@@ -399,8 +413,7 @@ impl WsServer {
                 }
 
                 // --- Per-connection state ---
-                let state: Arc<Mutex<ClientState>> =
-                    Arc::new(Mutex::new(ClientState::default()));
+                let state: Arc<Mutex<ClientState>> = Arc::new(Mutex::new(ClientState::default()));
                 let state_for_send = state.clone();
 
                 let mut event_rx = tx.subscribe();
@@ -473,7 +486,7 @@ impl WsServer {
                                     break;
                                 }
                                 if ws_sender
-                                    .send(Message::Ping(vec![].into()))
+                                    .send(Message::Ping(vec![]))
                                     .await
                                     .is_err()
                                 {
@@ -908,5 +921,43 @@ mod tests {
             let back: ExpStatus = serde_json::from_str(&json).unwrap();
             assert_eq!(back, status);
         }
+    }
+
+    #[test]
+    fn test_serialize_sandbox_spawned() {
+        let event = SwarmEvent::SandboxSpawned {
+            sandbox_id: Uuid::nil(),
+            profile: "ran-optimizer".into(),
+            node_id: Some(Uuid::nil()),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"type\":\"SandboxSpawned\""));
+        assert!(json.contains("\"profile\":\"ran-optimizer\""));
+        let deserialized: SwarmEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.type_name(), "SandboxSpawned");
+    }
+
+    #[test]
+    fn test_serialize_sandbox_terminated() {
+        let event = SwarmEvent::SandboxTerminated {
+            sandbox_id: Uuid::nil(),
+            reason: "user-requested".into(),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"type\":\"SandboxTerminated\""));
+        assert!(json.contains("\"reason\":\"user-requested\""));
+        let deserialized: SwarmEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.type_name(), "SandboxTerminated");
+    }
+
+    #[test]
+    fn test_sandbox_spawned_no_node_id() {
+        let event = SwarmEvent::SandboxSpawned {
+            sandbox_id: Uuid::nil(),
+            profile: "data-collector".into(),
+            node_id: None,
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"node_id\":null"));
     }
 }
