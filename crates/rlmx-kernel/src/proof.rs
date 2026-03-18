@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::types::{KernelError, KernelResult, ProofRequest};
@@ -12,8 +13,37 @@ pub struct Witness {
     pub reasoning_chain_hash: String,
     pub evidence_refs: Vec<String>,
     pub timestamp: DateTime<Utc>,
-    /// Placeholder for Ed25519 signature.
-    pub signature: String,
+    /// SHA-256 hash of the previous witness entry (empty string for the first entry).
+    pub prev_hash: String,
+    /// SHA-256 hash of all fields in this witness (provides tamper detection).
+    pub content_hash: String,
+}
+
+impl Witness {
+    /// Compute the content hash over all semantic fields of this witness.
+    ///
+    /// The hash covers: id, action_hash, reasoning_chain_hash, evidence_refs,
+    /// timestamp, and prev_hash. This means `content_hash` itself is excluded
+    /// from the computation (it is the *output*).
+    fn compute_content_hash(
+        id: &Uuid,
+        action_hash: &str,
+        reasoning_chain_hash: &str,
+        evidence_refs: &[String],
+        timestamp: &DateTime<Utc>,
+        prev_hash: &str,
+    ) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(id.to_string().as_bytes());
+        hasher.update(action_hash.as_bytes());
+        hasher.update(reasoning_chain_hash.as_bytes());
+        for r in evidence_refs {
+            hasher.update(r.as_bytes());
+        }
+        hasher.update(timestamp.to_rfc3339().as_bytes());
+        hasher.update(prev_hash.as_bytes());
+        hex::encode(hasher.finalize())
+    }
 }
 
 /// A proof produced after validating a state mutation.
@@ -46,13 +76,32 @@ impl WitnessChain {
         evidence_refs: Vec<String>,
     ) -> Uuid {
         let id = Uuid::new_v4();
+        let timestamp = Utc::now();
+
+        // Chain to the previous entry's content_hash, or "" for the genesis entry.
+        let prev_hash = self
+            .witnesses
+            .last()
+            .map(|w| w.content_hash.clone())
+            .unwrap_or_default();
+
+        let content_hash = Witness::compute_content_hash(
+            &id,
+            &action_hash,
+            &reasoning_chain_hash,
+            &evidence_refs,
+            &timestamp,
+            &prev_hash,
+        );
+
         let witness = Witness {
             id,
             action_hash,
             reasoning_chain_hash,
             evidence_refs,
-            timestamp: Utc::now(),
-            signature: "placeholder-ed25519".into(),
+            timestamp,
+            prev_hash,
+            content_hash,
         };
         self.witnesses.push(witness);
         id
@@ -70,6 +119,40 @@ impl WitnessChain {
 
     pub fn is_empty(&self) -> bool {
         self.witnesses.is_empty()
+    }
+
+    /// Verify the integrity of the entire witness chain.
+    ///
+    /// Checks that:
+    /// 1. The first entry has an empty `prev_hash`.
+    /// 2. Each subsequent entry's `prev_hash` equals the previous entry's `content_hash`.
+    /// 3. Every entry's `content_hash` is consistent with its fields.
+    pub fn verify_integrity(&self) -> bool {
+        for (i, witness) in self.witnesses.iter().enumerate() {
+            // Verify prev_hash linkage.
+            let expected_prev = if i == 0 {
+                String::new()
+            } else {
+                self.witnesses[i - 1].content_hash.clone()
+            };
+            if witness.prev_hash != expected_prev {
+                return false;
+            }
+
+            // Verify content_hash is correct.
+            let recomputed = Witness::compute_content_hash(
+                &witness.id,
+                &witness.action_hash,
+                &witness.reasoning_chain_hash,
+                &witness.evidence_refs,
+                &witness.timestamp,
+                &witness.prev_hash,
+            );
+            if witness.content_hash != recomputed {
+                return false;
+            }
+        }
+        true
     }
 }
 
@@ -146,13 +229,11 @@ impl Default for ProofEngine {
     }
 }
 
-/// Trivial hash placeholder (not cryptographic).
+/// Cryptographic SHA-256 hash.
 fn simple_hash(input: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    input.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    let mut hasher = Sha256::new();
+    hasher.update(input.as_bytes());
+    hex::encode(hasher.finalize())
 }
 
 // ---------------------------------------------------------------------------
@@ -193,5 +274,74 @@ mod tests {
 
         assert!(!proof.valid);
         assert!(proof.reason.contains("<"));
+    }
+
+    #[test]
+    fn test_witness_chain_integrity_valid() {
+        let mut chain = WitnessChain::new();
+        chain.append("a1".into(), "r1".into(), vec!["e1".into()]);
+        chain.append("a2".into(), "r2".into(), vec![]);
+        chain.append("a3".into(), "r3".into(), vec!["e3a".into(), "e3b".into()]);
+
+        assert!(chain.verify_integrity());
+    }
+
+    #[test]
+    fn test_witness_chain_genesis_has_empty_prev_hash() {
+        let mut chain = WitnessChain::new();
+        chain.append("action".into(), "reason".into(), vec![]);
+
+        let witness = &chain.witnesses[0];
+        assert!(witness.prev_hash.is_empty());
+        assert!(!witness.content_hash.is_empty());
+    }
+
+    #[test]
+    fn test_witness_chain_links_prev_hash() {
+        let mut chain = WitnessChain::new();
+        chain.append("a1".into(), "r1".into(), vec![]);
+        chain.append("a2".into(), "r2".into(), vec![]);
+
+        let first_hash = chain.witnesses[0].content_hash.clone();
+        assert_eq!(chain.witnesses[1].prev_hash, first_hash);
+    }
+
+    #[test]
+    fn test_witness_chain_detects_tampered_action() {
+        let mut chain = WitnessChain::new();
+        chain.append("a1".into(), "r1".into(), vec![]);
+        chain.append("a2".into(), "r2".into(), vec![]);
+
+        // Tamper with the first witness's action_hash.
+        chain.witnesses[0].action_hash = "tampered".into();
+
+        assert!(!chain.verify_integrity());
+    }
+
+    #[test]
+    fn test_witness_chain_detects_broken_link() {
+        let mut chain = WitnessChain::new();
+        chain.append("a1".into(), "r1".into(), vec![]);
+        chain.append("a2".into(), "r2".into(), vec![]);
+
+        // Break the chain link by altering prev_hash and recomputing content_hash
+        // so content_hash is internally consistent but the link is broken.
+        chain.witnesses[1].prev_hash = "bogus".into();
+        chain.witnesses[1].content_hash = Witness::compute_content_hash(
+            &chain.witnesses[1].id,
+            &chain.witnesses[1].action_hash,
+            &chain.witnesses[1].reasoning_chain_hash,
+            &chain.witnesses[1].evidence_refs,
+            &chain.witnesses[1].timestamp,
+            &chain.witnesses[1].prev_hash,
+        );
+
+        assert!(!chain.verify_integrity());
+    }
+
+    #[test]
+    fn test_empty_chain_is_valid() {
+        let chain = WitnessChain::new();
+        assert!(chain.verify_integrity());
     }
 }

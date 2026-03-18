@@ -102,10 +102,21 @@ impl RvfContainer {
     }
 
     /// Verify the container signature against the provided verifying key.
+    ///
+    /// This also checks that the provided key matches the key embedded in the
+    /// signature, ensuring the signature is bound to the expected signer.
     pub fn verify(&self, verifying_key: &VerifyingKey) -> Result<bool, RvfError> {
         let Some(ref sig) = self.signature else {
             return Ok(false);
         };
+
+        // Verify that the provided key matches the key stored in the signature.
+        if verifying_key.to_bytes().to_vec() != sig.verifying_key_bytes {
+            return Err(RvfError::Crypto(
+                "verifying key does not match the key embedded in the container signature"
+                    .to_string(),
+            ));
+        }
 
         let content_hash = self.content_hash();
         if content_hash != sig.content_hash {
@@ -194,10 +205,10 @@ mod tests {
         assert!(c.signature.is_some());
         assert!(c.verify(&vk).unwrap());
 
-        // Verify with wrong key should fail.
+        // Verify with wrong key should return a crypto error (key binding check).
         let other_sk = SigningKey::generate(&mut OsRng);
         let other_vk = other_sk.verifying_key();
-        assert!(!c.verify(&other_vk).unwrap());
+        assert!(c.verify(&other_vk).is_err());
     }
 
     #[test]

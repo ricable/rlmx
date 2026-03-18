@@ -13,7 +13,7 @@ pub mod streams;
 
 // Re-exports for convenient access.
 pub use config::{HaltConfig, TrmClassification, TrmConfig, TrmInput, TrmModelConfig, TrmResult};
-pub use halting::{AdaptiveHalter, HaltCondition};
+pub use halting::{AdaptiveHalter, HaltCondition, HARD_CYCLE_LIMIT};
 pub use model::TrmModel;
 pub use strategy::TrmStrategy;
 pub use streams::TrmStreams;

@@ -151,7 +151,7 @@ pub enum SyscallResult {
     MessageSent { delivered: bool },
     MessageReceived { message: Option<KernelMessage> },
     StateMutated { witness_id: Uuid, success: bool },
-    AttentionSelected { selected_indices: Vec<usize> },
+    AttentionSelected { selected_indices: Vec<usize>, mechanism: String },
     HaltDecision { should_halt: bool, reason: String },
 }
 

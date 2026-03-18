@@ -1,24 +1,122 @@
 //! RLMX MCP Tools
 //!
 //! Implements all 12 RLMX MCP tool definitions and their handlers.
-//! Each tool provides a JSON Schema for input validation and a handler
-//! that delegates to the kernel (stub/mock implementations for now).
+//! Tools that can be wired to kernel subsystems use a shared `ToolState`
+//! backed by `Arc<RwLock<...>>`. Tools that require external services
+//! remain as stubs with `"status": "stub"` in their responses.
+
+use std::sync::Arc;
+use std::time::Instant;
 
 use async_trait::async_trait;
 use chrono::Utc;
 use serde_json::json;
+use tokio::sync::RwLock;
 use uuid::Uuid;
+
+use rlmx_kernel::{Graph, MemoryRegion, SearchFilters, SegmentMetadata};
 
 use crate::protocol::{McpError, McpTool, ToolHandler};
 #[allow(unused_imports)]
 use crate::protocol::INVALID_PARAMS;
 
-/// Create all 12 RLMX MCP tools with their handlers.
-pub fn create_all_tools() -> Vec<McpTool> {
+// ---------------------------------------------------------------------------
+// Shared kernel state accessible by tool handlers
+// ---------------------------------------------------------------------------
+
+/// Shared state wrapping kernel subsystems that MCP tool handlers operate on.
+pub struct ToolState {
+    /// In-memory region for segment storage and vector search.
+    pub memory: MemoryRegion,
+    /// In-memory entity graph for Cypher-like queries.
+    pub graph: Graph,
+    /// Running counter of total ingestion operations performed.
+    pub ingest_count: u64,
+    /// Running counter of total query operations performed.
+    pub query_count: u64,
+    /// Running counter of evicted segments (simulated).
+    pub eviction_count: u64,
+}
+
+impl ToolState {
+    /// Create a new `ToolState` with empty kernel subsystems.
+    pub fn new() -> Self {
+        Self {
+            memory: MemoryRegion::new("mcp-primary"),
+            graph: Graph::new(),
+            ingest_count: 0,
+            query_count: 0,
+            eviction_count: 0,
+        }
+    }
+}
+
+impl Default for ToolState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Convenience alias for the shared tool state handle.
+pub type SharedToolState = Arc<RwLock<ToolState>>;
+
+/// Create a default shared tool state.
+pub fn new_shared_state() -> SharedToolState {
+    Arc::new(RwLock::new(ToolState::new()))
+}
+
+// ---------------------------------------------------------------------------
+// Embedding helper
+// ---------------------------------------------------------------------------
+
+/// Dimension used for the simple hash-based embedding.
+const EMBED_DIM: usize = 64;
+
+/// Generate a deterministic pseudo-embedding from text.
+///
+/// This is NOT a real embedding model — it produces a reproducible float
+/// vector by hashing character trigrams into buckets, then L2-normalising.
+/// It is good enough for demo / integration-test purposes where identical
+/// or very similar strings should have high cosine similarity.
+fn text_to_embedding(text: &str) -> Vec<f32> {
+    let mut vec = vec![0.0_f32; EMBED_DIM];
+    let lower = text.to_lowercase();
+    let chars: Vec<char> = lower.chars().collect();
+
+    // Hash unigrams and trigrams into the vector.
+    for ch in &chars {
+        let idx = (*ch as usize) % EMBED_DIM;
+        vec[idx] += 1.0;
+    }
+    for window in chars.windows(3) {
+        let hash = window.iter().fold(0_usize, |acc, c| {
+            acc.wrapping_mul(31).wrapping_add(*c as usize)
+        });
+        let idx = hash % EMBED_DIM;
+        vec[idx] += 0.5;
+    }
+
+    // L2-normalise.
+    let norm: f32 = vec.iter().map(|v| v * v).sum::<f32>().sqrt();
+    if norm > 0.0 {
+        for v in &mut vec {
+            *v /= norm;
+        }
+    }
+    vec
+}
+
+// ---------------------------------------------------------------------------
+// Public constructor
+// ---------------------------------------------------------------------------
+
+/// Create all 12 RLMX MCP tools with their handlers, wired to the given
+/// shared kernel state.
+pub fn create_all_tools(state: SharedToolState) -> Vec<McpTool> {
     vec![
-        create_rlmx_query(),
-        create_rlmx_ingest(),
-        create_rlmx_memory_stats(),
+        create_rlmx_query(Arc::clone(&state)),
+        create_rlmx_ingest(Arc::clone(&state)),
+        create_rlmx_memory_stats(Arc::clone(&state)),
         create_rlmx_plugin_list(),
         create_rlmx_plugin_action(),
         create_rlmx_strategy_override(),
@@ -27,15 +125,15 @@ pub fn create_all_tools() -> Vec<McpTool> {
         create_rlmx_rvf_branch(),
         create_rlmx_witness_chain(),
         create_rlmx_sona_stats(),
-        create_rlmx_graph_query(),
+        create_rlmx_graph_query(Arc::clone(&state)),
     ]
 }
 
 // ---------------------------------------------------------------------------
-// 1. rlmx_query
+// 1. rlmx_query  — wired to MemoryRegion::search
 // ---------------------------------------------------------------------------
 
-fn create_rlmx_query() -> McpTool {
+fn create_rlmx_query(state: SharedToolState) -> McpTool {
     McpTool {
         name: "rlmx_query".to_string(),
         description: "Query with infinite context. Auto-selects the optimal retrieval strategy (RLM or TRM) based on query characteristics.".to_string(),
@@ -60,11 +158,13 @@ fn create_rlmx_query() -> McpTool {
             },
             "required": ["query"]
         }),
-        handler: Box::new(RlmxQueryHandler),
+        handler: Box::new(RlmxQueryHandler { state }),
     }
 }
 
-struct RlmxQueryHandler;
+struct RlmxQueryHandler {
+    state: SharedToolState,
+}
 
 #[async_trait]
 impl ToolHandler for RlmxQueryHandler {
@@ -75,42 +175,49 @@ impl ToolHandler for RlmxQueryHandler {
 
         let context_window = params.get("context_window")
             .and_then(|v| v.as_u64())
-            .unwrap_or(10);
+            .unwrap_or(10) as usize;
 
         let strategy = params.get("strategy")
             .and_then(|v| v.as_str())
             .unwrap_or("auto");
 
-        // Stub: return mock query results
+        let embedding = text_to_embedding(query);
+        let start = Instant::now();
+
+        let mut state = self.state.write().await;
+        state.query_count += 1;
+        let total_segments = state.memory.len();
+
+        let hits = state.memory.search(&embedding, context_window, &SearchFilters::default());
+        let elapsed = start.elapsed();
+
+        let results: Vec<serde_json::Value> = hits.iter().map(|hit| {
+            json!({
+                "segment_id": hit.segment_id.to_string(),
+                "content": hit.content,
+                "relevance_score": (hit.score * 1000.0).round() / 1000.0,
+                "tier": format!("{:?}", hit.metadata.segment_type),
+            })
+        }).collect();
+
+        let segments_returned = results.len();
+
         Ok(json!({
             "query": query,
             "strategy_used": if strategy == "auto" { "rlm" } else { strategy },
-            "segments_returned": context_window.min(3),
-            "results": [
-                {
-                    "segment_id": Uuid::new_v4().to_string(),
-                    "content": format!("Mock result for query: {}", query),
-                    "relevance_score": 0.95,
-                    "tier": "hot"
-                },
-                {
-                    "segment_id": Uuid::new_v4().to_string(),
-                    "content": "Additional context segment",
-                    "relevance_score": 0.82,
-                    "tier": "warm"
-                }
-            ],
-            "total_segments_scanned": 1024,
-            "latency_ms": 42
+            "segments_returned": segments_returned,
+            "results": results,
+            "total_segments_scanned": total_segments,
+            "latency_ms": elapsed.as_millis() as u64,
         }))
     }
 }
 
 // ---------------------------------------------------------------------------
-// 2. rlmx_ingest
+// 2. rlmx_ingest  — wired to MemoryRegion::insert
 // ---------------------------------------------------------------------------
 
-fn create_rlmx_ingest() -> McpTool {
+fn create_rlmx_ingest(state: SharedToolState) -> McpTool {
     McpTool {
         name: "rlmx_ingest".to_string(),
         description: "Ingest data into RLMX via a plugin adapter. Supports various data formats through the plugin system.".to_string(),
@@ -132,16 +239,18 @@ fn create_rlmx_ingest() -> McpTool {
             },
             "required": ["data", "plugin"]
         }),
-        handler: Box::new(RlmxIngestHandler),
+        handler: Box::new(RlmxIngestHandler { state }),
     }
 }
 
-struct RlmxIngestHandler;
+struct RlmxIngestHandler {
+    state: SharedToolState,
+}
 
 #[async_trait]
 impl ToolHandler for RlmxIngestHandler {
     async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let _data = params.get("data")
+        let data = params.get("data")
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: data"))?;
 
@@ -149,25 +258,55 @@ impl ToolHandler for RlmxIngestHandler {
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: plugin"))?;
 
+        let extra_metadata = params.get("metadata")
+            .cloned()
+            .unwrap_or(json!({}));
+
+        // Split data into segments on double-newline boundaries (or treat as
+        // a single segment if no double-newlines are present).
+        let chunks: Vec<&str> = if data.contains("\n\n") {
+            data.split("\n\n").filter(|s| !s.trim().is_empty()).collect()
+        } else {
+            vec![data]
+        };
+
+        let mut state = self.state.write().await;
+        state.ingest_count += 1;
+
+        let mut segment_ids = Vec::with_capacity(chunks.len());
+        for chunk in &chunks {
+            let embedding = text_to_embedding(chunk);
+            let mut extra = std::collections::HashMap::new();
+            if let Some(obj) = extra_metadata.as_object() {
+                for (k, v) in obj {
+                    extra.insert(k.clone(), v.clone());
+                }
+            }
+            let meta = SegmentMetadata {
+                source: "mcp-ingest".into(),
+                plugin: Some(plugin.to_string()),
+                segment_type: "text".into(),
+                extra,
+            };
+            let id = state.memory.insert(embedding, chunk.to_string(), meta);
+            segment_ids.push(id.to_string());
+        }
+
         Ok(json!({
             "status": "ingested",
             "plugin_used": plugin,
-            "segments_created": 3,
-            "segment_ids": [
-                Uuid::new_v4().to_string(),
-                Uuid::new_v4().to_string(),
-                Uuid::new_v4().to_string()
-            ],
-            "timestamp": Utc::now().to_rfc3339()
+            "segments_created": segment_ids.len(),
+            "segment_ids": segment_ids,
+            "timestamp": Utc::now().to_rfc3339(),
         }))
     }
 }
 
 // ---------------------------------------------------------------------------
-// 3. rlmx_memory_stats
+// 3. rlmx_memory_stats  — wired to MemoryRegion stats
 // ---------------------------------------------------------------------------
 
-fn create_rlmx_memory_stats() -> McpTool {
+fn create_rlmx_memory_stats(state: SharedToolState) -> McpTool {
     McpTool {
         name: "rlmx_memory_stats".to_string(),
         description: "Retrieve memory statistics including segment counts, tier distribution, and HNSW index health.".to_string(),
@@ -181,11 +320,13 @@ fn create_rlmx_memory_stats() -> McpTool {
                 }
             }
         }),
-        handler: Box::new(RlmxMemoryStatsHandler),
+        handler: Box::new(RlmxMemoryStatsHandler { state }),
     }
 }
 
-struct RlmxMemoryStatsHandler;
+struct RlmxMemoryStatsHandler {
+    state: SharedToolState,
+}
 
 #[async_trait]
 impl ToolHandler for RlmxMemoryStatsHandler {
@@ -194,24 +335,30 @@ impl ToolHandler for RlmxMemoryStatsHandler {
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
 
+        let state = self.state.read().await;
+        let total_segments = state.memory.len();
+
+        // All newly-inserted segments start as Hot; we report the actual count.
+        // A real implementation would track tier promotions/demotions.
         let mut stats = json!({
-            "total_segments": 15342,
+            "total_segments": total_segments,
             "tier_distribution": {
-                "hot": 1024,
-                "warm": 5120,
-                "cold": 9198
+                "hot": total_segments,
+                "warm": 0,
+                "cold": 0
             },
-            "total_memory_bytes": 268435456,
-            "eviction_count": 42
+            "ingest_operations": state.ingest_count,
+            "query_operations": state.query_count,
+            "eviction_count": state.eviction_count,
         });
 
         if include_hnsw {
             stats["hnsw_health"] = json!({
-                "index_size": 15342,
-                "dimensions": 768,
+                "index_size": total_segments,
+                "dimensions": EMBED_DIM,
                 "max_layers": 6,
                 "ef_construction": 200,
-                "fragmentation_ratio": 0.03
+                "fragmentation_ratio": 0.0,
             });
         }
 
@@ -220,7 +367,7 @@ impl ToolHandler for RlmxMemoryStatsHandler {
 }
 
 // ---------------------------------------------------------------------------
-// 4. rlmx_plugin_list
+// 4. rlmx_plugin_list  — stub (needs plugin subsystem)
 // ---------------------------------------------------------------------------
 
 fn create_rlmx_plugin_list() -> McpTool {
@@ -246,7 +393,9 @@ struct RlmxPluginListHandler;
 #[async_trait]
 impl ToolHandler for RlmxPluginListHandler {
     async fn handle(&self, _params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        // TODO: wire to plugin subsystem
         Ok(json!({
+            "status": "stub",
             "plugins": [
                 {
                     "name": "text-adapter",
@@ -274,7 +423,7 @@ impl ToolHandler for RlmxPluginListHandler {
 }
 
 // ---------------------------------------------------------------------------
-// 5. rlmx_plugin_action
+// 5. rlmx_plugin_action  — stub (needs plugin subsystem)
 // ---------------------------------------------------------------------------
 
 fn create_rlmx_plugin_action() -> McpTool {
@@ -316,20 +465,21 @@ impl ToolHandler for RlmxPluginActionHandler {
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: action"))?;
 
+        // TODO: wire to plugin subsystem
         Ok(json!({
+            "status": "stub",
             "plugin": plugin,
             "action": action,
-            "status": "completed",
             "result": {
                 "message": format!("Action '{}' executed successfully on plugin '{}'", action, plugin)
             },
-            "execution_time_ms": 15
+            "execution_time_ms": 0
         }))
     }
 }
 
 // ---------------------------------------------------------------------------
-// 6. rlmx_strategy_override
+// 6. rlmx_strategy_override  — stub (needs scheduler/strategy subsystem)
 // ---------------------------------------------------------------------------
 
 fn create_rlmx_strategy_override() -> McpTool {
@@ -369,7 +519,9 @@ impl ToolHandler for RlmxStrategyOverrideHandler {
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
 
+        // TODO: wire to scheduler/strategy subsystem
         Ok(json!({
+            "status": "stub",
             "previous_strategy": "auto",
             "new_strategy": strategy,
             "duration_seconds": duration,
@@ -379,7 +531,7 @@ impl ToolHandler for RlmxStrategyOverrideHandler {
 }
 
 // ---------------------------------------------------------------------------
-// 7. rlmx_trm_classify
+// 7. rlmx_trm_classify  — stub (needs TRM subsystem)
 // ---------------------------------------------------------------------------
 
 fn create_rlmx_trm_classify() -> McpTool {
@@ -420,6 +572,7 @@ impl ToolHandler for RlmxTrmClassifyHandler {
             .and_then(|v| v.as_str())
             .unwrap_or("medium");
 
+        // TODO: wire to TRM subsystem
         let classifications: Vec<serde_json::Value> = segment_ids.iter().map(|id| {
             json!({
                 "segment_id": id,
@@ -431,6 +584,7 @@ impl ToolHandler for RlmxTrmClassifyHandler {
         }).collect();
 
         Ok(json!({
+            "status": "stub",
             "classifications": classifications,
             "total_classified": segment_ids.len(),
             "horizon": horizon
@@ -439,7 +593,7 @@ impl ToolHandler for RlmxTrmClassifyHandler {
 }
 
 // ---------------------------------------------------------------------------
-// 8. rlmx_rvf_seal
+// 8. rlmx_rvf_seal  — stub (needs RVF container subsystem)
 // ---------------------------------------------------------------------------
 
 fn create_rlmx_rvf_seal() -> McpTool {
@@ -488,7 +642,9 @@ impl ToolHandler for RlmxRvfSealHandler {
             .and_then(|v| v.as_str())
             .unwrap_or("blake3");
 
+        // TODO: wire to RVF container subsystem
         Ok(json!({
+            "status": "stub",
             "container_id": Uuid::new_v4().to_string(),
             "label": label,
             "segments_sealed": segment_ids.len(),
@@ -501,7 +657,7 @@ impl ToolHandler for RlmxRvfSealHandler {
 }
 
 // ---------------------------------------------------------------------------
-// 9. rlmx_rvf_branch
+// 9. rlmx_rvf_branch  — stub (needs RVF container subsystem)
 // ---------------------------------------------------------------------------
 
 fn create_rlmx_rvf_branch() -> McpTool {
@@ -539,7 +695,9 @@ impl ToolHandler for RlmxRvfBranchHandler {
             .and_then(|v| v.as_str())
             .unwrap_or("experiment");
 
+        // TODO: wire to RVF container subsystem
         Ok(json!({
+            "status": "stub",
             "branch_id": Uuid::new_v4().to_string(),
             "source_container_id": container_id,
             "branch_label": branch_label,
@@ -550,7 +708,7 @@ impl ToolHandler for RlmxRvfBranchHandler {
 }
 
 // ---------------------------------------------------------------------------
-// 10. rlmx_witness_chain
+// 10. rlmx_witness_chain  — stub (needs proof/witness subsystem)
 // ---------------------------------------------------------------------------
 
 fn create_rlmx_witness_chain() -> McpTool {
@@ -585,36 +743,19 @@ impl ToolHandler for RlmxWitnessChainHandler {
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: target_id"))?;
 
+        // TODO: wire to proof/witness subsystem
         Ok(json!({
+            "status": "stub",
             "target_id": target_id,
-            "chain_length": 3,
-            "entries": [
-                {
-                    "event": "created",
-                    "timestamp": "2025-01-15T10:30:00Z",
-                    "actor": "system",
-                    "hash": "abc123"
-                },
-                {
-                    "event": "modified",
-                    "timestamp": "2025-01-15T11:00:00Z",
-                    "actor": "user",
-                    "hash": "def456"
-                },
-                {
-                    "event": "sealed",
-                    "timestamp": "2025-01-15T12:00:00Z",
-                    "actor": "system",
-                    "hash": "ghi789"
-                }
-            ],
-            "integrity_verified": true
+            "chain_length": 0,
+            "entries": [],
+            "integrity_verified": false
         }))
     }
 }
 
 // ---------------------------------------------------------------------------
-// 11. rlmx_sona_stats
+// 11. rlmx_sona_stats  — stub (needs SONA subsystem)
 // ---------------------------------------------------------------------------
 
 fn create_rlmx_sona_stats() -> McpTool {
@@ -645,27 +786,29 @@ impl ToolHandler for RlmxSonaStatsHandler {
             .and_then(|v| v.as_str())
             .unwrap_or("24h");
 
+        // TODO: wire to SONA subsystem
         Ok(json!({
+            "status": "stub",
             "time_range": time_range,
-            "adaptations_count": 127,
-            "learning_rate": 0.001,
-            "accuracy_improvement": 0.034,
+            "adaptations_count": 0,
+            "learning_rate": 0.0,
+            "accuracy_improvement": 0.0,
             "feedback_loops": {
-                "positive": 89,
-                "negative": 12,
-                "neutral": 26
+                "positive": 0,
+                "negative": 0,
+                "neutral": 0
             },
             "model_version": "sona-v0.3.1",
-            "last_adaptation": Utc::now().to_rfc3339()
+            "last_adaptation": serde_json::Value::Null,
         }))
     }
 }
 
 // ---------------------------------------------------------------------------
-// 12. rlmx_graph_query
+// 12. rlmx_graph_query  — wired to Graph::cypher_query
 // ---------------------------------------------------------------------------
 
-fn create_rlmx_graph_query() -> McpTool {
+fn create_rlmx_graph_query(state: SharedToolState) -> McpTool {
     McpTool {
         name: "rlmx_graph_query".to_string(),
         description: "Execute a Cypher query against the RLMX entity graph.".to_string(),
@@ -688,11 +831,13 @@ fn create_rlmx_graph_query() -> McpTool {
             },
             "required": ["cypher"]
         }),
-        handler: Box::new(RlmxGraphQueryHandler),
+        handler: Box::new(RlmxGraphQueryHandler { state }),
     }
 }
 
-struct RlmxGraphQueryHandler;
+struct RlmxGraphQueryHandler {
+    state: SharedToolState,
+}
 
 #[async_trait]
 impl ToolHandler for RlmxGraphQueryHandler {
@@ -703,25 +848,25 @@ impl ToolHandler for RlmxGraphQueryHandler {
 
         let limit = params.get("limit")
             .and_then(|v| v.as_u64())
-            .unwrap_or(100);
+            .unwrap_or(100) as usize;
+
+        let start = Instant::now();
+        let state = self.state.read().await;
+
+        let rows = state.graph.cypher_query(cypher).map_err(|e| {
+            McpError::new(INVALID_PARAMS, format!("Cypher query error: {}", e))
+        })?;
+
+        let elapsed = start.elapsed();
+        let truncated: Vec<&serde_json::Value> = rows.iter().take(limit).collect();
+        let rows_returned = truncated.len();
 
         Ok(json!({
             "query": cypher,
-            "rows_returned": 2,
+            "rows_returned": rows_returned,
             "limit": limit,
-            "results": [
-                {
-                    "node": { "id": "n1", "label": "Entity", "name": "sample_entity_1" },
-                    "relationships": [
-                        { "type": "RELATES_TO", "target": "n2" }
-                    ]
-                },
-                {
-                    "node": { "id": "n2", "label": "Entity", "name": "sample_entity_2" },
-                    "relationships": []
-                }
-            ],
-            "execution_time_ms": 8
+            "results": truncated,
+            "execution_time_ms": elapsed.as_millis() as u64,
         }))
     }
 }
@@ -750,7 +895,8 @@ mod tests {
 
     #[test]
     fn test_all_12_tools_have_valid_schemas() {
-        let tools = create_all_tools();
+        let state = new_shared_state();
+        let tools = create_all_tools(state);
         assert_eq!(tools.len(), 12, "Expected exactly 12 tools");
 
         for tool in &tools {
@@ -775,21 +921,124 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_tool_call_dispatch_query() {
-        let tools = create_all_tools();
-        let query_tool = tools.into_iter().find(|t| t.name == "rlmx_query").unwrap();
+    async fn test_ingest_then_query_returns_real_results() {
+        let state = new_shared_state();
+        let tools = create_all_tools(Arc::clone(&state));
 
-        let result = query_tool.handler.handle(json!({
-            "query": "What is RLMX?"
+        // Ingest some data.
+        let ingest_tool = tools.iter().find(|t| t.name == "rlmx_ingest").unwrap();
+        let ingest_result = ingest_tool.handler.handle(json!({
+            "data": "Rust is a systems programming language focused on safety and performance.",
+            "plugin": "text"
+        })).await.unwrap();
+        assert_eq!(ingest_result["status"], "ingested");
+        assert_eq!(ingest_result["segments_created"], 1);
+
+        // Query for it.
+        let query_tool = tools.iter().find(|t| t.name == "rlmx_query").unwrap();
+        let query_result = query_tool.handler.handle(json!({
+            "query": "Rust programming language"
+        })).await.unwrap();
+        assert_eq!(query_result["segments_returned"], 1);
+        let results = query_result["results"].as_array().unwrap();
+        assert!(!results.is_empty());
+        // The relevance score should be > 0 since the texts share words.
+        let score = results[0]["relevance_score"].as_f64().unwrap();
+        assert!(score > 0.0, "Expected positive relevance score, got {}", score);
+    }
+
+    #[tokio::test]
+    async fn test_memory_stats_reflects_ingestion() {
+        let state = new_shared_state();
+        let tools = create_all_tools(Arc::clone(&state));
+
+        // Stats before ingestion.
+        let stats_tool = tools.iter().find(|t| t.name == "rlmx_memory_stats").unwrap();
+        let before = stats_tool.handler.handle(json!({})).await.unwrap();
+        assert_eq!(before["total_segments"], 0);
+
+        // Ingest.
+        let ingest_tool = tools.iter().find(|t| t.name == "rlmx_ingest").unwrap();
+        ingest_tool.handler.handle(json!({
+            "data": "Hello world",
+            "plugin": "text"
         })).await.unwrap();
 
-        assert_eq!(result["strategy_used"], "rlm");
-        assert!(result["results"].is_array());
+        // Stats after ingestion.
+        let after = stats_tool.handler.handle(json!({})).await.unwrap();
+        assert_eq!(after["total_segments"], 1);
+        assert_eq!(after["ingest_operations"], 1);
+    }
+
+    #[tokio::test]
+    async fn test_graph_query_executes_cypher() {
+        let state = new_shared_state();
+
+        // Populate the graph.
+        {
+            let mut s = state.write().await;
+            let a = s.graph.insert_node("Person");
+            let b = s.graph.insert_node("Company");
+            s.graph.insert_edge(a, b, "WORKS_AT", 1.0).unwrap();
+        }
+
+        let tools = create_all_tools(Arc::clone(&state));
+        let graph_tool = tools.iter().find(|t| t.name == "rlmx_graph_query").unwrap();
+
+        let result = graph_tool.handler.handle(json!({
+            "cypher": "MATCH (n:Person)-[r:WORKS_AT]->(m:Company) RETURN n,m"
+        })).await.unwrap();
+
+        assert_eq!(result["rows_returned"], 1);
+        let rows = result["results"].as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_graph_query_bad_cypher_returns_error() {
+        let state = new_shared_state();
+        let tools = create_all_tools(Arc::clone(&state));
+        let graph_tool = tools.iter().find(|t| t.name == "rlmx_graph_query").unwrap();
+
+        let result = graph_tool.handler.handle(json!({
+            "cypher": "SELECT * FROM table"
+        })).await;
+
+        assert!(result.is_err(), "Invalid Cypher should return an error");
+    }
+
+    #[tokio::test]
+    async fn test_query_on_empty_memory_returns_no_results() {
+        let state = new_shared_state();
+        let tools = create_all_tools(state);
+        let query_tool = tools.iter().find(|t| t.name == "rlmx_query").unwrap();
+
+        let result = query_tool.handler.handle(json!({
+            "query": "anything"
+        })).await.unwrap();
+
+        assert_eq!(result["segments_returned"], 0);
+        assert_eq!(result["total_segments_scanned"], 0);
+    }
+
+    #[tokio::test]
+    async fn test_stub_tools_report_stub_status() {
+        let state = new_shared_state();
+        let tools = create_all_tools(state);
+
+        let sona_tool = tools.iter().find(|t| t.name == "rlmx_sona_stats").unwrap();
+        let result = sona_tool.handler.handle(json!({})).await.unwrap();
+        assert_eq!(result["status"], "stub");
+
+        let plugin_tool = tools.iter().find(|t| t.name == "rlmx_plugin_list").unwrap();
+        let result = plugin_tool.handler.handle(json!({})).await.unwrap();
+        assert_eq!(result["status"], "stub");
     }
 
     #[tokio::test]
     async fn test_tool_call_dispatch_missing_params() {
-        let tools = create_all_tools();
+        let state = new_shared_state();
+        let tools = create_all_tools(state);
         let query_tool = tools.into_iter().find(|t| t.name == "rlmx_query").unwrap();
 
         let result = query_tool.handler.handle(json!({})).await;

@@ -233,6 +233,10 @@ impl DomainPlugin for EricssonRanPlugin {
             // Human escalation
             SafetyConstraint::HumanEscalation {
                 condition: "Changes affecting more than 50 cells simultaneously".to_string(),
+                actions: vec![
+                    "OptimizeParameter".to_string(),
+                    "ParameterValidate".to_string(),
+                ],
             },
             // Rate limit
             SafetyConstraint::RateLimit {

@@ -76,6 +76,10 @@ pub struct RlmAgent {
     pub depth: usize,
     /// Maximum recursion depth allowed.
     pub max_depth: usize,
+    /// Maximum total actions (across all types) per agent run.
+    pub max_actions: usize,
+    /// Maximum number of Retrieve actions per agent run.
+    pub max_retrievals: usize,
     /// Capabilities this agent is allowed to use.
     pub capabilities: Vec<String>,
     /// The context window for this agent.
@@ -90,6 +94,8 @@ impl RlmAgent {
             role,
             depth,
             max_depth: 2,
+            max_actions: 20,
+            max_retrievals: 5,
             capabilities,
             context_window: ContextWindow::default(),
         }
@@ -98,6 +104,18 @@ impl RlmAgent {
     /// Set the maximum recursion depth for this agent.
     pub fn with_max_depth(mut self, max_depth: usize) -> Self {
         self.max_depth = max_depth;
+        self
+    }
+
+    /// Set the maximum total actions per agent run.
+    pub fn with_max_actions(mut self, max_actions: usize) -> Self {
+        self.max_actions = max_actions;
+        self
+    }
+
+    /// Set the maximum number of Retrieve actions per agent run.
+    pub fn with_max_retrievals(mut self, max_retrievals: usize) -> Self {
+        self.max_retrievals = max_retrievals;
         self
     }
 
@@ -163,6 +181,8 @@ impl RlmAgent {
         let mut actions_taken = Vec::new();
         let mut sub_agent_results = Vec::new();
         let mut evidence_chain = Vec::new();
+        let mut action_count: usize = 0;
+        let mut retrieval_count: usize = 0;
 
         // Add context segments to our window
         self.context_window
@@ -191,7 +211,7 @@ impl RlmAgent {
 
         // Execute the action
         let (answer, confidence) =
-            self.execute_action(action, query, vllm_client, temperature, &mut actions_taken, &mut sub_agent_results, &mut evidence_chain)
+            self.execute_action(action, query, vllm_client, temperature, &mut actions_taken, &mut sub_agent_results, &mut evidence_chain, &mut action_count, &mut retrieval_count)
                 .await?;
 
         let latency_ms = start.elapsed().as_millis() as u64;
@@ -218,8 +238,18 @@ impl RlmAgent {
         actions_taken: &'a mut Vec<String>,
         sub_agent_results: &'a mut Vec<AgentResult>,
         evidence_chain: &'a mut Vec<String>,
+        action_count: &'a mut usize,
+        retrieval_count: &'a mut usize,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(String, f64), AgentError>> + Send + 'a>> {
         Box::pin(async move {
+        // Check global action limit for all action types
+        *action_count += 1;
+        if *action_count > self.max_actions {
+            return Err(AgentError::ExecutionError(
+                "Maximum action depth exceeded".to_string(),
+            ));
+        }
+
         match action {
             RlmAction::Final {
                 answer,
@@ -244,11 +274,21 @@ impl RlmAgent {
                     actions_taken,
                     sub_agent_results,
                     evidence_chain,
+                    action_count,
+                    retrieval_count,
                 )
                 .await
             }
 
             RlmAction::Retrieve { query, k, .. } => {
+                // Check retrieval limit
+                *retrieval_count += 1;
+                if *retrieval_count > self.max_retrievals {
+                    return Err(AgentError::ExecutionError(
+                        "Maximum retrieval count exceeded".to_string(),
+                    ));
+                }
+
                 // In a real system, this would call the kernel's vec_search syscall.
                 // For now, we record the retrieval attempt.
                 evidence_chain.push(format!("Retrieved {} results for: {}", k, query));
@@ -286,6 +326,8 @@ impl RlmAgent {
                     actions_taken,
                     sub_agent_results,
                     evidence_chain,
+                    action_count,
+                    retrieval_count,
                 )
                 .await
             }

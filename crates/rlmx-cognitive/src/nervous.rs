@@ -8,7 +8,7 @@
 //! - Global Workspace: 4-7 item attention focus
 
 use chrono::{DateTime, Timelike, Utc};
-use rand::Rng;
+use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -87,6 +87,9 @@ impl BtspLearner {
 }
 
 fn dot_product(a: &[f64], b: &[f64]) -> f64 {
+    if a.len() != b.len() {
+        return 0.0;
+    }
     a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
 }
 
@@ -112,9 +115,19 @@ impl HdcComputer {
         Self { dimension }
     }
 
-    /// Random projection encoding of continuous data into a binary hypervector.
+    /// Deterministic projection encoding of continuous data into a binary hypervector.
+    /// The same input always produces the same hypervector.
     pub fn encode(&self, data: &[f64]) -> Hypervector {
-        let mut rng = rand::thread_rng();
+        // Derive a deterministic seed from the input data by hashing its bytes.
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        for &v in data {
+            v.to_bits().hash(&mut hasher);
+        }
+        let seed = hasher.finish();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+
         let mut bits = Vec::with_capacity(self.dimension);
 
         for d in 0..self.dimension {
@@ -436,14 +449,14 @@ mod tests {
         let a = hdc.encode(&[1.0, 0.0, 0.0]);
         let b = hdc.encode(&[1.0, 0.0, 0.0]);
 
-        // Same input should produce similar (but not identical due to noise)
-        // hypervectors.
+        // Same input must produce identical hypervectors (deterministic encoding).
         let sim = hdc.similarity(&a, &b);
         assert!(
-            sim > 0.8,
-            "Expected high similarity for same input, got {}",
+            (sim - 1.0).abs() < f64::EPSILON,
+            "Expected identical hypervectors for same input, got similarity {}",
             sim
         );
+        assert_eq!(a.bits, b.bits);
     }
 
     #[test]

@@ -197,7 +197,9 @@ impl Graph {
         let mut best_partitions = vec![vec![], vec![]];
 
         // Run Karger's algorithm multiple times for better results.
-        let iterations = (self.nodes.len() * self.nodes.len()).max(10);
+        // Cap iterations to prevent DoS on large graphs.
+        const MAX_ITERATIONS: usize = 10_000;
+        let iterations = (self.nodes.len() * self.nodes.len()).max(10).min(MAX_ITERATIONS);
 
         for _ in 0..iterations {
             // Each node starts in its own supernode.
@@ -214,8 +216,8 @@ impl Graph {
                 let idx = rng.gen_range(0..self.edges.len());
                 let edge = &self.edges[idx];
 
-                let root_s = find_root(&parent, edge.source);
-                let root_t = find_root(&parent, edge.target);
+                let root_s = find_root(&mut parent, edge.source);
+                let root_t = find_root(&mut parent, edge.target);
 
                 if root_s == root_t {
                     continue;
@@ -233,8 +235,8 @@ impl Graph {
             // Count cut weight.
             let mut cut_weight = 0.0;
             for edge in &self.edges {
-                let rs = find_root(&parent, edge.source);
-                let rt = find_root(&parent, edge.target);
+                let rs = find_root(&mut parent, edge.source);
+                let rt = find_root(&mut parent, edge.target);
                 if rs != rt {
                     cut_weight += edge.weight;
                 }
@@ -251,8 +253,113 @@ impl Graph {
     }
 
     fn stoer_wagner_min_cut(&self) -> KernelResult<(f64, Vec<Vec<Uuid>>)> {
-        // Fallback to Karger for now.
-        self.karger_min_cut()
+        if self.nodes.len() < 2 {
+            return Err(KernelError::GraphError(
+                "need at least 2 nodes for min-cut".into(),
+            ));
+        }
+
+        // Build an adjacency matrix using merged-node indices.
+        // Each "supernode" is a set of original node ids.
+        let node_ids: Vec<Uuid> = self.nodes.keys().copied().collect();
+        let n = node_ids.len();
+        let id_to_idx: HashMap<Uuid, usize> =
+            node_ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
+
+        // Weighted adjacency matrix (symmetric, undirected).
+        let mut w = vec![vec![0.0_f64; n]; n];
+        for edge in &self.edges {
+            if let (Some(&i), Some(&j)) =
+                (id_to_idx.get(&edge.source), id_to_idx.get(&edge.target))
+            {
+                w[i][j] += edge.weight;
+                w[j][i] += edge.weight;
+            }
+        }
+
+        // Track which original nodes belong to each supernode.
+        let mut groups: Vec<Vec<Uuid>> = node_ids.iter().map(|&id| vec![id]).collect();
+
+        // active[i] is true if supernode i has not been merged away.
+        let mut active = vec![true; n];
+
+        let mut best_cut = f64::MAX;
+        let mut best_partition: Vec<Vec<Uuid>> = vec![vec![], vec![]];
+
+        // Stoer-Wagner runs n-1 phases.
+        for _ in 0..n - 1 {
+            // Maximum adjacency ordering among active nodes.
+            let active_nodes: Vec<usize> = (0..n).filter(|&i| active[i]).collect();
+            if active_nodes.len() < 2 {
+                break;
+            }
+
+            let start = active_nodes[0];
+            let mut in_a = vec![false; n];
+            let mut key = vec![0.0_f64; n]; // connectivity to the growing set A
+
+            let mut last = start;
+            let mut second_last = start;
+
+            for phase_step in 0..active_nodes.len() {
+                // Pick the active node not yet in A with the largest key.
+                let mut best_node = None;
+                let mut best_key = -1.0_f64;
+                for &v in &active_nodes {
+                    if !in_a[v] {
+                        if phase_step == 0 || key[v] > best_key {
+                            best_key = key[v];
+                            best_node = Some(v);
+                        }
+                    }
+                }
+                let v = best_node.unwrap();
+                in_a[v] = true;
+                second_last = last;
+                last = v;
+
+                // Update keys for neighbours.
+                for &u in &active_nodes {
+                    if !in_a[u] {
+                        key[u] += w[v][u];
+                    }
+                }
+            }
+
+            // The last node added is t, second-to-last is s.
+            // The cut-of-the-phase is key[t] (sum of edges from t to the rest).
+            let t = last;
+            let s = second_last;
+            let cut_of_phase = key[t];
+
+            if cut_of_phase < best_cut {
+                best_cut = cut_of_phase;
+                // Partition: group(t) vs everything else.
+                let t_group = groups[t].clone();
+                let rest: Vec<Uuid> = (0..n)
+                    .filter(|&i| active[i] && i != t)
+                    .flat_map(|i| groups[i].iter().copied())
+                    .collect();
+                best_partition = vec![t_group, rest];
+            }
+
+            // Merge t into s: add t's edges to s, deactivate t.
+            let t_members = std::mem::take(&mut groups[t]);
+            groups[s].extend(t_members);
+            active[t] = false;
+
+            for i in 0..n {
+                w[s][i] += w[t][i];
+                w[i][s] += w[i][t];
+            }
+            // Zero out t's row/col to be safe.
+            for i in 0..n {
+                w[t][i] = 0.0;
+                w[i][t] = 0.0;
+            }
+        }
+
+        Ok((best_cut, best_partition))
     }
 
     // -----------------------------------------------------------------------
@@ -328,9 +435,16 @@ impl Default for Graph {
     }
 }
 
-fn find_root(parent: &HashMap<Uuid, Uuid>, mut node: Uuid) -> Uuid {
-    while parent.get(&node).copied().unwrap_or(node) != node {
-        node = parent[&node];
+fn find_root(parent: &mut HashMap<Uuid, Uuid>, mut node: Uuid) -> Uuid {
+    // Path halving: every other node on the path points to its grandparent.
+    loop {
+        let p = parent.get(&node).copied().unwrap_or(node);
+        if p == node {
+            break;
+        }
+        let gp = parent.get(&p).copied().unwrap_or(p);
+        parent.insert(node, gp);
+        node = gp;
     }
     node
 }

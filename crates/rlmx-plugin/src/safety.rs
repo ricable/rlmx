@@ -69,8 +69,8 @@ impl SafetyEngine {
                     metric,
                     max_degradation,
                 } => self.check_kpi_guard(metric, *max_degradation),
-                SafetyConstraint::HumanEscalation { condition } => {
-                    self.check_human_escalation(action, condition)
+                SafetyConstraint::HumanEscalation { condition, actions } => {
+                    self.check_human_escalation(action, condition, actions)
                 }
                 SafetyConstraint::RateLimit {
                     action: rate_action,
@@ -100,19 +100,29 @@ impl SafetyEngine {
         min: f64,
         max: f64,
     ) -> SafetyResult {
-        if let Some(value) = params.get(param_name) {
-            if let Some(num) = value.as_f64() {
-                if num < min || num > max {
-                    return SafetyResult::Rejected {
-                        reason: format!(
-                            "Parameter '{}' value {} is outside bounds [{}, {}]",
-                            param_name, num, min, max
-                        ),
-                    };
-                }
-            }
+        match params.get(param_name) {
+            None => SafetyResult::Rejected {
+                reason: format!(
+                    "Required parameter '{}' is missing (expected numeric value in [{}, {}])",
+                    param_name, min, max
+                ),
+            },
+            Some(value) => match value.as_f64() {
+                None => SafetyResult::Rejected {
+                    reason: format!(
+                        "Parameter '{}' has non-numeric type (expected numeric value in [{}, {}], got {})",
+                        param_name, min, max, value
+                    ),
+                },
+                Some(num) if num < min || num > max => SafetyResult::Rejected {
+                    reason: format!(
+                        "Parameter '{}' value {} is outside bounds [{}, {}]",
+                        param_name, num, min, max
+                    ),
+                },
+                Some(_) => SafetyResult::Allowed,
+            },
         }
-        SafetyResult::Allowed
     }
 
     /// Check KPI guard (placeholder - would integrate with monitoring).
@@ -124,10 +134,9 @@ impl SafetyEngine {
     }
 
     /// Check if human escalation is required.
-    fn check_human_escalation(&self, action: &str, condition: &str) -> SafetyResult {
-        // Check if the condition matches the action.
-        // In a real implementation, this would evaluate the condition expression.
-        if condition.contains(action) || condition.contains("all") {
+    fn check_human_escalation(&self, action: &str, condition: &str, actions: &[String]) -> SafetyResult {
+        // Check if the current action is in the list of actions this constraint applies to.
+        if actions.iter().any(|a| a == action) {
             return SafetyResult::RequiresApproval {
                 reason: format!("Human approval required: {}", condition),
             };
@@ -142,7 +151,7 @@ impl SafetyEngine {
         max_count: u32,
         window_secs: u64,
     ) -> SafetyResult {
-        let mut rate_limits = self.rate_limits.lock().unwrap();
+        let mut rate_limits = self.rate_limits.lock().unwrap_or_else(|e| e.into_inner());
         let now = Instant::now();
         let window = Duration::from_secs(window_secs);
 

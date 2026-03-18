@@ -74,8 +74,17 @@ impl WitnessChain {
         let action_hash = hash_sha256(action.as_bytes());
         let reasoning_chain_hash = hash_sha256(reasoning.as_bytes());
 
-        // Build canonical bytes for signing (action_hash + reasoning_hash + prev_hash).
-        let sign_payload = canonical_payload(&action_hash, &reasoning_chain_hash, &prev_hash);
+        // Build canonical bytes for signing (all fields).
+        let sign_payload = canonical_payload(
+            &id,
+            &timestamp,
+            &agent_id,
+            confidence,
+            &evidence_refs,
+            &action_hash,
+            &reasoning_chain_hash,
+            &prev_hash,
+        );
         let sig = {
             use ed25519_dalek::Signer;
             signing_key.sign(&sign_payload).to_bytes().to_vec()
@@ -122,6 +131,11 @@ impl WitnessChain {
     ) -> Result<bool, crate::RvfError> {
         for entry in &self.entries {
             let payload = canonical_payload(
+                &entry.id,
+                &entry.timestamp,
+                &entry.agent_id,
+                entry.confidence,
+                &entry.evidence_refs,
                 &entry.action_hash,
                 &entry.reasoning_chain_hash,
                 &entry.prev_hash,
@@ -156,8 +170,26 @@ impl Default for WitnessChain {
 }
 
 /// Build a canonical byte payload for signing / verifying.
-fn canonical_payload(action_hash: &str, reasoning_hash: &str, prev_hash: &str) -> Vec<u8> {
+///
+/// Covers ALL fields so that tampering with any field is detectable.
+fn canonical_payload(
+    id: &Uuid,
+    timestamp: &DateTime<Utc>,
+    agent_id: &Uuid,
+    confidence: f64,
+    evidence_refs: &[Uuid],
+    action_hash: &str,
+    reasoning_hash: &str,
+    prev_hash: &str,
+) -> Vec<u8> {
     let mut buf = Vec::new();
+    buf.extend_from_slice(id.to_string().as_bytes());
+    buf.extend_from_slice(timestamp.to_rfc3339().as_bytes());
+    buf.extend_from_slice(agent_id.to_string().as_bytes());
+    buf.extend_from_slice(confidence.to_bits().to_le_bytes().as_slice());
+    for r in evidence_refs {
+        buf.extend_from_slice(r.to_string().as_bytes());
+    }
     buf.extend_from_slice(action_hash.as_bytes());
     buf.extend_from_slice(reasoning_hash.as_bytes());
     buf.extend_from_slice(prev_hash.as_bytes());
@@ -165,10 +197,25 @@ fn canonical_payload(action_hash: &str, reasoning_hash: &str, prev_hash: &str) -
 }
 
 /// Hash an entire entry to produce the chain link.
+///
+/// Includes all fields so that tampering with any field breaks the chain.
 fn hash_entry(entry: &WitnessEntry) -> String {
+    let evidence_str: String = entry
+        .evidence_refs
+        .iter()
+        .map(|r| r.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
     let canonical = format!(
-        "{}:{}:{}:{}",
-        entry.id, entry.action_hash, entry.reasoning_chain_hash, entry.prev_hash
+        "{}:{}:{}:{}:{}:{}:{}:{}",
+        entry.id,
+        entry.timestamp.to_rfc3339(),
+        entry.agent_id,
+        entry.confidence,
+        evidence_str,
+        entry.action_hash,
+        entry.reasoning_chain_hash,
+        entry.prev_hash,
     );
     hash_sha256(canonical.as_bytes())
 }

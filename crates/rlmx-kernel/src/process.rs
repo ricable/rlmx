@@ -122,16 +122,33 @@ impl ProcessManager {
         }
     }
 
-    /// Kill a process by setting its status to Failed.
+    /// Kill a process and remove it from the process map.
     pub fn kill(&mut self, process_id: ProcessId) -> KernelResult<()> {
-        let process = self
-            .processes
-            .get_mut(&process_id)
+        self.processes
+            .remove(&process_id)
             .ok_or(KernelError::ProcessNotFound(process_id))?;
-
-        process.status = ProcessStatus::Failed("killed".into());
         self.senders.remove(&process_id);
         Ok(())
+    }
+
+    /// Reap all completed or killed (Failed) processes, removing them from the
+    /// process map and freeing associated resources. Returns the number of
+    /// reaped processes.
+    pub fn reap(&mut self) -> usize {
+        let to_reap: Vec<ProcessId> = self
+            .processes
+            .iter()
+            .filter(|(_, p)| {
+                matches!(p.status, ProcessStatus::Completed | ProcessStatus::Failed(_))
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        let count = to_reap.len();
+        for id in to_reap {
+            self.processes.remove(&id);
+            self.senders.remove(&id);
+        }
+        count
     }
 
     /// Mark a process as completed.
@@ -177,6 +194,7 @@ mod tests {
     fn test_token() -> CapabilityToken {
         CapabilityToken {
             id: Uuid::new_v4(),
+            owner: Uuid::new_v4(),
             granted_syscalls: vec![SyscallPermission::All],
             scope: "test".into(),
             expiry: Utc::now() + Duration::hours(1),

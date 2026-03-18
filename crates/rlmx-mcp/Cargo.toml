@@ -13,3 +13,5 @@ tracing = "0.1"
 thiserror = "2"
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
+rlmx-kernel = { path = "../rlmx-kernel" }
+rlmx-rvf = { path = "../rlmx-rvf" }

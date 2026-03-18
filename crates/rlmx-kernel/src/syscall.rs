@@ -1,10 +1,16 @@
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
+use crate::capability::CapabilityManager;
+use crate::graph::Graph;
+use crate::memory::MemoryRegion;
+use crate::process::ProcessManager;
+use crate::proof::ProofEngine;
 use crate::types::{
-    Capability, KernelMessage, KernelResult, MinCutAlgorithm, ProofRequest, SearchFilters,
-    SegmentMetadata, SyscallResult,
-    ProcessId,
+    Capability, KernelMessage, KernelResult, MinCutAlgorithm, ProofRequest,
+    SearchFilters, SegmentMetadata, SyscallResult, ProcessId,
 };
 
 /// The 12 RuVix kernel syscalls.
@@ -83,53 +89,159 @@ impl Syscall {
     }
 }
 
+/// Kernel context holding mutable references to all subsystems.
+pub struct KernelContext {
+    pub memory: Arc<Mutex<MemoryRegion>>,
+    pub graph: Arc<Mutex<Graph>>,
+    pub process_manager: Arc<Mutex<ProcessManager>>,
+    pub proof_engine: Arc<Mutex<ProofEngine>>,
+    pub capability_manager: Arc<Mutex<CapabilityManager>>,
+}
+
 /// Dispatch a syscall to the appropriate kernel subsystem.
 ///
-/// This is the central dispatch function that routes each syscall variant
-/// to the correct handler. In a full implementation, `ctx` would be a
-/// kernel context holding references to all subsystems.
-pub fn dispatch(syscall: &Syscall) -> KernelResult<SyscallResult> {
+/// Routes each syscall variant to the correct handler using the provided
+/// kernel context.
+pub async fn dispatch(syscall: &Syscall, ctx: &KernelContext) -> KernelResult<SyscallResult> {
     match syscall {
-        Syscall::VecInsert { .. } => {
-            // Handled by memory subsystem via kernel context.
-            Ok(SyscallResult::VecInserted {
-                segment_id: Uuid::new_v4(),
-            })
+        Syscall::VecInsert {
+            embedding,
+            content,
+            metadata,
+        } => {
+            let mut memory = ctx.memory.lock().await;
+            let segment_id = memory.insert(embedding.clone(), content.clone(), metadata.clone());
+            Ok(SyscallResult::VecInserted { segment_id })
         }
-        Syscall::VecSearch { query, k, filters: _ } => {
-            // Placeholder: return empty results.
-            let _ = (query, k);
-            Ok(SyscallResult::VecSearchResults { results: vec![] })
+        Syscall::VecSearch { query, k, filters } => {
+            let memory = ctx.memory.lock().await;
+            let results = memory.search(query, *k, filters);
+            Ok(SyscallResult::VecSearchResults { results })
         }
         Syscall::VecDelete { segment_id } => {
-            let _ = segment_id;
-            Ok(SyscallResult::VecDeleted { success: true })
+            let mut memory = ctx.memory.lock().await;
+            let success = memory.delete(segment_id).unwrap_or(false);
+            Ok(SyscallResult::VecDeleted { success })
         }
         Syscall::GraphQuery { cypher } => {
-            let _ = cypher;
-            Ok(SyscallResult::GraphQueryResult { rows: vec![] })
+            let graph = ctx.graph.lock().await;
+            let rows = graph.cypher_query(cypher)?;
+            Ok(SyscallResult::GraphQueryResult { rows })
         }
-        Syscall::GraphCut { .. } => Ok(SyscallResult::GraphCutResult {
-            cut_weight: 0.0,
-            partitions: vec![],
-        }),
-        Syscall::GraphDiffuse { .. } => Ok(SyscallResult::GraphDiffused {
-            output_signal: vec![],
-        }),
-        Syscall::ProcessFork { .. } => Ok(SyscallResult::ProcessForked {
-            child_id: Uuid::new_v4(),
-        }),
-        Syscall::ProcessSend { .. } => Ok(SyscallResult::MessageSent { delivered: true }),
-        Syscall::ProcessRecv { .. } => Ok(SyscallResult::MessageReceived { message: None }),
-        Syscall::StateMutate { .. } => Ok(SyscallResult::StateMutated {
-            witness_id: Uuid::new_v4(),
-            success: true,
-        }),
-        Syscall::AttentionSelect { context_size, .. } => {
-            // Placeholder: select all indices.
-            let selected: Vec<usize> = (0..*context_size).collect();
+        Syscall::GraphCut { algorithm, .. } => {
+            let graph = ctx.graph.lock().await;
+            let (cut_weight, partitions) = graph.min_cut(algorithm)?;
+            Ok(SyscallResult::GraphCutResult {
+                cut_weight,
+                partitions,
+            })
+        }
+        Syscall::GraphDiffuse { signal, steps, .. } => {
+            let graph = ctx.graph.lock().await;
+            let signal_f64: Vec<f64> = signal.iter().map(|&v| v as f64).collect();
+            let output_signal = graph.diffuse(&signal_f64, *steps)?;
+            Ok(SyscallResult::GraphDiffused { output_signal })
+        }
+        Syscall::ProcessFork {
+            capabilities,
+            memory_scope,
+            task,
+        } => {
+            // Collect all SyscallPermission variants from the requested capabilities.
+            let permissions: Vec<crate::types::SyscallPermission> = capabilities
+                .iter()
+                .flat_map(|cap| cap.permissions.clone())
+                .collect();
+
+            // Use the CapabilityManager to create a properly signed token
+            // with only the requested permissions (1-hour TTL).
+            let child_owner = Uuid::new_v4();
+            let mut cm = ctx.capability_manager.lock().await;
+            let child_token = cm.create_token(
+                child_owner,
+                permissions,
+                memory_scope.clone(),
+                chrono::Duration::hours(1),
+            );
+            drop(cm);
+
+            let mut pm = ctx.process_manager.lock().await;
+            let child_id = pm.fork(None, child_token, memory_scope.clone(), task.clone());
+            Ok(SyscallResult::ProcessForked { child_id })
+        }
+        Syscall::ProcessSend { target, message } => {
+            let pm = ctx.process_manager.lock().await;
+            pm.send(*target, message.clone()).await?;
+            Ok(SyscallResult::MessageSent { delivered: true })
+        }
+        Syscall::ProcessRecv { timeout: _ } => {
+            // ProcessRecv needs a caller process id; without one we return None.
+            Ok(SyscallResult::MessageReceived { message: None })
+        }
+        Syscall::StateMutate {
+            action,
+            params,
+            proof,
+        } => {
+            let mut engine = ctx.proof_engine.lock().await;
+            let evidence: Vec<String> = if let Some(arr) = params.get("evidence") {
+                arr.as_array()
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            } else {
+                vec![]
+            };
+            let confidence = params
+                .get("confidence")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.8);
+            let reasoning = params
+                .get("reasoning")
+                .and_then(|v| v.as_str())
+                .unwrap_or("syscall state mutation");
+            let proof_result = engine.validate(action, reasoning, evidence, confidence, proof)?;
+            Ok(SyscallResult::StateMutated {
+                witness_id: proof_result.witness_id,
+                success: proof_result.valid,
+            })
+        }
+        Syscall::AttentionSelect { operation_type, context_size } => {
+            // Choose an attention mechanism and window cap based on the
+            // requested operation type.  This avoids a dependency on
+            // rlmx-cognitive while still making the syscall operation-aware.
+            const DEFAULT_CAP: usize = 1024;
+
+            let (mechanism, cap): (&str, usize) = match operation_type.as_str() {
+                "sparse" => ("sparse_topk", DEFAULT_CAP.min(*context_size)),
+                "local" | "sliding_window" => {
+                    // Local/sliding-window attention: keep a contiguous
+                    // window of the most recent positions.
+                    ("sliding_window", 512.min(*context_size))
+                }
+                "global" => {
+                    // Global attention still caps to avoid runaway allocs.
+                    ("global_full", 4096.min(*context_size))
+                }
+                "linear" => ("linear_approx", DEFAULT_CAP.min(*context_size)),
+                _ => ("dense_capped", DEFAULT_CAP.min(*context_size)),
+            };
+
+            let selected: Vec<usize> = if mechanism == "sliding_window" {
+                // Select the *last* `cap` positions (most recent context).
+                let start = context_size.saturating_sub(cap);
+                (start..*context_size).collect()
+            } else {
+                // Select the first `cap` positions.
+                (0..cap).collect()
+            };
+
             Ok(SyscallResult::AttentionSelected {
                 selected_indices: selected,
+                mechanism: mechanism.to_string(),
             })
         }
         Syscall::HaltCheck {

@@ -37,6 +37,7 @@ pub struct McpResponse {
 
 /// A JSON-RPC 2.0 error object.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::module_name_repetitions)]
 pub struct McpError {
     /// Error code (follows JSON-RPC conventions)
     pub code: i32,
@@ -46,6 +47,14 @@ pub struct McpError {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
 }
+
+impl std::fmt::Display for McpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "MCP error {}: {}", self.code, self.message)
+    }
+}
+
+impl std::error::Error for McpError {}
 
 /// An MCP tool definition with its handler.
 pub struct McpTool {

@@ -130,6 +130,8 @@ pub enum SafetyConstraint {
     HumanEscalation {
         /// Condition description that triggers escalation.
         condition: String,
+        /// Action names this escalation applies to. If empty, applies to no actions.
+        actions: Vec<String>,
     },
     /// Rate limit on action execution.
     RateLimit {

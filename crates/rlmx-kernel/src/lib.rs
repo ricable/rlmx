@@ -19,5 +19,5 @@ pub use memory::{cosine_similarity, ContextSegment, MemoryRegion};
 pub use process::{Process, ProcessManager, ProcessStatus};
 pub use proof::{Proof, ProofEngine, Witness, WitnessChain};
 pub use scheduler::{Scheduler, SchedulerConfig, Strategy};
-pub use syscall::{dispatch, Syscall};
+pub use syscall::{dispatch, KernelContext, Syscall};
 pub use types::*;

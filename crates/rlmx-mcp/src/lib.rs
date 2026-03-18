@@ -21,4 +21,4 @@ pub mod http;
 // Re-export primary types for convenience
 pub use protocol::{McpRequest, McpResponse, McpError, McpTool, ToolHandler};
 pub use server::{McpServer, McpConfig, Transport};
-pub use tools::create_all_tools;
+pub use tools::{create_all_tools, new_shared_state, SharedToolState, ToolState};

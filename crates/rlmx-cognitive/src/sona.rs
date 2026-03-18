@@ -39,12 +39,25 @@ pub struct Pattern {
     pub usage_count: usize,
 }
 
-/// Simple pattern bank with embedding-based lookup.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// Simple pattern bank with embedding-based lookup and bounded capacity.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PatternBank {
     pub patterns: Vec<Pattern>,
     /// Parallel array of embeddings for cosine similarity search.
     pub embeddings: Vec<Vec<f32>>,
+    /// Maximum number of patterns to store. When exceeded, the lowest-quality
+    /// pattern is evicted.
+    pub max_patterns: usize,
+}
+
+impl Default for PatternBank {
+    fn default() -> Self {
+        Self {
+            patterns: Vec::new(),
+            embeddings: Vec::new(),
+            max_patterns: 10_000,
+        }
+    }
 }
 
 /// Low-rank delta applied to an inference pathway layer.
@@ -98,8 +111,10 @@ pub struct Sona {
     pub ewc_fisher: Option<FisherInformation>,
     /// Total number of adaptations performed.
     pub total_adaptations: usize,
-    /// History of quality improvement deltas.
+    /// History of quality improvement deltas (bounded by `max_improvement_history`).
     pub improvement_history: Vec<f64>,
+    /// Maximum number of entries kept in `improvement_history`.
+    pub max_improvement_history: usize,
 }
 
 impl Sona {
@@ -111,6 +126,7 @@ impl Sona {
             ewc_fisher: None,
             total_adaptations: 0,
             improvement_history: Vec::new(),
+            max_improvement_history: 1000,
         }
     }
 
@@ -132,6 +148,24 @@ impl Sona {
             timestamp: Utc::now(),
             usage_count: 0,
         };
+        // Evict the lowest-quality pattern if at capacity.
+        if self.pattern_bank.patterns.len() >= self.pattern_bank.max_patterns {
+            if let Some((idx, _)) = self
+                .pattern_bank
+                .patterns
+                .iter()
+                .enumerate()
+                .min_by(|(_, a), (_, b)| {
+                    a.result_quality
+                        .partial_cmp(&b.result_quality)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+            {
+                self.pattern_bank.patterns.remove(idx);
+                self.pattern_bank.embeddings.remove(idx);
+            }
+        }
+
         self.pattern_bank.patterns.push(pattern);
         self.pattern_bank.embeddings.push(embedding);
         id
@@ -219,6 +253,12 @@ impl Sona {
 
         self.total_adaptations += 1;
         self.improvement_history.push(feedback.quality_delta);
+
+        // Keep only the most recent entries to bound memory growth.
+        if self.improvement_history.len() > self.max_improvement_history {
+            let excess = self.improvement_history.len() - self.max_improvement_history;
+            self.improvement_history.drain(..excess);
+        }
 
         Ok(())
     }

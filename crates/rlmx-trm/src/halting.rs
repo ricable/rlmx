@@ -16,6 +16,11 @@ pub enum HaltCondition {
     Combined,
 }
 
+/// Absolute hard upper bound on refinement cycles, enforced regardless of
+/// any configuration value.  This prevents runaway loops even when callers
+/// supply a very large (or default-zero) `max_cycles`.
+pub const HARD_CYCLE_LIMIT: usize = 1_000;
+
 /// Tracks confidence history and decides when to stop refining.
 #[derive(Debug, Clone)]
 pub struct AdaptiveHalter {
@@ -34,6 +39,7 @@ impl AdaptiveHalter {
     /// Record the current confidence and return whether we should halt.
     ///
     /// Halting rules (evaluated in order):
+    /// 0. `cycle >= HARD_CYCLE_LIMIT` (absolute safety ceiling)
     /// 1. `confidence >= config.confidence_threshold`
     /// 2. `cycle >= config.max_cycles`
     /// 3. Improvement from the previous cycle < `config.convergence_epsilon`
@@ -43,6 +49,11 @@ impl AdaptiveHalter {
         cycle: usize,
         config: &HaltConfig,
     ) -> bool {
+        // Rule 0 -- hard safety ceiling (always enforced)
+        if cycle + 1 >= HARD_CYCLE_LIMIT {
+            return true;
+        }
+
         let confidence = streams.confidence();
         self.history.push(confidence);
 
