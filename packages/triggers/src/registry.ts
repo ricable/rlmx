@@ -2,6 +2,7 @@
 
 import { generateId } from '@aix/shared';
 import type { TriggerBinding, TriggerType } from './types.js';
+import { matchEvent as matchEventFn, matchHttp as matchHttpFn, matchChannel as matchChannelFn } from './matcher.js';
 
 /**
  * Registry of trigger bindings with matching and cycle prevention.
@@ -68,31 +69,17 @@ export class TriggerRegistry {
 
   /** Find all enabled bindings matching a domain event type. */
   matchEvent(eventType: string): TriggerBinding[] {
-    return this.bindings.filter(
-      (b) => b.enabled && b.triggerType.type === 'event' && b.triggerType.domainEvent === eventType,
-    );
+    return matchEventFn(this.bindings, eventType);
   }
 
   /** Find all enabled bindings matching an HTTP path and method. */
   matchHttp(path: string, method: string): TriggerBinding[] {
-    return this.bindings.filter(
-      (b) =>
-        b.enabled &&
-        b.triggerType.type === 'http' &&
-        b.triggerType.path === path &&
-        b.triggerType.method.toLowerCase() === method.toLowerCase(),
-    );
+    return matchHttpFn(this.bindings, path, method);
   }
 
   /** Find all enabled bindings matching a channel adapter and content. */
   matchChannel(adapter: string, content: string): TriggerBinding[] {
-    return this.bindings.filter(
-      (b) =>
-        b.enabled &&
-        b.triggerType.type === 'channel' &&
-        b.triggerType.adapter === adapter &&
-        content.includes(b.triggerType.filter),
-    );
+    return matchChannelFn(this.bindings, adapter, content);
   }
 
   /** Check if a function can be invoked (depth < maxDepth). */

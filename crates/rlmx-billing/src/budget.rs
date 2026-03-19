@@ -56,6 +56,8 @@ pub struct BudgetLedger {
     per_agent: HashMap<Uuid, Vec<BudgetEntry>>,
     policies: HashMap<Uuid, BudgetPolicy>,
     versions: HashMap<Uuid, u64>,
+    /// Cached running totals — updated on record(), read in O(1) by check().
+    spent_cache: HashMap<Uuid, u64>,
 }
 
 impl BudgetLedger {
@@ -65,6 +67,7 @@ impl BudgetLedger {
             per_agent: HashMap::new(),
             policies: HashMap::new(),
             versions: HashMap::new(),
+            spent_cache: HashMap::new(),
         }
     }
 
@@ -101,8 +104,24 @@ impl BudgetLedger {
             }
         }
 
+        // ADR-032: enforce per-call token limit
+        if let Some(policy) = self.policies.get(&agent_id) {
+            if let Some(max_tokens) = policy.per_call_max_tokens {
+                let total_tokens = entry.tokens_in + entry.tokens_out;
+                if total_tokens > max_tokens {
+                    return Err(BillingError::QuotaExceeded {
+                        resource: "per_call_tokens".to_string(),
+                        used: total_tokens,
+                        limit: max_tokens,
+                    });
+                }
+            }
+        }
+
         let new_version = current_version + 1;
         self.versions.insert(agent_id, new_version);
+        // Update spent cache in O(1) instead of recomputing on check()
+        *self.spent_cache.entry(agent_id).or_insert(0) += entry.cost_microcents;
         self.per_agent.entry(agent_id).or_default().push(entry);
 
         Ok(new_version)
@@ -155,12 +174,9 @@ impl BudgetLedger {
         }
     }
 
-    /// Total cost in microcents for an agent.
+    /// Total cost in microcents for an agent. O(1) via cached running total.
     pub fn total_spent(&self, agent_id: &Uuid) -> u64 {
-        self.per_agent
-            .get(agent_id)
-            .map(|entries| entries.iter().map(|e| e.cost_microcents).sum())
-            .unwrap_or(0)
+        self.spent_cache.get(agent_id).copied().unwrap_or(0)
     }
 
     /// Breakdown of costs by (model, provider, total_cost_microcents).
@@ -622,6 +638,50 @@ mod tests {
         ledger.record(entry, None).unwrap();
         let stored = &ledger.entries(&id)[0];
         assert_eq!(stored.timestamp, ts);
+    }
+
+    #[test]
+    fn per_call_token_limit_allows_within_budget() {
+        let mut ledger = BudgetLedger::new();
+        let id = Uuid::new_v4();
+        ledger.set_policy(id, BudgetPolicy {
+            soft_limit_microcents: 100_000,
+            hard_limit_microcents: 200_000,
+            per_call_max_tokens: Some(1000),
+        });
+        let mut entry = make_entry(id, "gpt-4", "openai", 500);
+        entry.tokens_in = 400;
+        entry.tokens_out = 500; // total 900 <= 1000
+        let result = ledger.record(entry, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn per_call_token_limit_rejects_exceeding() {
+        let mut ledger = BudgetLedger::new();
+        let id = Uuid::new_v4();
+        ledger.set_policy(id, BudgetPolicy {
+            soft_limit_microcents: 100_000,
+            hard_limit_microcents: 200_000,
+            per_call_max_tokens: Some(1000),
+        });
+        let mut entry = make_entry(id, "gpt-4", "openai", 500);
+        entry.tokens_in = 600;
+        entry.tokens_out = 500; // total 1100 > 1000
+        let result = ledger.record(entry, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn no_per_call_token_policy_allows_any_tokens() {
+        let mut ledger = BudgetLedger::new();
+        let id = Uuid::new_v4();
+        // No policy at all
+        let mut entry = make_entry(id, "gpt-4", "openai", 500);
+        entry.tokens_in = 999_999;
+        entry.tokens_out = 999_999;
+        let result = ledger.record(entry, None);
+        assert!(result.is_ok());
     }
 
     #[test]

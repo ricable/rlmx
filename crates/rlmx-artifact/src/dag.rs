@@ -81,12 +81,20 @@ impl ArtifactDag {
             .unwrap_or_default()
     }
 
+    /// Maximum lineage depth to prevent infinite loops on corrupted DAGs.
+    const MAX_LINEAGE_DEPTH: usize = 1_000;
+
     /// Trace lineage of an artifact back to a root following the first parent chain.
+    /// Cycle-safe with depth limit and visited set.
     pub fn lineage(&self, id: &ArtifactId) -> Vec<ArtifactId> {
         let mut result = Vec::new();
+        let mut visited = HashSet::new();
         let mut current = *id;
 
         loop {
+            if !visited.insert(current) || result.len() >= Self::MAX_LINEAGE_DEPTH {
+                break;
+            }
             result.push(current);
             match self.artifacts.get(&current) {
                 Some(artifact) if !artifact.parent_ids.is_empty() => {

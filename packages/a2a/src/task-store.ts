@@ -15,7 +15,6 @@ const MAX_TASKS = 1_000;
  */
 export class TaskStore {
   private readonly tasks = new Map<string, A2ATask>();
-  private readonly insertionOrder: string[] = [];
   private readonly maxTasks: number;
 
   constructor(maxTasks: number = MAX_TASKS) {
@@ -33,7 +32,6 @@ export class TaskStore {
     };
 
     this.tasks.set(task.id, task);
-    this.insertionOrder.push(task.id);
     return task;
   }
 
@@ -85,10 +83,12 @@ export class TaskStore {
     return this.tasks.size;
   }
 
-  /** Evict the oldest task if at capacity. */
+  /** Evict the oldest task if at capacity. Uses Map insertion order for O(1). */
   private evictIfNeeded(): void {
-    while (this.tasks.size >= this.maxTasks && this.insertionOrder.length > 0) {
-      const oldest = this.insertionOrder.shift()!;
+    while (this.tasks.size >= this.maxTasks) {
+      // Map.keys() iterates in insertion order; first key is oldest
+      const oldest = this.tasks.keys().next().value;
+      if (oldest === undefined) break;
       this.tasks.delete(oldest);
     }
   }

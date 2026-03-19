@@ -19,24 +19,24 @@ impl ArtifactId {
     }
 
     /// Create from a hex string (64 characters).
-    pub fn from_hex(hex: &str) -> Result<Self, ArtifactError> {
-        if hex.len() != 64 {
+    pub fn from_hex(hex_str: &str) -> Result<Self, ArtifactError> {
+        let bytes = hex::decode(hex_str).map_err(|e| {
+            ArtifactError::InvalidParent(format!("invalid hex: {e}"))
+        })?;
+        if bytes.len() != 32 {
             return Err(ArtifactError::InvalidParent(format!(
-                "hex string must be 64 chars, got {}",
-                hex.len()
+                "hex must decode to 32 bytes, got {}",
+                bytes.len()
             )));
         }
-        let mut bytes = [0u8; 32];
-        for i in 0..32 {
-            bytes[i] = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16)
-                .map_err(|e| ArtifactError::InvalidParent(format!("invalid hex: {e}")))?;
-        }
-        Ok(Self(bytes))
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&bytes);
+        Ok(Self(arr))
     }
 
     /// Return the hex representation.
     pub fn to_hex(&self) -> String {
-        self.0.iter().map(|b| format!("{b:02x}")).collect()
+        hex::encode(self.0)
     }
 }
 

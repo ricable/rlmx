@@ -221,6 +221,7 @@ impl BoardManager {
     }
 
     /// Get a thread: root post + all transitive replies.
+    /// Uses a parent→children index and HashSet for O(thread_size) instead of O(N²).
     pub fn get_thread(&self, board_id: BoardId, root_post_id: PostId) -> Vec<&Post> {
         let board = match self.boards.get(&board_id) {
             Some(b) => b,
@@ -232,17 +233,28 @@ impl BoardManager {
             None => return Vec::new(),
         };
 
-        let mut result = vec![root];
+        // Build parent→children index once
+        let mut children_index: HashMap<PostId, Vec<usize>> = HashMap::new();
+        for (idx, post) in board.posts.iter().enumerate() {
+            if let Some(parent_id) = post.parent_post {
+                children_index.entry(parent_id).or_default().push(idx);
+            }
+        }
 
-        // BFS to collect all transitive replies
+        let mut result = vec![root];
+        let mut visited = HashSet::new();
+        visited.insert(root_post_id);
+
+        // BFS using the index
         let mut queue = vec![root_post_id];
         while let Some(current_id) = queue.pop() {
-            for post in &board.posts {
-                if post.parent_post == Some(current_id)
-                    && !result.iter().any(|r| r.id == post.id)
-                {
-                    result.push(post);
-                    queue.push(post.id);
+            if let Some(child_indices) = children_index.get(&current_id) {
+                for &idx in child_indices {
+                    let post = &board.posts[idx];
+                    if visited.insert(post.id) {
+                        result.push(post);
+                        queue.push(post.id);
+                    }
                 }
             }
         }
@@ -573,5 +585,50 @@ mod tests {
         let bid = mgr.create_board("test", cluster());
         let result = mgr.unpin(bid, PostId::new());
         assert!(matches!(result, Err(BoardError::PostNotFound(_))));
+    }
+
+    #[test]
+    fn test_unpin_nonexistent_board() {
+        let mut mgr = BoardManager::new();
+        let result = mgr.unpin(BoardId::new(), PostId::new());
+        assert!(matches!(result, Err(BoardError::BoardNotFound(_))));
+    }
+
+    #[test]
+    fn test_query_by_tags_multi_tag_or_semantics() {
+        let mut mgr = BoardManager::new();
+        let bid = mgr.create_board("multi-tag", cluster());
+        mgr.post(bid, 1, "A".into(), None, vec!["urgent".into()], vec![]).unwrap();
+        mgr.post(bid, 2, "B".into(), None, vec!["review".into()], vec![]).unwrap();
+        mgr.post(bid, 3, "C".into(), None, vec!["info".into()], vec![]).unwrap();
+        mgr.post(bid, 4, "D".into(), None, vec!["urgent".into(), "review".into()], vec![]).unwrap();
+
+        // OR semantics: matches posts with "urgent" OR "review"
+        let results = mgr.query_by_tags(bid, &["urgent".into(), "review".into()]);
+        assert_eq!(results.len(), 3); // A, B, D
+        let contents: Vec<&str> = results.iter().map(|p| p.content.as_str()).collect();
+        assert!(contents.contains(&"A"));
+        assert!(contents.contains(&"B"));
+        assert!(contents.contains(&"D"));
+        assert!(!contents.contains(&"C"));
+    }
+
+    #[test]
+    fn test_board_deserialize_roundtrip() {
+        let mut mgr = BoardManager::new();
+        let bid = mgr.create_board("roundtrip", cluster());
+        mgr.post(bid, 1, "first".into(), None, vec!["tag1".into()], vec![]).unwrap();
+        mgr.post(bid, 2, "second".into(), None, vec!["tag2".into()], vec![]).unwrap();
+
+        let board = mgr.get_board(bid).unwrap();
+        let json = serde_json::to_string(board).unwrap();
+        let deserialized: Board = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.id, board.id);
+        assert_eq!(deserialized.name, "roundtrip");
+        assert_eq!(deserialized.posts.len(), 2);
+        assert_eq!(deserialized.participants.len(), 2);
+        assert!(deserialized.participants.contains(&1));
+        assert!(deserialized.participants.contains(&2));
     }
 }
