@@ -6,6 +6,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use std::collections::HashMap;
+
 use crate::device::DeviceId;
 
 /// Transport protocol used for device-to-device synchronization.
@@ -129,6 +131,9 @@ pub struct SyncState {
     pub last_sync: DateTime<Utc>,
     pub pending_ops: u64,
     pub health: SyncHealth,
+    /// Tracks the last known epoch per remote peer for delta sync compatibility
+    /// (e.g., Cognitum Seed epoch-based synchronization).
+    pub peer_epochs: HashMap<DeviceId, u64>,
 }
 
 impl SyncState {
@@ -141,6 +146,7 @@ impl SyncState {
             last_sync: Utc::now(),
             pending_ops: 0,
             health: SyncHealth::Healthy,
+            peer_epochs: HashMap::new(),
         }
     }
 
@@ -231,5 +237,19 @@ mod tests {
         let back: SyncState = serde_json::from_str(&json).unwrap();
         assert_eq!(back.transport, SyncTransport::BroadcastChannel);
         assert_eq!(back.health, SyncHealth::Healthy);
+    }
+
+    #[test]
+    fn sync_state_peer_epochs_tracking() {
+        let peer_id = Uuid::new_v4();
+        let mut ss = SyncState::new(Uuid::new_v4(), peer_id, SyncTransport::Http);
+        assert!(ss.peer_epochs.is_empty());
+        ss.peer_epochs.insert(peer_id, 42);
+        assert_eq!(ss.peer_epochs[&peer_id], 42);
+
+        // Roundtrip through serialization
+        let json = serde_json::to_string(&ss).unwrap();
+        let back: SyncState = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.peer_epochs[&peer_id], 42);
     }
 }

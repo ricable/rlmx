@@ -103,12 +103,23 @@ impl MemoryRegion {
     }
 
     /// Insert a new context segment and return its id.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `embedding.len() != EMBED_DIM`.
     pub fn insert(
         &mut self,
         embedding: Vec<f32>,
         content: String,
         metadata: SegmentMetadata,
     ) -> Uuid {
+        assert_eq!(
+            embedding.len(),
+            EMBED_DIM,
+            "embedding dimension mismatch: expected {}, got {}",
+            EMBED_DIM,
+            embedding.len()
+        );
         let id = Uuid::new_v4();
         let segment = ContextSegment {
             id,
@@ -471,10 +482,19 @@ mod tests {
         }
     }
 
+    /// Create an EMBED_DIM-length vector with the given leading values, zero-padded.
+    fn padded(values: &[f32]) -> Vec<f32> {
+        let mut v = vec![0.0_f32; EMBED_DIM];
+        for (i, &val) in values.iter().enumerate() {
+            v[i] = val;
+        }
+        v
+    }
+
     #[test]
     fn test_insert_and_len() {
         let mut region = MemoryRegion::new("test");
-        let id = region.insert(vec![1.0, 0.0, 0.0], "hello".into(), make_meta());
+        let id = region.insert(padded(&[1.0, 0.0, 0.0]), "hello".into(), make_meta());
         assert_eq!(region.len(), 1);
         assert!(!id.is_nil());
     }
@@ -482,11 +502,11 @@ mod tests {
     #[test]
     fn test_search_returns_best_match() {
         let mut region = MemoryRegion::new("test");
-        region.insert(vec![1.0, 0.0, 0.0], "east".into(), make_meta());
-        region.insert(vec![0.0, 1.0, 0.0], "north".into(), make_meta());
-        region.insert(vec![0.7, 0.7, 0.0], "northeast".into(), make_meta());
+        region.insert(padded(&[1.0, 0.0, 0.0]), "east".into(), make_meta());
+        region.insert(padded(&[0.0, 1.0, 0.0]), "north".into(), make_meta());
+        region.insert(padded(&[0.7, 0.7, 0.0]), "northeast".into(), make_meta());
 
-        let results = region.search(&[1.0, 0.0, 0.0], 2, &SearchFilters::default());
+        let results = region.search(&padded(&[1.0, 0.0, 0.0]), 2, &SearchFilters::default());
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].content, "east");
         assert!((results[0].score - 1.0).abs() < 1e-6);
@@ -495,8 +515,8 @@ mod tests {
     #[test]
     fn test_delete_segment() {
         let mut region = MemoryRegion::new("test");
-        let id = region.insert(vec![1.0, 0.0], "a".into(), make_meta());
-        region.insert(vec![0.0, 1.0], "b".into(), make_meta());
+        let id = region.insert(padded(&[1.0, 0.0]), "a".into(), make_meta());
+        region.insert(padded(&[0.0, 1.0]), "b".into(), make_meta());
         assert_eq!(region.len(), 2);
 
         let deleted = region.delete(&id).unwrap();
@@ -505,6 +525,13 @@ mod tests {
 
         // Deleting again should error.
         assert!(region.delete(&id).is_err());
+    }
+
+    #[test]
+    #[should_panic(expected = "embedding dimension mismatch")]
+    fn test_insert_rejects_wrong_dimension() {
+        let mut region = MemoryRegion::new("test");
+        region.insert(vec![1.0, 0.0, 0.0], "bad".into(), make_meta());
     }
 
     #[test]

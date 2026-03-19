@@ -97,6 +97,56 @@ impl Contribution {
         }
         Ok(())
     }
+
+    /// Validate the contribution's Ed25519 signature against a public key.
+    ///
+    /// Returns `true` if:
+    /// - The contribution has a signature AND it verifies against `pub_key`
+    /// - The contribution has no signature (unsigned contributions are allowed)
+    ///
+    /// Returns `false` if the signature is present but does not verify.
+    pub fn validate_with_key(&self, pub_key: &[u8]) -> bool {
+        use ed25519_dalek::{Signature, VerifyingKey};
+
+        let Some(ref sig_hex) = self.signature else {
+            // No signature present -- unsigned contribution, accepted
+            return true;
+        };
+
+        // Decode hex signature
+        let Ok(sig_bytes) = hex::decode(sig_hex) else {
+            return false;
+        };
+        let Ok(signature) = Signature::try_from(sig_bytes.as_slice()) else {
+            return false;
+        };
+
+        // Decode public key (32 bytes)
+        let Ok(key_bytes): Result<[u8; 32], _> = pub_key.try_into() else {
+            return false;
+        };
+        let Ok(verifying_key) = VerifyingKey::from_bytes(&key_bytes) else {
+            return false;
+        };
+
+        // Build the message: serialize contribution body excluding signature
+        let body = serde_json::json!({
+            "id": self.id,
+            "user_pseudonym": self.user_pseudonym,
+            "domain": self.domain,
+            "patterns": self.patterns,
+            "lora_delta": self.lora_delta,
+            "anonymized_at": self.anonymized_at,
+            "aggregate_quality": self.aggregate_quality,
+            "region_bucket": self.region_bucket,
+        });
+        let Ok(body_bytes) = serde_json::to_vec(&body) else {
+            return false;
+        };
+
+        use ed25519_dalek::Verifier;
+        verifying_key.verify(&body_bytes, &signature).is_ok()
+    }
 }
 
 /// Generate a pseudonymous contribution key from a user seed and cycle number.

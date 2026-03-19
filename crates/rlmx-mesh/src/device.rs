@@ -56,6 +56,8 @@ pub enum DeviceType {
     HomeHub,
     CloudNode,
     Browser,
+    /// Dedicated sensor appliance (e.g., Cognitum Seed on Pi Zero 2 W).
+    Sensor,
 }
 
 impl DeviceType {
@@ -67,6 +69,7 @@ impl DeviceType {
             DeviceType::HomeHub => Zone::CEdge,
             DeviceType::CloudNode => Zone::BCloud,
             DeviceType::Browser => Zone::DBrowser,
+            DeviceType::Sensor => Zone::CEdge,
         }
     }
 }
@@ -184,6 +187,7 @@ mod tests {
         assert_eq!(DeviceType::HomeHub.default_zone(), Zone::CEdge);
         assert_eq!(DeviceType::CloudNode.default_zone(), Zone::BCloud);
         assert_eq!(DeviceType::Browser.default_zone(), Zone::DBrowser);
+        assert_eq!(DeviceType::Sensor.default_zone(), Zone::CEdge);
     }
 
     #[test]

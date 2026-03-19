@@ -411,7 +411,7 @@ enum MeshAction {
         /// Device name
         #[arg(long)]
         name: String,
-        /// Device type (laptop, phone, home-hub, cloud, browser)
+        /// Device type (laptop, phone, home-hub, cloud, browser, sensor)
         #[arg(long, default_value = "laptop")]
         device_type: String,
     },
@@ -2119,6 +2119,7 @@ fn cmd_mesh(action: MeshAction) -> Result<(), Box<dyn std::error::Error>> {
                 "home-hub" => "C-Edge",
                 "cloud" => "B-Cloud",
                 "browser" => "D-Browser",
+                "sensor" => "C-Edge",
                 _ => "A-Desktop",
             };
             println!("Registering device:");

@@ -786,7 +786,8 @@ mod tests {
     #[test]
     fn test_vec_insert_with_embedding() {
         let mut kernel = WasmKernel::new();
-        let emb = vec![1.0, 0.0, 0.0];
+        let mut emb = vec![0.0_f32; 64];
+        emb[0] = 1.0;
         let result = kernel
             .vec_insert_with_embedding(emb, "custom vector", make_meta("test"))
             .unwrap();
