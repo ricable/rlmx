@@ -3,6 +3,8 @@
 //! The RuVix cognition kernel: core syscalls, capability tokens, process model,
 //! region memory with vector search, proof engine, in-memory graph, and scheduler.
 
+pub mod a2a;
+pub mod approval;
 pub mod capability;
 pub mod events;
 pub mod graph;
@@ -12,6 +14,7 @@ pub mod proof;
 pub mod router;
 pub mod scheduler;
 pub mod syscall;
+pub mod trigger;
 pub mod types;
 
 // Re-export primary types for convenient access.
@@ -35,3 +38,8 @@ pub use types::{
     ProcessId, ProofRequest, ResponseMode, SearchFilters, SearchHit, SegmentMetadata, SegmentTier,
     SyscallPermission, SyscallResult, VoicePersona,
 };
+
+// ADR-037: Approval tiers
+pub use approval::{ApprovalDecision, ApprovalGate, ApprovalPolicy, ApprovalRequest, ApprovalTier};
+// ADR-038: Trigger primitives
+pub use trigger::{TriggerBinding, TriggerRegistry, TriggerType};

@@ -100,3 +100,12 @@ export {
   type TierCapabilityToken,
   TierCapabilityEnforcer,
 } from './capability-enforcement.js';
+
+// --- Budget ledger (ADR-032) ---
+export {
+  type BudgetEntry,
+  type BudgetPolicy,
+  type BudgetDecision,
+  type BudgetReportEntry,
+  BudgetLedger,
+} from './budget.js';

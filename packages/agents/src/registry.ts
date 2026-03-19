@@ -67,7 +67,7 @@ const PERMISSION_MATRIX: ReadonlyMap<AgentType, readonly SyscallPermission[]> = 
     SYSCALL_PERMISSIONS,
   ],
 
-  // Researcher: read vectors, graph queries, fork, messaging, attention, voice synth, intent
+  // Researcher: read vectors, graph queries, fork, messaging, attention, voice synth, intent, artifact write
   [
     AgentType.Researcher,
     [
@@ -76,6 +76,7 @@ const PERMISSION_MATRIX: ReadonlyMap<AgentType, readonly SyscallPermission[]> = 
       P.ProcessFork, P.ProcessSend, P.ProcessRecv,
       P.AttentionSelect,
       P.VoiceSynthesize, P.IntentRoute,
+      P.ArtifactWrite,
     ],
   ],
 
@@ -90,7 +91,7 @@ const PERMISSION_MATRIX: ReadonlyMap<AgentType, readonly SyscallPermission[]> = 
     ],
   ],
 
-  // Experimenter: broad access for experiments, can fork workers
+  // Experimenter: broad access for experiments, can fork workers, artifact write
   [
     AgentType.Experimenter,
     [
@@ -99,6 +100,7 @@ const PERMISSION_MATRIX: ReadonlyMap<AgentType, readonly SyscallPermission[]> = 
       P.ProcessFork, P.ProcessSend, P.ProcessRecv,
       P.StateMutate, P.AttentionSelect,
       P.VoiceSynthesize, P.IntentRoute,
+      P.ArtifactWrite,
     ],
   ],
 

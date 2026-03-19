@@ -121,7 +121,7 @@ describe('generateDockerCompose', () => {
 
   it('includes memory limits', () => {
     const compose = generateDockerCompose([makeManifest({ resourceEnvelope: { cpuCores: 2, memoryMb: 1024, diskMb: 2048, maxRuntimeMs: 60000 } })]);
-    expect(compose).toContain('memory: 1024M');
+    expect(compose).toContain('memory: "1024M"');
   });
 
   it('uses manifest version in image tag', () => {

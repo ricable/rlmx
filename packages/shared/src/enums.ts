@@ -20,6 +20,7 @@ export enum SyscallPermission {
   IntentRoute = 'IntentRoute',
   MeshSync = 'MeshSync',
   FederationContribute = 'FederationContribute',
+  ArtifactWrite = 'ArtifactWrite',
   All = 'All',
 }
 
@@ -42,6 +43,7 @@ export const SYSCALL_PERMISSIONS: readonly SyscallPermission[] = [
   SyscallPermission.IntentRoute,
   SyscallPermission.MeshSync,
   SyscallPermission.FederationContribute,
+  SyscallPermission.ArtifactWrite,
 ] as const;
 
 /**

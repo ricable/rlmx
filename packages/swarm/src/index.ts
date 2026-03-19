@@ -53,6 +53,8 @@ export type {
   VoiceChunkEvent,
   AgentProgressEvent,
   MultimodalResponseEvent,
+  BoardUpdateEvent,
+  ApprovalRequiredEvent,
   SwarmEvent,
   SwarmEventType,
   SwarmEventHandler,
@@ -126,3 +128,7 @@ export {
 // Cluster
 export type { ZoneInfo, Connection, SwarmTopology } from './cluster.js';
 export { SwarmCluster, createSwarmConfig } from './cluster.js';
+
+// Board (ADR-031)
+export type { PostId, BoardId, Post, Board } from './board.js';
+export { BoardError, BoardErrorCode, BoardManager } from './board.js';

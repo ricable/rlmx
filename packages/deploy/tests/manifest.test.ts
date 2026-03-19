@@ -161,8 +161,8 @@ describe('ALL_MODALITIES', () => {
 // ---------------------------------------------------------------------------
 
 describe('TransportSpec variants', () => {
-  it('should contain all 7 transport types', () => {
-    expect(TRANSPORT_TYPES).toHaveLength(7);
+  it('should contain all 8 transport types', () => {
+    expect(TRANSPORT_TYPES).toHaveLength(8);
   });
 
   it('should support mcp transport', () => {

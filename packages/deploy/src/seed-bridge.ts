@@ -212,7 +212,8 @@ export class SeedBridge {
     const peers = await this.withRetry<PeerInfo[]>(() =>
       this.rest.send({ method: 'cluster.peers' }),
     );
-    // Track peer epochs for delta sync
+    // Rebuild peer epochs for delta sync (clears departed peers)
+    this.peerEpochs.clear();
     for (const peer of peers) {
       this.peerEpochs.set(peer.nodeId, peer.epoch);
     }

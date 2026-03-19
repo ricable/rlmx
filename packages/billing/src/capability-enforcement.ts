@@ -17,7 +17,8 @@ export type TierCaveat =
   | { type: 'CloudBurstAllowed'; allowed: boolean }
   | { type: 'FederationAllowed'; allowed: boolean }
   | { type: 'MarketplacePublishAllowed'; allowed: boolean }
-  | { type: 'ApiAccessAllowed'; allowed: boolean };
+  | { type: 'ApiAccessAllowed'; allowed: boolean }
+  | { type: 'BudgetLimit'; limit: number };
 
 /** A set of caveats derived from a subscription tier. */
 export interface TierCapabilityToken {

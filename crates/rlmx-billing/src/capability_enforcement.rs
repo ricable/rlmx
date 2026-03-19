@@ -25,6 +25,8 @@ pub enum TierCaveat {
     MarketplacePublishAllowed(bool),
     /// Whether API access is allowed.
     ApiAccessAllowed(bool),
+    /// Per-agent budget limit in microcents (ADR-032).
+    BudgetLimit(u64),
 }
 
 /// A set of caveats derived from a subscription tier.

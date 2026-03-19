@@ -10,14 +10,23 @@ export interface DeployFleetManifest {
   cloudPolicy?: Record<string, unknown>;
 }
 
+/** Safe ID pattern for use in shell commands and file names. */
+const SAFE_ID_RE = /^[a-z0-9][a-z0-9._-]*$/;
+
+/** Escape a string for safe YAML double-quoted value. */
+function yamlEscape(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
 /**
  * Generate a systemd unit file for a manifest + profile.
  */
 export function generateSystemdUnit(manifest: AgentManifest, profile: DeploymentProfile): string {
   const description = `${manifest.name} (${manifest.id}) — ${profile.name}`;
+  const safeId = SAFE_ID_RE.test(manifest.id) ? manifest.id : manifest.id.replace(/[^a-z0-9._-]/g, '-');
   const execStart = manifest.origin.type === 'seed'
-    ? `/usr/local/bin/cognitum-seed --profile ${manifest.id}`
-    : `/usr/local/bin/aix deploy spawn --manifest ${manifest.id}`;
+    ? `/usr/local/bin/cognitum-seed --profile ${safeId}`
+    : `/usr/local/bin/aix deploy spawn --manifest ${safeId}`;
 
   const memoryMax = profile.maxMemoryMb ? `MemoryMax=${profile.maxMemoryMb}M` : '';
 
@@ -64,25 +73,20 @@ export function generateFleetManifest(
  * Generate a verification script for Seed devices.
  * Tests mDNS, REST health, sensor read, witness chain.
  */
-/** Shell-escape a string for safe interpolation in single quotes. */
-function shellEscape(s: string): string {
-  return s.replace(/'/g, "'\\''");
-}
-
 export function generateVerificationScript(seedDevices: AgentManifest[]): string {
   const checks = seedDevices
     .filter(m => m.origin.type === 'seed')
     .map(m => {
       const origin = m.origin as { type: 'seed'; restEndpoint?: string; mcpEndpoint: string };
-      const restUrl = shellEscape(origin.restEndpoint ?? 'http://localhost:8443');
-      const safeName = shellEscape(m.name);
-      const safeId = shellEscape(m.id);
-      return `# --- ${safeName} (${safeId}) ---
-echo 'Checking ${safeName}...'
-curl -sf '${restUrl}/health' || echo 'FAIL: ${safeName} health check'
-curl -sf '${restUrl}/sensors/read' || echo 'FAIL: ${safeName} sensor read'
-curl -sf '${restUrl}/witness/chain' || echo 'FAIL: ${safeName} witness chain'
-echo '${safeName}: OK'
+      const restUrl = origin.restEndpoint ?? 'http://localhost:8443';
+      const name = m.name;
+      const id = m.id;
+      return `# --- ${name} (${id}) ---
+echo "Checking ${name}..."
+curl -sf "${restUrl}/health" || echo "FAIL: ${name} health check"
+curl -sf "${restUrl}/sensors/read" || echo "FAIL: ${name} sensor read"
+curl -sf "${restUrl}/witness/chain" || echo "FAIL: ${name} witness chain"
+echo "${name}: OK"
 `;
     })
     .join('\n');
@@ -99,47 +103,24 @@ echo "=== Verification Complete ==="
  * Generate docker-compose.yml for cloud deployments.
  */
 export function generateDockerCompose(manifests: AgentManifest[]): string {
-  const services: Record<string, unknown> = {};
+  const lines = ['version: "3.8"', 'services:'];
 
   for (const m of manifests) {
     const serviceName = m.id.replace(/[^a-z0-9-]/g, '-');
-    services[serviceName] = {
-      image: m.deployment.containerImage ?? `aix/${m.id}:${m.version}`,
-      restart: 'unless-stopped',
-      environment: {
-        AGENT_ID: m.id,
-        AGENT_NAME: m.name,
-        NODE_ENV: 'production',
-      },
-      deploy: {
-        resources: {
-          limits: {
-            memory: `${m.resourceEnvelope.memoryMb}M`,
-            cpus: String(m.resourceEnvelope.cpuCores),
-          },
-        },
-      },
-    };
-  }
+    const image = m.deployment.containerImage ?? `aix/${m.id}:${m.version}`;
 
-  // Manual YAML generation to avoid dependency
-  const lines = ['version: "3.8"', 'services:'];
-  for (const [name, config] of Object.entries(services)) {
-    const c = config as Record<string, unknown>;
-    lines.push(`  ${name}:`);
-    lines.push(`    image: "${c.image}"`);
-    lines.push(`    restart: "${c.restart}"`);
+    lines.push(`  ${serviceName}:`);
+    lines.push(`    image: "${yamlEscape(image)}"`);
+    lines.push(`    restart: "unless-stopped"`);
     lines.push(`    environment:`);
-    const env = c.environment as Record<string, string>;
-    for (const [k, v] of Object.entries(env)) {
-      lines.push(`      ${k}: "${v}"`);
-    }
-    const deploy = c.deploy as { resources: { limits: { memory: string; cpus: string } } };
+    lines.push(`      AGENT_ID: "${yamlEscape(m.id)}"`);
+    lines.push(`      AGENT_NAME: "${yamlEscape(m.name)}"`);
+    lines.push(`      NODE_ENV: "production"`);
     lines.push(`    deploy:`);
     lines.push(`      resources:`);
     lines.push(`        limits:`);
-    lines.push(`          memory: ${deploy.resources.limits.memory}`);
-    lines.push(`          cpus: "${deploy.resources.limits.cpus}"`);
+    lines.push(`          memory: "${m.resourceEnvelope.memoryMb}M"`);
+    lines.push(`          cpus: "${m.resourceEnvelope.cpuCores}"`);
   }
 
   return lines.join('\n') + '\n';

@@ -2,15 +2,15 @@
 
 A **voice-first cognition kernel** — an OS-kernel-inspired runtime for LLM agents, activated by voice. Provides capability-secured syscall primitives that agents call instead of accessing arbitrary APIs.
 
-**Hybrid Rust + TypeScript** | 19 Rust crates + 13 npm packages | 47 MCP tools | 17 agent types | 6 swarm zones | 1,748+ tests
+**Hybrid Rust + TypeScript** | 22 Rust crates + 20 npm packages | 82 MCP tools | 17 agent types | 6 swarm zones | 2,421+ tests
 
 ## What It Does
 
 - **Voice-first pipeline**: On-device STT -> multi-intent decomposition -> agent swarm -> multimodal response
-- **17 capability-secured syscalls** with HMAC-SHA256 tokens and hierarchical derivation
-- **17 typed agent roles** with a 17x17 permission matrix
+- **18 capability-secured syscalls** with HMAC-SHA256 tokens and hierarchical derivation
+- **17 typed agent roles** with an 18x17 permission matrix
 - **6-zone distributed swarm** with PBFT/Raft/Gossip consensus
-- **47 MCP tools** (JSON-RPC 2.0) over HTTP + WebSocket with 6-role RBAC
+- **82 MCP tools** (JSON-RPC 2.0) over HTTP + WebSocket with 6-role RBAC
 - **Neural model routing** via FastGRNN (18-dim) with online learning
 - **Tiered inference**: Small (0.5B) -> Medium (MLX 3-8B) -> Cloud (vLLM)
 - **Edge inference** via GGUF models on CPU/Metal/CUDA
@@ -19,6 +19,16 @@ A **voice-first cognition kernel** — an OS-kernel-inspired runtime for LLM age
 - **Federated learning** with differential privacy (Laplace e=1.0)
 - **Agent marketplace** with 12 life domains, automated security review, 70/30 revenue split
 - **Subscription billing** (6 tiers) with capability-token enforcement
+- **Content-addressed artifact DAG** with SHA-256 hashing, branching, and diff
+- **Coordination boards** for persistent inter-agent threaded communication
+- **Per-agent budget ledger** with soft/hard limits and CAS versioning
+- **External runtime bridges** for Claude Code, Codex, Cursor, and OpenAI-compatible endpoints
+- **A2A protocol** (Agent-to-Agent) with JSON-RPC 2.0, agent cards, and task state machine
+- **Skills marketplace** with SKILL.md format, semantic search, and 12 bundled domain skills
+- **Dynamic function evolution** with lifecycle management, scoring, and feedback loops
+- **Human-in-the-loop approval tiers** (Auto/Notify/Confirm/Escalate) with timeout auto-deny
+- **Declarative trigger registry** for event/schedule/HTTP/channel-to-function bindings
+- **Channel adapters** for Telegram, WhatsApp, Teams, and Discord
 
 ## Architecture
 
@@ -31,25 +41,31 @@ A **voice-first cognition kernel** — an OS-kernel-inspired runtime for LLM age
  rlmx-voice    (VAD, STT, TTS)             @aix/swarm     (6 zones, consensus)
  rlmx-phone    (engagement, battery)        @aix/marketplace (registry, reviews)
  rlmx-trm      (recursive NN)              @aix/mesh      (discovery, sync)
- rlmx-rvf      (Ed25519, witness)           @aix/billing   (6 tiers, Stripe)
+ rlmx-rvf      (Ed25519, witness)           @aix/billing   (6 tiers, budget)
  rlmx-napi     (NAPI bridge — 31 fns)      @aix/federation (cycles, privacy)
  rlmx-wasm     (browser kernel)             @aix/plugin    (domain plugins)
-                                            @aix/rlm       (vLLM client)
-                                            @aix/shared    (types, events, errors)
-                                            @aix/core      (NAPI loader)
+ rlmx-artifact (content-addressed DAG)      @aix/rlm       (vLLM client)
+ rlmx-evolve   (function evolution)         @aix/shared    (types, events, errors)
+ rlmx-channels (Telegram/WA/Teams/Discord)  @aix/core      (NAPI loader)
+                                            @aix/artifact  (DAG client)
+                                            @aix/a2a       (agent-to-agent)
+                                            @aix/skills    (skill registry)
+                                            @aix/evolve    (function evolution)
+                                            @aix/triggers  (event bindings)
+                                            @aix/channels  (messaging adapters)
 ```
 
 ## Quick Start
 
 ```bash
 # === Rust ===
-cargo build --workspace              # Build all 19 crates
-cargo test --workspace               # Run 946+ Rust tests
+cargo build --workspace              # Build all 22 crates
+cargo test --workspace               # Run 1,286+ Rust tests
 cargo clippy --workspace -- -D warnings
 
 # === TypeScript ===
 npm install                          # Install workspace dependencies
-npm run test:ts                      # Run 802 TypeScript tests
+npm run test:ts                      # Run 1,135 TypeScript tests
 
 # === Run ===
 cargo run -p rlmx-cli -- serve --port 3000   # MCP server (Rust)
@@ -101,11 +117,11 @@ aix engagement score               # Life Score (0-100)
 
 Coordinator, Researcher, Router, Experimenter, Worker, Monitor, Reviewer, Trainer, Validator, Replicator, Embedder, Analyst, VoiceCoordinator, MarketplaceManager, MeshCoordinator, FederationAgent, BillingManager
 
-Each agent has scoped capabilities per the 17x17 permission matrix (ADR-005).
+Each agent has scoped capabilities per the 18x17 permission matrix (ADR-005). The 18th permission (`ArtifactWrite`) was added in ADR-030.
 
-## MCP Tools (47)
+## MCP Tools (82)
 
-28 core + 8 marketplace + 3 voice + 2 mesh + 2 federation + 4 billing. All tools enforce RBAC with 6 roles: admin, system, engineer, operator, auditor, viewer.
+28 core + 8 marketplace + 3 voice + 2 mesh + 2 federation + 4 billing + 35 AgentOS integration (3 artifact + 3 board + 3 budget + 2 bridge + 3 a2a + 4 skill + 6 evolve + 3 approval + 4 trigger + 4 channel). All tools enforce RBAC with 6 roles: admin, system, engineer, operator, auditor, viewer.
 
 ## Frontend Dashboard
 
@@ -127,19 +143,23 @@ cd mobile && npm install && npx react-native start
 
 | Suite | Count | Command |
 |-------|-------|---------|
-| Rust (19 crates) | 946+ | `cargo test --workspace` |
-| TypeScript (13 packages) | 802 | `npm run test:ts` |
-| **Total** | **1,748+** | `npm test` |
+| Rust (22 crates) | 1,286+ | `cargo test --workspace` |
+| TypeScript (20 packages) | 1,135 | `npm run test:ts` |
+| **Total** | **2,421+** | `npm test` |
 
 ## Documentation
 
 | Path | Contents |
 |------|----------|
+| `CLAUDE.md` | AI assistant rules, conventions, strict rules (token-efficient, cross-referenced) |
+| `docs/BUILD-COMMANDS.md` | Complete build, test, deploy, and CLI command reference |
+| `docs/ARCHITECTURE.md` | Detailed component descriptions for all subsystems |
+| `docs/WORKSPACE-STRUCTURE.md` | 19 crate tree, 13 TS packages, directories, 16 DDD contexts |
+| `docs/KEY-FILES.md` | Key file locations across all crates and packages |
+| `docs/FEATURE-GATES.md` | Feature gate matrix (13 features) and integration rules |
 | `docs/TYPESCRIPT-MIGRATION.md` | Full TypeScript migration reference (packages, NAPI, DDD, conventions) |
-| `docs/ADR/` | 29 Architecture Decision Records |
-| `docs/DDD/` | 16 Domain-Driven Design documents |
-| `CLAUDE.md` | AI assistant rules, build commands, strict rules, key files |
-| `move-to-typescript-plan.md` | Original migration plan |
+| `docs/ADR/` | 39 Architecture Decision Records (ADR-001 through ADR-039) |
+| `docs/DDD/` | 16 Domain-Driven Design documents (DDD-001 through DDD-016) |
 
 ## Environment Variables
 

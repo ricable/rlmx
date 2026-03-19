@@ -8,6 +8,8 @@ export type {
   ResourceEnvelope,
   TransportSpec,
   TransportType,
+  BridgeConfig,
+  BridgeRuntime,
   DiscoverySpec,
   SecuritySpec,
   SensorSpec,
@@ -50,6 +52,11 @@ export {
   StubTransportAdapter,
   createTransportAdapter,
 } from './transport.js';
+
+// Bridge adapters (ADR-033)
+export { ClaudeCodeBridgeAdapter } from './bridge-claude-code.js';
+export { CodexBridgeAdapter } from './bridge-codex.js';
+export { HttpGenericBridgeAdapter } from './bridge-http-generic.js';
 
 // Discovery Bridge
 export { DiscoveryBridge } from './bridge.js';

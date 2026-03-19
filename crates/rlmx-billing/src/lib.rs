@@ -4,6 +4,7 @@
 //! Manages 6-tier subscriptions, family plans, developer revenue share,
 //! usage tracking, and tier-based capability enforcement.
 
+pub mod budget;
 pub mod capability_enforcement;
 pub mod developer;
 pub mod error;
@@ -13,6 +14,7 @@ pub mod tier;
 pub mod usage;
 
 // Re-export primary types for convenient access.
+pub use budget::{BudgetDecision, BudgetEntry, BudgetLedger, BudgetPolicy};
 pub use capability_enforcement::{TierCapabilityEnforcer, TierCapabilityToken, TierCaveat};
 pub use developer::{DeveloperAccount, PayoutMethod, PayoutRecord, SaleRecord};
 pub use error::{BillingError, BillingResult};

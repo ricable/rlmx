@@ -174,6 +174,43 @@ const vetReminder = template('vet-reminder', 'Vet Reminder', LifeDomain.Pet, ['v
 const priceComparator = template('price-comparator', 'Price Comparator', LifeDomain.Shopping, ['price-compare', 'deal-finder']);
 const dealFinder = template('deal-finder', 'Deal Finder', LifeDomain.Shopping, ['deal-finder', 'coupon']);
 
+// === Bridge Templates (ADR-033) ===
+const claudeCodeBridge = template('claude-code-bridge', 'Claude Code Bridge', LifeDomain.Career, ['llm', 'bridge', 'claude'], {
+  origin: { type: 'external', protocol: 'bridge:claude-code', endpoint: 'cli://claude' },
+  transports: [{ type: 'bridge' as const, runtime: 'claude-code' as const, config: { command: 'claude' } }],
+  capabilities: [{ name: 'inference', required: true }, { name: 'code-generation', required: true }],
+  modalities: ['text'],
+  security: { authMethod: 'none' },
+  deployment: { profiles: ['local-cli'] },
+});
+
+const codexBridge = template('codex-bridge', 'Codex Bridge', LifeDomain.Career, ['llm', 'bridge', 'codex'], {
+  origin: { type: 'external', protocol: 'bridge:codex', endpoint: 'https://api.openai.com/v1/responses' },
+  transports: [{ type: 'bridge' as const, runtime: 'codex' as const, config: { endpoint: 'https://api.openai.com/v1/responses', model: 'codex-mini-latest', authEnvVar: 'OPENAI_API_KEY' } }],
+  capabilities: [{ name: 'inference', required: true }, { name: 'code-generation', required: true }],
+  modalities: ['text'],
+  security: { authMethod: 'bearer' },
+  deployment: { profiles: ['cloud'] },
+});
+
+const cursorBridge = template('cursor-bridge', 'Cursor Bridge', LifeDomain.Career, ['llm', 'bridge', 'cursor'], {
+  origin: { type: 'external', protocol: 'bridge:cursor', endpoint: 'ipc://cursor' },
+  transports: [{ type: 'bridge' as const, runtime: 'cursor' as const, config: {} }],
+  capabilities: [{ name: 'inference', required: true }, { name: 'code-editing', required: true }],
+  modalities: ['text'],
+  security: { authMethod: 'none' },
+  deployment: { profiles: ['local-ide'] },
+});
+
+const genericLlmBridge = template('generic-llm-bridge', 'Generic LLM Bridge', LifeDomain.Career, ['llm', 'bridge', 'openai-compatible'], {
+  origin: { type: 'external', protocol: 'bridge:http-generic', endpoint: 'http://localhost:8080' },
+  transports: [{ type: 'bridge' as const, runtime: 'http-generic' as const, config: { endpoint: 'http://localhost:8080', model: 'default' } }],
+  capabilities: [{ name: 'inference', required: true }],
+  modalities: ['text'],
+  security: { authMethod: 'bearer' },
+  deployment: { profiles: ['local', 'cloud'] },
+});
+
 // === Template registry with pre-built indexes ===
 const ALL_TEMPLATES: readonly AgentManifest[] = Object.freeze([
   // Finance
@@ -202,6 +239,8 @@ const ALL_TEMPLATES: readonly AgentManifest[] = Object.freeze([
   feedingScheduler, vetReminder,
   // Shopping
   priceComparator, dealFinder,
+  // Bridge (ADR-033)
+  claudeCodeBridge, codexBridge, cursorBridge, genericLlmBridge,
 ]);
 
 // Deep-freeze all templates to prevent mutation
@@ -211,6 +250,7 @@ for (const t of ALL_TEMPLATES) Object.freeze(t);
 const BY_ID = new Map<string, AgentManifest>(ALL_TEMPLATES.map(t => [t.id, t]));
 const BY_DOMAIN = new Map<LifeDomain, AgentManifest[]>();
 const BY_ORIGIN = new Map<string, AgentManifest[]>();
+const BY_MODALITY = new Map<Modality, AgentManifest[]>();
 for (const t of ALL_TEMPLATES) {
   const domainList = BY_DOMAIN.get(t.lifeDomain);
   if (domainList) domainList.push(t);
@@ -219,6 +259,12 @@ for (const t of ALL_TEMPLATES) {
   const originList = BY_ORIGIN.get(t.origin.type);
   if (originList) originList.push(t);
   else BY_ORIGIN.set(t.origin.type, [t]);
+
+  for (const mod of t.modalities) {
+    const modList = BY_MODALITY.get(mod);
+    if (modList) modList.push(t);
+    else BY_MODALITY.set(mod, [t]);
+  }
 }
 
 /** Get all 50 built-in agent templates (read-only). */
@@ -241,9 +287,9 @@ export function getTemplatesByOrigin(originType: string): AgentManifest[] {
   return BY_ORIGIN.get(originType) ?? [];
 }
 
-/** Search templates by modality. */
+/** Search templates by modality. O(1) bucket lookup. */
 export function getTemplatesByModality(modality: Modality): AgentManifest[] {
-  return ALL_TEMPLATES.filter(t => t.modalities.includes(modality));
+  return BY_MODALITY.get(modality) ?? [];
 }
 
 /** Total template count. */

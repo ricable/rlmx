@@ -131,7 +131,30 @@ export interface MultimodalResponseEvent {
 }
 
 /**
- * All 12 SwarmEvent variants as a discriminated union.
+ * Coordination board update (ADR-031).
+ */
+export interface BoardUpdateEvent {
+  type: 'BoardUpdate';
+  boardId: string;
+  postId: string;
+  author: string;
+  action: string;
+}
+
+/**
+ * Human approval required for an operation (ADR-037).
+ */
+export interface ApprovalRequiredEvent {
+  type: 'ApprovalRequired';
+  requestId: string;
+  operation: string;
+  agentId: string;
+  tier: string;
+  costEstimate?: number;
+}
+
+/**
+ * All 15 SwarmEvent variants as a discriminated union.
  */
 export type SwarmEvent =
   | NodeJoinedEvent
@@ -146,7 +169,9 @@ export type SwarmEvent =
   | SandboxTerminatedEvent
   | VoiceChunkEvent
   | AgentProgressEvent
-  | MultimodalResponseEvent;
+  | MultimodalResponseEvent
+  | BoardUpdateEvent
+  | ApprovalRequiredEvent;
 
 /**
  * All SwarmEvent type discriminators.
@@ -165,6 +190,8 @@ export const SWARM_EVENT_TYPES = [
   'VoiceChunk',
   'AgentProgress',
   'MultimodalResponse',
+  'BoardUpdate',
+  'ApprovalRequired',
 ] as const;
 
 export type SwarmEventType = (typeof SWARM_EVENT_TYPES)[number];

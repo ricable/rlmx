@@ -20,6 +20,9 @@ members = [
     "crates/rlmx-mesh",
     "crates/rlmx-federation",
     "crates/rlmx-billing",
+    "crates/rlmx-artifact",
+    "crates/rlmx-evolve",
+    "crates/rlmx-channels",
 ]
 
 [workspace.dependencies]

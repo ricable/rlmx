@@ -1,3 +1,4 @@
+pub mod board;
 pub mod browser_pool;
 pub mod chaos;
 pub mod cloud;
@@ -34,3 +35,4 @@ pub use simulation::SimulatedSwarm;
 pub use transport::{InMemoryTransport, SwarmTransport, TransportMessage};
 pub use types::*;
 pub use zone::ZoneManager;
+pub use board::{Board, BoardError, BoardId, BoardManager, Post, PostId};

@@ -28,6 +28,15 @@ export interface ResourceEnvelope {
 
 // --- Transport specs ---
 
+export interface BridgeConfig {
+  command?: string;
+  endpoint?: string;
+  model?: string;
+  authEnvVar?: string;
+}
+
+export type BridgeRuntime = 'claude-code' | 'codex' | 'cursor' | 'opencode' | 'http-generic';
+
 export type TransportSpec =
   | { type: 'mcp'; endpoint: string }
   | { type: 'rest'; baseUrl: string }
@@ -35,10 +44,11 @@ export type TransportSpec =
   | { type: 'quic'; addr: string }
   | { type: 'mqtt'; broker: string; topic: string }
   | { type: 'grpc'; endpoint: string }
-  | { type: 'broadcast-channel'; channel: string };
+  | { type: 'broadcast-channel'; channel: string }
+  | { type: 'bridge'; runtime: BridgeRuntime; config: BridgeConfig };
 
 export const TRANSPORT_TYPES = [
-  'mcp', 'rest', 'ws', 'quic', 'mqtt', 'grpc', 'broadcast-channel',
+  'mcp', 'rest', 'ws', 'quic', 'mqtt', 'grpc', 'broadcast-channel', 'bridge',
 ] as const;
 
 export type TransportType = (typeof TRANSPORT_TYPES)[number];

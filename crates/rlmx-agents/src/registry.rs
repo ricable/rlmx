@@ -7,7 +7,7 @@ use crate::types::AgentType;
 // Re-export SyscallPermission from the kernel instead of duplicating it.
 pub use rlmx_kernel::types::SyscallPermission;
 
-/// Returns all 17 concrete syscall permission variants (excludes `All`).
+/// Returns all 18 concrete syscall permission variants (excludes `All`).
 pub fn all_concrete_permissions() -> &'static [SyscallPermission] {
     &[
         SyscallPermission::VecInsert,
@@ -27,6 +27,7 @@ pub fn all_concrete_permissions() -> &'static [SyscallPermission] {
         SyscallPermission::IntentRoute,
         SyscallPermission::MeshSync,
         SyscallPermission::FederationContribute,
+        SyscallPermission::ArtifactWrite,
     ]
 }
 
@@ -70,7 +71,7 @@ impl PermissionRegistry {
         let perms: Vec<SyscallPermission> = match agent_type {
             // Coordinator: full access (PID 0)
             AgentType::Coordinator => all_concrete_permissions().to_vec(),
-            // Researcher: read vectors, graph queries, fork, messaging, attention, voice synth, intent
+            // Researcher: read vectors, graph queries, fork, messaging, attention, voice synth, intent, artifact write
             AgentType::Researcher => vec![
                 VecInsert,
                 VecSearch,
@@ -82,6 +83,7 @@ impl PermissionRegistry {
                 AttentionSelect,
                 VoiceSynthesize,
                 IntentRoute,
+                ArtifactWrite,
             ],
             // Router: read-only routing, messaging, attention, halt, voice transcribe/synth, intent
             AgentType::Router => vec![
@@ -94,7 +96,7 @@ impl PermissionRegistry {
                 VoiceSynthesize,
                 IntentRoute,
             ],
-            // Experimenter: broad access for experiments, can fork workers
+            // Experimenter: broad access for experiments, can fork workers, artifact write
             AgentType::Experimenter => vec![
                 VecInsert,
                 VecSearch,
@@ -108,6 +110,7 @@ impl PermissionRegistry {
                 AttentionSelect,
                 VoiceSynthesize,
                 IntentRoute,
+                ArtifactWrite,
             ],
             // Worker: execute tasks, messaging, state mutation, voice synth, intent
             AgentType::Worker => vec![
@@ -329,7 +332,7 @@ mod tests {
     #[test]
     fn test_coordinator_has_all_permissions() {
         let perms = PermissionRegistry::permissions_for(AgentType::Coordinator);
-        assert_eq!(perms.count(), 17);
+        assert_eq!(perms.count(), 18);
         for p in all_concrete_permissions() {
             assert!(perms.has(*p), "Coordinator missing {:?}", p);
         }

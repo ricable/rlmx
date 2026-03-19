@@ -1,5 +1,9 @@
 import type { JsonRpcResponse } from '@aix/shared';
 import { createRequest, isSuccessResponse } from '@aix/shared';
+import type { TransportSpec, BridgeConfig } from './manifest.js';
+import { ClaudeCodeBridgeAdapter } from './bridge-claude-code.js';
+import { CodexBridgeAdapter } from './bridge-codex.js';
+import { HttpGenericBridgeAdapter } from './bridge-http-generic.js';
 
 // --- Request/Response types ---
 export interface AgentRequest {
@@ -66,8 +70,12 @@ export class McpTransportAdapter implements TransportAdapter {
   }
 
   async healthCheck(): Promise<boolean> {
-    const res = await this.send({ method: 'ping', timeout: 5000 });
-    return res.status === 'ok';
+    try {
+      const res = await this.send({ method: 'ping', timeout: 5000 });
+      return res.status === 'ok';
+    } catch {
+      return false;
+    }
   }
 
   protocol(): string { return 'mcp'; }
@@ -140,11 +148,13 @@ export class WebSocketTransportAdapter implements TransportAdapter {
   }
 
   private static CONNECTION_TIMEOUT_MS = 10_000;
+  private connectingPromise: Promise<WebSocket> | null = null;
 
   private async ensureConnection(): Promise<WebSocket> {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return this.ws;
+    if (this.connectingPromise) return this.connectingPromise;
 
-    return new Promise((resolve, reject) => {
+    this.connectingPromise = new Promise<WebSocket>((resolve, reject) => {
       const ws = new WebSocket(this.url);
       const timer = setTimeout(() => {
         ws.close();
@@ -154,10 +164,12 @@ export class WebSocketTransportAdapter implements TransportAdapter {
       ws.onopen = () => {
         clearTimeout(timer);
         this.ws = ws;
+        this.connectingPromise = null;
         resolve(ws);
       };
       ws.onerror = (_e) => {
         clearTimeout(timer);
+        this.connectingPromise = null;
         reject(new Error('WebSocket connection failed'));
       };
       ws.onmessage = (event) => {
@@ -185,6 +197,7 @@ export class WebSocketTransportAdapter implements TransportAdapter {
         this.pending.clear();
       };
     });
+    return this.connectingPromise;
   }
 
   async send(request: AgentRequest): Promise<AgentResponse> {
@@ -252,15 +265,33 @@ export class StubTransportAdapter implements TransportAdapter {
 }
 
 // --- Factory ---
-export function createTransportAdapter(spec: { type: string; [key: string]: unknown }): TransportAdapter {
+export function createTransportAdapter(spec: TransportSpec): TransportAdapter {
   switch (spec.type) {
     case 'mcp':
-      return new McpTransportAdapter(spec.endpoint as string);
+      return new McpTransportAdapter(spec.endpoint);
     case 'rest':
-      return new RestTransportAdapter(spec.baseUrl as string);
+      return new RestTransportAdapter(spec.baseUrl);
     case 'ws':
-      return new WebSocketTransportAdapter(spec.url as string);
-    default:
+      return new WebSocketTransportAdapter(spec.url);
+    case 'broadcast-channel':
+    case 'quic':
+    case 'mqtt':
+    case 'grpc':
       return new StubTransportAdapter(spec.type);
+    case 'bridge': {
+      const config = spec.config;
+      switch (spec.runtime) {
+        case 'claude-code':
+          return new ClaudeCodeBridgeAdapter(config);
+        case 'codex':
+          return new CodexBridgeAdapter(config);
+        case 'cursor':
+          return new StubTransportAdapter('bridge:cursor');
+        case 'opencode':
+          return new StubTransportAdapter('bridge:opencode');
+        case 'http-generic':
+          return new HttpGenericBridgeAdapter(config);
+      }
+    }
   }
 }

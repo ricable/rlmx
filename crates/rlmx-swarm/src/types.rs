@@ -165,6 +165,21 @@ pub enum SwarmEvent {
         confidence: f32,
         is_final: bool,
     },
+    /// Coordination board update (ADR-031).
+    BoardUpdate {
+        board_id: String,
+        post_id: String,
+        author: String,
+        action: String,
+    },
+    /// Human approval required for an operation (ADR-037).
+    ApprovalRequired {
+        request_id: String,
+        operation: String,
+        agent_id: String,
+        tier: String,
+        cost_estimate: Option<u64>,
+    },
     /// Per-agent progress update for multi-intent fan-out (ADR-015/018).
     AgentProgress {
         task_id: String,

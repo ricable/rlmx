@@ -39,6 +39,17 @@ export type {
   IntentsDecomposedEvent,
   MeshDeviceJoinedEvent,
   FederationCycleCompletedEvent,
+  ArtifactCreatedEvent,
+  ArtifactBranchAdvancedEvent,
+  BoardPostCreatedEvent,
+  BudgetThresholdReachedEvent,
+  FunctionEvolvedEvent,
+  FunctionScoredEvent,
+  FunctionKilledEvent,
+  ApprovalRequestedEvent,
+  ApprovalDecidedEvent,
+  ChannelMessageReceivedEvent,
+  ChannelMessageSentEvent,
 } from './events.js';
 
 export {

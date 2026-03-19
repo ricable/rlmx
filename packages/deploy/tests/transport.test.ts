@@ -6,6 +6,9 @@ import {
   WebSocketTransportAdapter,
   createTransportAdapter,
 } from '../src/transport.js';
+import { ClaudeCodeBridgeAdapter } from '../src/bridge-claude-code.js';
+import { CodexBridgeAdapter } from '../src/bridge-codex.js';
+import { HttpGenericBridgeAdapter } from '../src/bridge-http-generic.js';
 import type { TransportAdapter, AgentRequest, AgentResponse } from '../src/transport.js';
 
 describe('StubTransportAdapter', () => {
@@ -53,13 +56,14 @@ describe('createTransportAdapter', () => {
     expect(adapter).toBeInstanceOf(WebSocketTransportAdapter);
   });
 
-  it('unknown type returns StubTransportAdapter', () => {
-    const adapter = createTransportAdapter({ type: 'unknown-protocol' });
+  it('unsupported transport type returns StubTransportAdapter', () => {
+    const adapter = createTransportAdapter({ type: 'quic', addr: '127.0.0.1:4433' });
     expect(adapter).toBeInstanceOf(StubTransportAdapter);
   });
 
-  it('unknown type stub uses the type as protocol name', () => {
-    const adapter = createTransportAdapter({ type: 'mqtt' });
+  it('mqtt type returns StubTransportAdapter with correct protocol', () => {
+    const adapter = createTransportAdapter({ type: 'mqtt', broker: 'mqtt://localhost', topic: 'test' });
+    expect(adapter).toBeInstanceOf(StubTransportAdapter);
     expect(adapter.protocol()).toBe('mqtt');
   });
 });
@@ -118,6 +122,9 @@ describe('TransportAdapter interface conformance', () => {
       new McpTransportAdapter('http://localhost:3000'),
       new RestTransportAdapter('http://localhost:8080'),
       new WebSocketTransportAdapter('ws://localhost:3001'),
+      new ClaudeCodeBridgeAdapter({}),
+      new CodexBridgeAdapter({}),
+      new HttpGenericBridgeAdapter({}),
     ];
 
     for (const adapter of adapters) {
@@ -125,5 +132,136 @@ describe('TransportAdapter interface conformance', () => {
       expect(typeof adapter.healthCheck).toBe('function');
       expect(typeof adapter.protocol).toBe('function');
     }
+  });
+});
+
+describe('ClaudeCodeBridgeAdapter', () => {
+  it('protocol() returns "bridge:claude-code"', () => {
+    const adapter = new ClaudeCodeBridgeAdapter({});
+    expect(adapter.protocol()).toBe('bridge:claude-code');
+  });
+
+  it('constructor accepts command override', () => {
+    const adapter = new ClaudeCodeBridgeAdapter({ command: '/usr/local/bin/claude' });
+    expect(adapter.protocol()).toBe('bridge:claude-code');
+  });
+
+  it('constructor accepts model option', () => {
+    const adapter = new ClaudeCodeBridgeAdapter({ model: 'claude-sonnet-4-20250514' });
+    expect(adapter.protocol()).toBe('bridge:claude-code');
+  });
+});
+
+describe('CodexBridgeAdapter', () => {
+  it('protocol() returns "bridge:codex"', () => {
+    const adapter = new CodexBridgeAdapter({});
+    expect(adapter.protocol()).toBe('bridge:codex');
+  });
+
+  it('constructor accepts endpoint and model', () => {
+    const adapter = new CodexBridgeAdapter({
+      endpoint: 'https://api.openai.com/v1/responses',
+      model: 'codex-mini-latest',
+    });
+    expect(adapter.protocol()).toBe('bridge:codex');
+  });
+});
+
+describe('HttpGenericBridgeAdapter', () => {
+  it('protocol() returns "bridge:http-generic"', () => {
+    const adapter = new HttpGenericBridgeAdapter({});
+    expect(adapter.protocol()).toBe('bridge:http-generic');
+  });
+
+  it('constructor accepts endpoint, model, and authEnvVar', () => {
+    const adapter = new HttpGenericBridgeAdapter({
+      endpoint: 'http://localhost:11434',
+      model: 'llama-3',
+      authEnvVar: 'LLM_API_KEY',
+    });
+    expect(adapter.protocol()).toBe('bridge:http-generic');
+  });
+});
+
+describe('createTransportAdapter bridge dispatch', () => {
+  it('type "bridge" runtime "claude-code" returns ClaudeCodeBridgeAdapter', () => {
+    const adapter = createTransportAdapter({
+      type: 'bridge',
+      runtime: 'claude-code',
+      config: { command: 'claude' },
+    });
+    expect(adapter).toBeInstanceOf(ClaudeCodeBridgeAdapter);
+    expect(adapter.protocol()).toBe('bridge:claude-code');
+  });
+
+  it('type "bridge" runtime "codex" returns CodexBridgeAdapter', () => {
+    const adapter = createTransportAdapter({
+      type: 'bridge',
+      runtime: 'codex',
+      config: { endpoint: 'https://api.openai.com/v1/responses' },
+    });
+    expect(adapter).toBeInstanceOf(CodexBridgeAdapter);
+    expect(adapter.protocol()).toBe('bridge:codex');
+  });
+
+  it('type "bridge" runtime "http-generic" returns HttpGenericBridgeAdapter', () => {
+    const adapter = createTransportAdapter({
+      type: 'bridge',
+      runtime: 'http-generic',
+      config: { endpoint: 'http://localhost:8080' },
+    });
+    expect(adapter).toBeInstanceOf(HttpGenericBridgeAdapter);
+    expect(adapter.protocol()).toBe('bridge:http-generic');
+  });
+
+  it('type "bridge" runtime "cursor" returns StubTransportAdapter', () => {
+    const adapter = createTransportAdapter({
+      type: 'bridge',
+      runtime: 'cursor',
+      config: {},
+    });
+    expect(adapter).toBeInstanceOf(StubTransportAdapter);
+    expect(adapter.protocol()).toBe('bridge:cursor');
+  });
+
+  it('type "bridge" runtime "opencode" returns StubTransportAdapter', () => {
+    const adapter = createTransportAdapter({
+      type: 'bridge',
+      runtime: 'opencode',
+      config: {},
+    });
+    expect(adapter).toBeInstanceOf(StubTransportAdapter);
+    expect(adapter.protocol()).toBe('bridge:opencode');
+  });
+});
+
+describe('bridge templates', () => {
+  it('claude-code-bridge template exists', async () => {
+    const { getTemplate } = await import('../src/templates.js');
+    const t = getTemplate('claude-code-bridge');
+    expect(t).toBeDefined();
+    expect(t!.name).toBe('Claude Code Bridge');
+    expect(t!.origin.type).toBe('external');
+  });
+
+  it('codex-bridge template exists', async () => {
+    const { getTemplate } = await import('../src/templates.js');
+    const t = getTemplate('codex-bridge');
+    expect(t).toBeDefined();
+    expect(t!.name).toBe('Codex Bridge');
+  });
+
+  it('cursor-bridge template exists', async () => {
+    const { getTemplate } = await import('../src/templates.js');
+    const t = getTemplate('cursor-bridge');
+    expect(t).toBeDefined();
+    expect(t!.name).toBe('Cursor Bridge');
+  });
+
+  it('generic-llm-bridge template exists', async () => {
+    const { getTemplate } = await import('../src/templates.js');
+    const t = getTemplate('generic-llm-bridge');
+    expect(t).toBeDefined();
+    expect(t!.name).toBe('Generic LLM Bridge');
   });
 });

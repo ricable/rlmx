@@ -85,6 +85,8 @@ pub enum SyscallPermission {
     IntentRoute,
     MeshSync,
     FederationContribute,
+    /// Write content-addressed artifacts to the DAG (ADR-030).
+    ArtifactWrite,
     All,
 }
 

@@ -83,6 +83,100 @@ export interface FederationCycleCompletedEvent {
   timestamp: string;
 }
 
+// --- AgentOS Cherry-Pick Integration (ADR-030 through ADR-039) ---
+
+export interface ArtifactCreatedEvent {
+  type: 'ArtifactCreated';
+  artifactId: string;
+  creator: number;
+  contentType: string;
+  parentIds: string[];
+  timestamp: string;
+}
+
+export interface ArtifactBranchAdvancedEvent {
+  type: 'ArtifactBranchAdvanced';
+  branchName: string;
+  oldHead: string;
+  newHead: string;
+  timestamp: string;
+}
+
+export interface BoardPostCreatedEvent {
+  type: 'BoardPostCreated';
+  boardId: string;
+  postId: string;
+  author: number;
+  tags: string[];
+  timestamp: string;
+}
+
+export interface BudgetThresholdReachedEvent {
+  type: 'BudgetThresholdReached';
+  agentId: string;
+  thresholdType: string;
+  spent: number;
+  limit: number;
+  timestamp: string;
+}
+
+export interface FunctionEvolvedEvent {
+  type: 'FunctionEvolved';
+  functionId: string;
+  name: string;
+  version: number;
+  status: string;
+  timestamp: string;
+}
+
+export interface FunctionScoredEvent {
+  type: 'FunctionScored';
+  functionId: string;
+  overall: number;
+  correctness: number;
+  safety: number;
+  timestamp: string;
+}
+
+export interface FunctionKilledEvent {
+  type: 'FunctionKilled';
+  functionId: string;
+  reason: string;
+  timestamp: string;
+}
+
+export interface ApprovalRequestedEvent {
+  type: 'ApprovalRequested';
+  operation: string;
+  agentId: string;
+  tier: string;
+  costEstimate: number | null;
+  timestamp: string;
+}
+
+export interface ApprovalDecidedEvent {
+  type: 'ApprovalDecided';
+  operation: string;
+  approved: boolean;
+  decidedBy: string;
+  timestamp: string;
+}
+
+export interface ChannelMessageReceivedEvent {
+  type: 'ChannelMessageReceived';
+  channelType: string;
+  sender: string;
+  contentPreview: string;
+  timestamp: string;
+}
+
+export interface ChannelMessageSentEvent {
+  type: 'ChannelMessageSent';
+  channelType: string;
+  recipient: string;
+  timestamp: string;
+}
+
 /**
  * Discriminated union of all domain events.
  * Use the `type` field to narrow to a specific variant.
@@ -97,7 +191,18 @@ export type DomainEvent =
   | VoiceSessionStartedEvent
   | IntentsDecomposedEvent
   | MeshDeviceJoinedEvent
-  | FederationCycleCompletedEvent;
+  | FederationCycleCompletedEvent
+  | ArtifactCreatedEvent
+  | ArtifactBranchAdvancedEvent
+  | BoardPostCreatedEvent
+  | BudgetThresholdReachedEvent
+  | FunctionEvolvedEvent
+  | FunctionScoredEvent
+  | FunctionKilledEvent
+  | ApprovalRequestedEvent
+  | ApprovalDecidedEvent
+  | ChannelMessageReceivedEvent
+  | ChannelMessageSentEvent;
 
 /** All valid DomainEvent type discriminators. */
 export type DomainEventType = DomainEvent['type'];
@@ -120,6 +225,17 @@ export const DOMAIN_EVENT_TYPES: readonly DomainEventType[] = [
   'IntentsDecomposed',
   'MeshDeviceJoined',
   'FederationCycleCompleted',
+  'ArtifactCreated',
+  'ArtifactBranchAdvanced',
+  'BoardPostCreated',
+  'BudgetThresholdReached',
+  'FunctionEvolved',
+  'FunctionScored',
+  'FunctionKilled',
+  'ApprovalRequested',
+  'ApprovalDecided',
+  'ChannelMessageReceived',
+  'ChannelMessageSent',
 ] as const;
 
 // ---------------------------------------------------------------------------
