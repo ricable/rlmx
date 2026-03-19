@@ -474,7 +474,7 @@ mod tests {
     #[test]
     fn test_tool_registration() {
         let server = make_server();
-        assert_eq!(server.tool_count(), 39);
+        assert_eq!(server.tool_count(), 47);
     }
 
     #[test]
@@ -508,7 +508,7 @@ mod tests {
         assert!(resp.error.is_none());
         let result = resp.result.unwrap();
         let tools = result["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 39);
+        assert_eq!(tools.len(), 47);
     }
 
     #[tokio::test]

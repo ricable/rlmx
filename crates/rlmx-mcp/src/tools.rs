@@ -1,6 +1,6 @@
 //! RLMX MCP Tools
 //!
-//! Implements all 39 RLMX MCP tool definitions and their handlers.
+//! Implements all 47 RLMX MCP tool definitions and their handlers.
 //! Tools that can be wired to kernel subsystems use a shared `ToolState`
 //! backed by `Arc<RwLock<...>>`. Tools that require external services
 //! remain as stubs with `"status": "stub"` in their responses.
@@ -92,7 +92,7 @@ pub fn new_shared_state() -> SharedToolState {
 // Public constructor
 // ---------------------------------------------------------------------------
 
-/// Create all 39 RLMX MCP tools with their handlers, wired to the given
+/// Create all 47 RLMX MCP tools with their handlers, wired to the given
 /// shared kernel state.
 pub fn create_all_tools(state: SharedToolState) -> Vec<McpTool> {
     vec![
@@ -146,6 +146,17 @@ pub fn create_all_tools(state: SharedToolState) -> Vec<McpTool> {
         create_rlmx_voice_transcribe(Arc::clone(&state)),
         create_rlmx_voice_synthesize(Arc::clone(&state)),
         create_rlmx_voice_session(Arc::clone(&state)),
+        // Mesh tools (ADR-022)
+        create_rlmx_mesh_status(Arc::clone(&state)),
+        create_rlmx_mesh_devices(Arc::clone(&state)),
+        // Federation tools (ADR-023)
+        create_rlmx_federation_status(Arc::clone(&state)),
+        create_rlmx_federation_contribute(Arc::clone(&state)),
+        // Billing tools (ADR-025)
+        create_rlmx_billing_status(Arc::clone(&state)),
+        create_rlmx_billing_upgrade(Arc::clone(&state)),
+        create_rlmx_billing_usage(Arc::clone(&state)),
+        create_rlmx_billing_family(Arc::clone(&state)),
     ]
 }
 
@@ -2658,6 +2669,312 @@ impl ToolHandler for VoiceSessionHandler {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Mesh tools (ADR-022)
+// ---------------------------------------------------------------------------
+
+fn create_rlmx_mesh_status(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_mesh_status".to_string(),
+        description: "Get personal mesh status including connected devices, sync state, and privacy anchor.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {}
+        }),
+        handler: Box::new(MeshStatusHandler { state }),
+    }
+}
+
+struct MeshStatusHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for MeshStatusHandler {
+    async fn handle(&self, _params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let _ = self.state.read().await;
+        Ok(json!({
+            "status": "stub",
+            "mesh_id": Uuid::new_v4().to_string(),
+            "device_count": 0,
+            "privacy_anchor": null,
+            "sync_health": "unknown",
+            "zones": ["A-Mobile", "A-Desktop", "B-Cloud", "C-Edge", "D-Browser"]
+        }))
+    }
+}
+
+fn create_rlmx_mesh_devices(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_mesh_devices".to_string(),
+        description: "List all devices in the personal mesh with their zones, types, and sync status.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {}
+        }),
+        handler: Box::new(MeshDevicesHandler { state }),
+    }
+}
+
+struct MeshDevicesHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for MeshDevicesHandler {
+    async fn handle(&self, _params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let _ = self.state.read().await;
+        Ok(json!({
+            "status": "stub",
+            "devices": [],
+            "total": 0
+        }))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Federation tools (ADR-023)
+// ---------------------------------------------------------------------------
+
+fn create_rlmx_federation_status(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_federation_status".to_string(),
+        description: "Get the current federated learning cycle status, contribution count, and last distribution.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {}
+        }),
+        handler: Box::new(FederationStatusHandler { state }),
+    }
+}
+
+struct FederationStatusHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for FederationStatusHandler {
+    async fn handle(&self, _params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let _ = self.state.read().await;
+        Ok(json!({
+            "status": "stub",
+            "cycle_status": "idle",
+            "contributions": 0,
+            "aggregation_threshold": 1000,
+            "last_distribution": null,
+            "privacy": {
+                "laplace_epsilon": 1.0,
+                "emotion_buckets": 5,
+                "speaker_embeddings_federated": false
+            }
+        }))
+    }
+}
+
+fn create_rlmx_federation_contribute(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_federation_contribute".to_string(),
+        description: "Trigger a manual contribution to the federated learning cycle with anonymized patterns.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "domains": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Life domains to contribute patterns from"
+                }
+            }
+        }),
+        handler: Box::new(FederationContributeHandler { state }),
+    }
+}
+
+struct FederationContributeHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for FederationContributeHandler {
+    async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let domains = params
+            .get("domains")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect::<Vec<_>>())
+            .unwrap_or_default();
+        let _ = self.state.read().await;
+        Ok(json!({
+            "status": "stub",
+            "action": "contribute",
+            "domains": domains,
+            "patterns_contributed": 0,
+            "anonymization_applied": true
+        }))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Billing tools (ADR-025)
+// ---------------------------------------------------------------------------
+
+fn create_rlmx_billing_status(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_billing_status".to_string(),
+        description: "Get current subscription tier, usage, and billing status.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {}
+        }),
+        handler: Box::new(BillingStatusHandler { state }),
+    }
+}
+
+struct BillingStatusHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for BillingStatusHandler {
+    async fn handle(&self, _params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let _ = self.state.read().await;
+        Ok(json!({
+            "status": "stub",
+            "tier": "free",
+            "price_cents": 0,
+            "agent_limit": 5,
+            "agents_used": 0,
+            "cloud_tokens_used": 0,
+            "billing_active": false,
+            "grace_period_days": 7
+        }))
+    }
+}
+
+fn create_rlmx_billing_upgrade(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_billing_upgrade".to_string(),
+        description: "Upgrade or downgrade subscription tier.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "tier": {
+                    "type": "string",
+                    "enum": ["free", "personal", "family", "pro", "enterprise", "developer"],
+                    "description": "Target subscription tier"
+                }
+            },
+            "required": ["tier"]
+        }),
+        handler: Box::new(BillingUpgradeHandler { state }),
+    }
+}
+
+struct BillingUpgradeHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for BillingUpgradeHandler {
+    async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let tier = params
+            .get("tier")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| McpError::invalid_params("Missing required parameter: tier"))?;
+        let _ = self.state.read().await;
+        let price = match tier {
+            "free" => 0,
+            "personal" => 999,
+            "family" => 1999,
+            "pro" => 2999,
+            "enterprise" => 0,
+            "developer" => 0,
+            _ => return Err(McpError::invalid_params("Invalid tier")),
+        };
+        Ok(json!({
+            "status": "stub",
+            "action": "upgrade",
+            "tier": tier,
+            "price_cents": price
+        }))
+    }
+}
+
+fn create_rlmx_billing_usage(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_billing_usage".to_string(),
+        description: "Get detailed usage metrics for the current billing period.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {}
+        }),
+        handler: Box::new(BillingUsageHandler { state }),
+    }
+}
+
+struct BillingUsageHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for BillingUsageHandler {
+    async fn handle(&self, _params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let _ = self.state.read().await;
+        Ok(json!({
+            "status": "stub",
+            "period_start": Utc::now().to_rfc3339(),
+            "agents_active": 0,
+            "cloud_tokens_used": 0,
+            "cloud_tokens_limit": null,
+            "inference_requests": 0,
+            "federation_contributions": 0
+        }))
+    }
+}
+
+fn create_rlmx_billing_family(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_billing_family".to_string(),
+        description: "Manage family plan members and shared agents.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["status", "add_member", "remove_member", "list_members"],
+                    "description": "Family plan action"
+                },
+                "member_email": {
+                    "type": "string",
+                    "description": "Member email (for add/remove)"
+                }
+            },
+            "required": ["action"]
+        }),
+        handler: Box::new(BillingFamilyHandler { state }),
+    }
+}
+
+struct BillingFamilyHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for BillingFamilyHandler {
+    async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let action = params
+            .get("action")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| McpError::invalid_params("Missing required parameter: action"))?;
+        let _ = self.state.read().await;
+        Ok(json!({
+            "status": "stub",
+            "action": action,
+            "max_members": 6,
+            "current_members": 0,
+            "members": []
+        }))
+    }
+}
+
 /// Return the tool names for validation purposes.
 pub fn tool_names() -> Vec<&'static str> {
     vec![
@@ -2700,6 +3017,14 @@ pub fn tool_names() -> Vec<&'static str> {
         "rlmx_voice_transcribe",
         "rlmx_voice_synthesize",
         "rlmx_voice_session",
+        "rlmx_mesh_status",
+        "rlmx_mesh_devices",
+        "rlmx_federation_status",
+        "rlmx_federation_contribute",
+        "rlmx_billing_status",
+        "rlmx_billing_upgrade",
+        "rlmx_billing_usage",
+        "rlmx_billing_family",
     ]
 }
 
@@ -2713,8 +3038,8 @@ mod tests {
         let tools = create_all_tools(state);
         assert_eq!(
             tools.len(),
-            39,
-            "Expected exactly 39 tools (28 original + 8 marketplace + 3 voice)"
+            47,
+            "Expected exactly 47 tools (28 original + 8 marketplace + 3 voice + 2 mesh + 2 federation + 4 billing)"
         );
 
         for tool in &tools {

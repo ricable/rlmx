@@ -140,6 +140,48 @@ cargo build --release --target aarch64-unknown-linux-gnu -p rlmx-cli --features 
 
 No Makefile, no CI pipeline. Default rustfmt and clippy settings apply.
 
+## Advanced Commands
+
+```bash
+# === Validation & Quality Gates ===
+cargo test --workspace 2>&1 | grep "test result:" | awk '{sum += $4} END {print "Total:", sum}'  # Count all tests
+cargo test -p rlmx-kernel -- --test-threads=1    # Single-threaded (debug race conditions)
+cargo test -p rlmx-agents -- test_permission      # Run specific test pattern
+RUST_LOG=debug cargo test -p rlmx-voice           # Tests with trace output
+
+# === Per-Crate Test Counts (946 total) ===
+# rlmx-agents: 168 | rlmx-swarm: 130 | rlmx-cognitive: 74
+# rlmx-voice: 69   | rlmx-mcp: 65    | rlmx-kernel: 64
+# rlmx-mesh: 57    | rlmx-billing: 55 | rlmx-phone: 47
+# rlmx-marketplace: 42 | rlmx-federation: 42 | rlmx-rvf: 30
+# rlmx-napi: 29    | rlmx-ruvllm: 24  | rlmx-wasm: 22
+# rlmx-cli: 11     | rlmx-trm: 8      | rlmx-rlm: 5
+# rlmx-plugin: 4
+
+# === Multi-Crate Targeted Tests ===
+cargo test -p rlmx-voice -p rlmx-phone -p rlmx-kernel  # Voice pipeline + phone + kernel
+cargo test -p rlmx-mesh -p rlmx-federation -p rlmx-billing  # Mesh ecosystem
+cargo test -p rlmx-napi -p rlmx-wasm                   # Cross-platform bindings
+
+# === Use Case Validation ===
+# UC1 "One Voice, Millions of Agents": voice + phone + marketplace + kernel + agents + swarm + mcp
+cargo test -p rlmx-voice -p rlmx-phone -p rlmx-marketplace -p rlmx-kernel -p rlmx-agents -p rlmx-swarm -p rlmx-mcp
+# UC2 "Personal Agent Cloud": napi + wasm + mesh + federation + billing + cognitive
+cargo test -p rlmx-napi -p rlmx-wasm -p rlmx-mesh -p rlmx-federation -p rlmx-billing -p rlmx-cognitive
+
+# === Dependency Inspection ===
+cargo tree -p rlmx-kernel --depth 1                 # Direct deps of a crate
+cargo tree -p rlmx-kernel --depth 1 --features ruvnet-phase1  # Deps with feature enabled
+cargo tree --workspace --duplicates                  # Find duplicate dependencies
+
+# === Release Build & Size ===
+cargo build --release -p rlmx-cli 2>&1 | tail -1    # Optimized binary
+ls -lh target/release/rlmx-cli                      # Check binary size
+
+# === Documentation ===
+cargo doc --workspace --no-deps --open               # Generate and open API docs
+```
+
 ## Feature Gates (ADR-024)
 
 Ruvnet ecosystem crates are integrated behind opt-in feature gates. Stub implementations remain the default -- ruvnet crates activate only when features are enabled.
@@ -212,7 +254,7 @@ New types: `ResponseMode` (VoiceOnly/Visual/Multimodal/Ambient), `VoicePersona` 
 **Marketplace** aggregate root with `AgentRegistry` (CRUD, search, filter by domain/rating/price), `BillingEngine` (70/30 revenue split, monthly payouts at $50 threshold), `ReviewPipeline` (automated security audit + human review for sensitive permissions), `PublisherPortal`, `FeaturedEngine` (ML-ranked), `MarketplaceAnalytics`. 12 life domains. Agents packaged as RVF containers.
 
 ### MCP Server (`rlmx-mcp`)
-**47 JSON-RPC 2.0 tools** (28 original + 8 marketplace + 3 voice + 8 mesh/federation/billing), HTTP :3000, WebSocket :3001 with typed `SwarmEvent` enum (16 variants including VoiceChunk, AgentProgress, MultimodalResponse, MeshDeviceJoined, FederationCycleUpdate, BillingQuotaWarning), auth, heartbeat, backpressure. RBAC: 6 roles, clients cannot self-escalate.
+**47 JSON-RPC 2.0 tools** (28 original + 8 marketplace + 3 voice + 2 mesh + 2 federation + 4 billing), HTTP :3000, WebSocket :3001 with typed `SwarmEvent` enum (12 variants including VoiceChunk, AgentProgress, MultimodalResponse), auth, heartbeat, backpressure. RBAC: 6 roles, clients cannot self-escalate.
 
 ### Swarm (`rlmx-swarm`)
 **6-zone topology** (A-Mobile=Phone/Primary, A-Desktop=Laptop/Secondary, B=Cloud/Burst, C=Edge/Sentinel, D=Browser, E=HomeHub/PrivacyAnchor). `SwarmEvent` expanded to 12 variants with `CardData` and `HapticPattern` types. `BrowserComputePool` with priority queue. `SandboxManager` with `SandboxProfile`, `ResourceEnvelope`, `FleetManifest`.
@@ -295,6 +337,35 @@ React Native 0.84.1 + TypeScript for Android. **8 screens**: Home (Life Score, M
 24. **Federation privacy invariants**: Laplace noise epsilon=1.0 on all numeric fields, minimum 1000-user aggregation threshold before publishing any pattern, emotion valence bucketed to 5 discrete levels, no speaker embeddings federated. Enforced in `FederationAnonymizer`.
 25. **Billing tier enforcement**: Free tier allows exactly 5 agents, enforced at spawn time via capability token caveats. Tier limits are the source of truth in `TierLimits`. Never bypass tier checks.
 26. **Mesh privacy anchor**: Home hub (Zone C/E) must be the sole long-term data store for personal data. Phone and laptop sync TO the hub, never to each other for persistence. Max 1 MeshCoordinator per mesh.
+27. **Use case compliance**: Changes must not break validated use case test suites (UC1: 585 tests, UC2: 279 tests). Run targeted tests before merging.
+28. **Test count tracking**: Total workspace tests must be >= 946. If adding tests, update this count in CLAUDE.md. If tests are removed, document why.
+29. **SwarmEvent variants must match**: `ws.rs` SwarmEvent enum (12 variants) and `types.rs` must stay in sync. New variants require WebSocket serialization support.
+30. **Cross-device consistency**: Any type used by rlmx-napi AND rlmx-wasm must be defined in rlmx-kernel or a shared crate — never duplicated between binding crates.
+31. **LifeDomain is closed**: The 12 LifeDomain variants are fixed. New agent domains must map to an existing LifeDomain. Do not add new variants without ADR approval.
+32. **Engagement gamification invariants**: AgentCollection levels cap at 10 (50 XP per level). Achievement count capped at 50. LifeScore composite weights must sum to 1.0.
+
+## Use Case Validation
+
+Two validated use cases define the product scope. Any changes to crates must maintain compliance with both.
+
+### UC1: "RuVix — One Voice, Millions of Agents" (`docs/crazy-ruv-cartes-plan.md`)
+Voice-first vision: VAD→STT→Intent Decomposition→Agent Swarm→Multimodal Response. Key scenarios: "Move to Paris" (47 agents, 9 domains, 120s), morning briefing (7 agents, 15s), multi-intent commands. Validates: rlmx-voice, rlmx-phone, rlmx-marketplace, rlmx-kernel, rlmx-agents, rlmx-swarm, rlmx-mcp (585 tests).
+
+### UC2: "RuVix Mesh — The Personal Agent Cloud" (`docs/crazy-ruv-cartes-plan copy.md`)
+Technical architecture: 40+ ruvnet crates mapped to device zones (Phone=WASM, Laptop=NAPI, Pi=edge, Cloud=burst). Federation cycle, privacy anchor, billing tiers. Validates: rlmx-napi, rlmx-wasm, rlmx-mesh, rlmx-federation, rlmx-billing, rlmx-cognitive (279 tests).
+
+### Validation Rules
+- Before merging changes that touch voice/phone/marketplace crates, run UC1 test suite
+- Before merging changes that touch mesh/federation/billing crates, run UC2 test suite
+- Any new agent type must fit into the 12 LifeDomain taxonomy (Finance, Health, Legal, Career, Education, Home, Shopping, Travel, Social, Government, Automotive, Pet)
+- Any new MCP tool must be documented in CLAUDE.md and `tools.rs` tool_names()
+- Privacy invariants are non-negotiable: no audio off device, Laplace e=1.0, 1000-user federation min
+
+### Known Gaps (as of 2026-03-19)
+| Gap | Severity | Status |
+|-----|----------|--------|
+| Phase1 feature gate uses additive exports (no explicit `not(feature)` fallback) | Low | Stub build unaffected |
+| Mesh/federation/billing MCP tools are stub implementations | Low | JSON-RPC dispatch wired, handlers return stub data |
 
 ## Hook Scripts
 
@@ -351,7 +422,7 @@ Preconfigured event hooks in `scripts/hooks/` — all executable, accept JSON st
 | **MCP & Swarm** | |
 | `crates/rlmx-mcp/src/tools.rs` | All 47 MCP tool definitions |
 | `crates/rlmx-mcp/src/server.rs` | RBAC, tool dispatch, McpConfig |
-| `crates/rlmx-mcp/src/ws.rs` | WebSocket server, SwarmEvent (12 variants) |
+| `crates/rlmx-mcp/src/ws.rs` | WebSocket server, SwarmEvent dispatch (12 variants) |
 | `crates/rlmx-swarm/src/consensus.rs` | PBFT/Raft/Gossip layers |
 | `crates/rlmx-swarm/src/sandbox.rs` | SandboxManager, SandboxProfile, FleetManifest |
 | **Agents** | |
