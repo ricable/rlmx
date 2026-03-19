@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 /// A2A task states following the protocol spec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "kebab-case")]
 pub enum TaskState {
     Submitted,
     Working,
@@ -238,6 +238,34 @@ impl AgentCardBuilder {
     }
 }
 
+/// Message part types for A2A protocol.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+pub enum Part {
+    Text { text: String },
+    File { name: String, mime_type: String, data: String },
+    Data { data: serde_json::Value },
+}
+
+/// A2A protocol message.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct A2AMessage {
+    pub role: String,
+    pub parts: Vec<Part>,
+}
+
+/// A2A task with state machine lifecycle.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct A2ATask {
+    pub id: String,
+    pub state: TaskState,
+    pub messages: Vec<A2AMessage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifacts: Option<Vec<Part>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<std::collections::HashMap<String, String>>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -376,7 +404,7 @@ mod tests {
     fn task_state_serializes_correctly() {
         let state = TaskState::InputRequired;
         let json = serde_json::to_string(&state).expect("serialize");
-        assert_eq!(json, "\"inputRequired\"");
+        assert_eq!(json, "\"input-required\"");
     }
 
     #[test]
@@ -407,5 +435,100 @@ mod tests {
     fn task_state_deserializes() {
         let state: TaskState = serde_json::from_str("\"working\"").expect("deserialize");
         assert_eq!(state, TaskState::Working);
+    }
+
+    #[test]
+    fn part_text_roundtrip() {
+        let part = Part::Text { text: "hello".to_string() };
+        let json = serde_json::to_string(&part).expect("serialize");
+        assert!(json.contains("\"type\":\"text\""));
+        let deserialized: Part = serde_json::from_str(&json).expect("deserialize");
+        match deserialized {
+            Part::Text { text } => assert_eq!(text, "hello"),
+            _ => panic!("expected Part::Text"),
+        }
+    }
+
+    #[test]
+    fn part_file_and_data_roundtrip() {
+        let file_part = Part::File {
+            name: "report.pdf".to_string(),
+            mime_type: "application/pdf".to_string(),
+            data: "base64data".to_string(),
+        };
+        let json = serde_json::to_string(&file_part).expect("serialize");
+        let deserialized: Part = serde_json::from_str(&json).expect("deserialize");
+        match deserialized {
+            Part::File { name, mime_type, .. } => {
+                assert_eq!(name, "report.pdf");
+                assert_eq!(mime_type, "application/pdf");
+            }
+            _ => panic!("expected Part::File"),
+        }
+
+        let data_part = Part::Data {
+            data: serde_json::json!({"key": "value", "count": 42}),
+        };
+        let json = serde_json::to_string(&data_part).expect("serialize");
+        let deserialized: Part = serde_json::from_str(&json).expect("deserialize");
+        match deserialized {
+            Part::Data { data } => assert_eq!(data["key"], "value"),
+            _ => panic!("expected Part::Data"),
+        }
+    }
+
+    #[test]
+    fn a2a_message_roundtrip() {
+        let msg = A2AMessage {
+            role: "user".to_string(),
+            parts: vec![
+                Part::Text { text: "Hello".to_string() },
+                Part::Data { data: serde_json::json!({"intent": "greet"}) },
+            ],
+        };
+        let json = serde_json::to_string(&msg).expect("serialize");
+        let deserialized: A2AMessage = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(deserialized.role, "user");
+        assert_eq!(deserialized.parts.len(), 2);
+    }
+
+    #[test]
+    fn a2a_task_roundtrip() {
+        let mut metadata = std::collections::HashMap::new();
+        metadata.insert("priority".to_string(), "high".to_string());
+
+        let task = A2ATask {
+            id: "task-001".to_string(),
+            state: TaskState::Working,
+            messages: vec![A2AMessage {
+                role: "agent".to_string(),
+                parts: vec![Part::Text { text: "Processing".to_string() }],
+            }],
+            artifacts: Some(vec![Part::File {
+                name: "output.json".to_string(),
+                mime_type: "application/json".to_string(),
+                data: "e30=".to_string(),
+            }]),
+            metadata: Some(metadata),
+        };
+        let json = serde_json::to_string(&task).expect("serialize");
+        let deserialized: A2ATask = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(deserialized.id, "task-001");
+        assert_eq!(deserialized.state, TaskState::Working);
+        assert_eq!(deserialized.messages.len(), 1);
+        assert!(deserialized.artifacts.is_some());
+        assert_eq!(deserialized.metadata.unwrap()["priority"], "high");
+
+        // Verify None fields are omitted
+        let task_minimal = A2ATask {
+            id: "task-002".to_string(),
+            state: TaskState::Submitted,
+            messages: vec![],
+            artifacts: None,
+            metadata: None,
+        };
+        let json_minimal = serde_json::to_string(&task_minimal).expect("serialize");
+        assert!(!json_minimal.contains("artifacts"));
+        assert!(!json_minimal.contains("metadata"));
     }
 }

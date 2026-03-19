@@ -14,13 +14,13 @@ import {
 } from '../src/enums.js';
 
 describe('SyscallPermission', () => {
-  it('has exactly 17 named permissions (excluding All)', () => {
-    expect(SYSCALL_PERMISSIONS).toHaveLength(17);
+  it('has exactly 18 named permissions (excluding All)', () => {
+    expect(SYSCALL_PERMISSIONS).toHaveLength(18);
   });
 
-  it('has 18 total enum values including All', () => {
+  it('has 19 total enum values including All', () => {
     const allValues = Object.values(SyscallPermission);
-    expect(allValues).toHaveLength(18);
+    expect(allValues).toHaveLength(19);
   });
 
   it('contains all expected variants', () => {

@@ -56,9 +56,9 @@ describe('AgentPermissions', () => {
 // ---------------------------------------------------------------------------
 
 describe('PermissionRegistry — Coordinator', () => {
-  it('has all 17 concrete permissions', () => {
+  it('has all 18 concrete permissions', () => {
     const perms = PermissionRegistry.permissionsFor(AgentType.Coordinator);
-    expect(perms.count).toBe(17);
+    expect(perms.count).toBe(18);
     for (const p of SYSCALL_PERMISSIONS) {
       expect(perms.has(p)).toBe(true);
     }
@@ -529,10 +529,10 @@ describe('PermissionRegistry — spawn hierarchy', () => {
 
 describe('PermissionRegistry — permission counts per agent type', () => {
   const expectedCounts: Record<string, number> = {
-    Coordinator: 17,
-    Researcher: 10,
+    Coordinator: 18,
+    Researcher: 11,
     Router: 8,
-    Experimenter: 12,
+    Experimenter: 13,
     Worker: 8,
     Monitor: 8,
     Reviewer: 9,

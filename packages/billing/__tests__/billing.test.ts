@@ -153,4 +153,31 @@ describe('BudgetLedger', () => {
     expect(decision.allowed).toBe(true);
     expect(decision.warning).toBeDefined();
   });
+
+  it('per-call token limit allows within budget', () => {
+    const ledger = new BudgetLedger();
+    ledger.setPolicy('a1', { softLimitMicrocents: 100000, hardLimitMicrocents: 200000, perCallMaxTokens: 1000 });
+    const entry = makeEntry('a1', 'gpt-4', 'openai', 500);
+    entry.tokensIn = 400;
+    entry.tokensOut = 500; // total 900 <= 1000
+    expect(() => ledger.record(entry)).not.toThrow();
+  });
+
+  it('per-call token limit rejects exceeding', () => {
+    const ledger = new BudgetLedger();
+    ledger.setPolicy('a1', { softLimitMicrocents: 100000, hardLimitMicrocents: 200000, perCallMaxTokens: 1000 });
+    const entry = makeEntry('a1', 'gpt-4', 'openai', 500);
+    entry.tokensIn = 600;
+    entry.tokensOut = 500; // total 1100 > 1000
+    expect(() => ledger.record(entry)).toThrow(BillingError);
+  });
+
+  it('no per-call token policy allows any tokens', () => {
+    const ledger = new BudgetLedger();
+    // No policy at all
+    const entry = makeEntry('a1', 'gpt-4', 'openai', 500);
+    entry.tokensIn = 999999;
+    entry.tokensOut = 999999;
+    expect(() => ledger.record(entry)).not.toThrow();
+  });
 });

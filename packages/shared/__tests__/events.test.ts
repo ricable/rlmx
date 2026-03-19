@@ -10,8 +10,8 @@ import {
 } from '../src/events.js';
 
 describe('DOMAIN_EVENT_TYPES', () => {
-  it('has exactly 10 event types', () => {
-    expect(DOMAIN_EVENT_TYPES).toHaveLength(10);
+  it('has exactly 21 event types', () => {
+    expect(DOMAIN_EVENT_TYPES).toHaveLength(21);
   });
 
   it('contains all expected types', () => {
@@ -26,6 +26,17 @@ describe('DOMAIN_EVENT_TYPES', () => {
       'IntentsDecomposed',
       'MeshDeviceJoined',
       'FederationCycleCompleted',
+      'ArtifactCreated',
+      'ArtifactBranchAdvanced',
+      'BoardPostCreated',
+      'BudgetThresholdReached',
+      'FunctionEvolved',
+      'FunctionScored',
+      'FunctionKilled',
+      'ApprovalRequested',
+      'ApprovalDecided',
+      'ChannelMessageReceived',
+      'ChannelMessageSent',
     ];
     expect([...DOMAIN_EVENT_TYPES]).toEqual(expected);
   });
@@ -200,7 +211,7 @@ describe('DomainEventBus', () => {
     expect(bus.listenerCount('StateMutated')).toBe(0);
   });
 
-  it('handles all 10 event types correctly', () => {
+  it('handles all 21 event types correctly', () => {
     const bus = createEventBus();
     const received: string[] = [];
 
@@ -221,12 +232,23 @@ describe('DomainEventBus', () => {
       { type: 'IntentsDecomposed', sessionId: 's', intentCount: 3, domains: ['Finance'], timestamp: now },
       { type: 'MeshDeviceJoined', meshId: 'm', deviceId: 'd', zone: 'A-Desktop', timestamp: now },
       { type: 'FederationCycleCompleted', cycleId: 'c', contributors: 1500, patternsAggregated: 42000, timestamp: now },
+      { type: 'ArtifactCreated', artifactId: 'art1', creator: 1, contentType: 'text', parentIds: [], timestamp: now },
+      { type: 'ArtifactBranchAdvanced', branchName: 'main', oldHead: 'a', newHead: 'b', timestamp: now },
+      { type: 'BoardPostCreated', boardId: 'b1', postId: 'p1', author: 1, tags: [], timestamp: now },
+      { type: 'BudgetThresholdReached', agentId: 'ag1', thresholdType: 'soft', spent: 100, limit: 200, timestamp: now },
+      { type: 'FunctionEvolved', functionId: 'f1', name: 'fn', version: 1, status: 'draft', timestamp: now },
+      { type: 'FunctionScored', functionId: 'f1', overall: 0.8, correctness: 0.9, safety: 1.0, timestamp: now },
+      { type: 'FunctionKilled', functionId: 'f1', reason: 'low score', timestamp: now },
+      { type: 'ApprovalRequested', operation: 'StateMutate', agentId: 'ag1', tier: 'Confirm', costEstimate: null, timestamp: now },
+      { type: 'ApprovalDecided', operation: 'StateMutate', approved: true, decidedBy: 'admin', timestamp: now },
+      { type: 'ChannelMessageReceived', channelType: 'telegram', sender: 'user1', contentPreview: 'hi', timestamp: now },
+      { type: 'ChannelMessageSent', channelType: 'telegram', recipient: 'user1', timestamp: now },
     ];
 
     for (const event of allEvents) {
       bus.emit(event);
     }
 
-    expect(received).toEqual(DOMAIN_EVENT_TYPES);
+    expect(received).toEqual([...DOMAIN_EVENT_TYPES]);
   });
 });

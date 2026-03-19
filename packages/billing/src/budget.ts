@@ -91,6 +91,19 @@ export class BudgetLedger {
       );
     }
 
+    // ADR-032: enforce per-call token limit
+    const policy = this.policies.get(agentId);
+    if (policy?.perCallMaxTokens !== undefined) {
+      const totalTokens = entry.tokensIn + entry.tokensOut;
+      if (totalTokens > policy.perCallMaxTokens) {
+        throw new BillingError(
+          `usage quota exceeded: per_call_tokens (${totalTokens}/${policy.perCallMaxTokens})`,
+          'QUOTA_EXCEEDED',
+          { resource: 'per_call_tokens', used: totalTokens, limit: policy.perCallMaxTokens },
+        );
+      }
+    }
+
     const newVersion = currentVersion + 1;
     this.versions.set(agentId, newVersion);
 
