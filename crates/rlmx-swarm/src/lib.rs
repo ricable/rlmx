@@ -35,4 +35,4 @@ pub use simulation::SimulatedSwarm;
 pub use transport::{InMemoryTransport, SwarmTransport, TransportMessage};
 pub use types::*;
 pub use zone::ZoneManager;
-pub use board::{Board, BoardError, BoardId, BoardManager, Post, PostId};
+pub use board::{Board, BoardError, BoardEvent, BoardId, BoardManager, Post, PostId};

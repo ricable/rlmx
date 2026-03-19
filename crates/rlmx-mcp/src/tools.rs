@@ -1,6 +1,6 @@
 //! RLMX MCP Tools
 //!
-//! Implements all 47 RLMX MCP tool definitions and their handlers.
+//! Implements all 49 RLMX MCP tool definitions and their handlers.
 //! Tools that can be wired to kernel subsystems use a shared `ToolState`
 //! backed by `Arc<RwLock<...>>`. Tools that require external services
 //! remain as stubs with `"status": "stub"` in their responses.
@@ -92,7 +92,7 @@ pub fn new_shared_state() -> SharedToolState {
 // Public constructor
 // ---------------------------------------------------------------------------
 
-/// Create all 47 RLMX MCP tools with their handlers, wired to the given
+/// Create all 49 RLMX MCP tools with their handlers, wired to the given
 /// shared kernel state.
 pub fn create_all_tools(state: SharedToolState) -> Vec<McpTool> {
     vec![
@@ -157,6 +157,9 @@ pub fn create_all_tools(state: SharedToolState) -> Vec<McpTool> {
         create_rlmx_billing_upgrade(Arc::clone(&state)),
         create_rlmx_billing_usage(Arc::clone(&state)),
         create_rlmx_billing_family(Arc::clone(&state)),
+        // Approval tools (ADR-037)
+        create_rlmx_approval_list(Arc::clone(&state)),
+        create_rlmx_approval_decide(Arc::clone(&state)),
     ]
 }
 
@@ -2975,6 +2978,99 @@ impl ToolHandler for BillingFamilyHandler {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Approval tools (ADR-037)
+// ---------------------------------------------------------------------------
+
+fn create_rlmx_approval_list(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_approval_list".to_string(),
+        description: "List all pending human-in-the-loop approval requests (ADR-037). Returns requests awaiting a human decision.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {}
+        }),
+        handler: Box::new(ApprovalListHandler { state }),
+    }
+}
+
+struct ApprovalListHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for ApprovalListHandler {
+    async fn handle(&self, _params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let _ = self.state.read().await;
+        // Stub: return an empty pending list. When wired to a real
+        // ApprovalGate instance the handler will call pending_requests().
+        Ok(json!({
+            "status": "stub",
+            "pending": [],
+            "total": 0
+        }))
+    }
+}
+
+fn create_rlmx_approval_decide(state: SharedToolState) -> McpTool {
+    McpTool {
+        name: "rlmx_approval_decide".to_string(),
+        description: "Approve or deny a pending approval request (ADR-037). Requires the request ID, decision, and decider identity.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "request_id": {
+                    "type": "string",
+                    "description": "UUID of the pending approval request"
+                },
+                "approved": {
+                    "type": "boolean",
+                    "description": "Whether to approve (true) or deny (false) the request"
+                },
+                "decided_by": {
+                    "type": "string",
+                    "description": "Identifier of the human making the decision"
+                }
+            },
+            "required": ["request_id", "approved", "decided_by"]
+        }),
+        handler: Box::new(ApprovalDecideHandler { state }),
+    }
+}
+
+struct ApprovalDecideHandler {
+    state: SharedToolState,
+}
+
+#[async_trait]
+impl ToolHandler for ApprovalDecideHandler {
+    async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
+        let request_id = params
+            .get("request_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| McpError::invalid_params("Missing required parameter: request_id"))?;
+        let approved = params
+            .get("approved")
+            .and_then(|v| v.as_bool())
+            .ok_or_else(|| McpError::invalid_params("Missing required parameter: approved"))?;
+        let decided_by = params
+            .get("decided_by")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| McpError::invalid_params("Missing required parameter: decided_by"))?;
+
+        let _ = self.state.read().await;
+        // Stub: echo back the decision. When wired to a real ApprovalGate
+        // instance the handler will call decide() with the parsed UUID.
+        Ok(json!({
+            "status": "stub",
+            "request_id": request_id,
+            "approved": approved,
+            "decided_by": decided_by,
+            "decided_at": Utc::now().to_rfc3339()
+        }))
+    }
+}
+
 /// Return the tool names for validation purposes.
 pub fn tool_names() -> Vec<&'static str> {
     vec![
@@ -3025,6 +3121,8 @@ pub fn tool_names() -> Vec<&'static str> {
         "rlmx_billing_upgrade",
         "rlmx_billing_usage",
         "rlmx_billing_family",
+        "rlmx_approval_list",
+        "rlmx_approval_decide",
     ]
 }
 
@@ -3038,8 +3136,8 @@ mod tests {
         let tools = create_all_tools(state);
         assert_eq!(
             tools.len(),
-            47,
-            "Expected exactly 47 tools (28 original + 8 marketplace + 3 voice + 2 mesh + 2 federation + 4 billing)"
+            49,
+            "Expected exactly 49 tools (28 original + 8 marketplace + 3 voice + 2 mesh + 2 federation + 4 billing + 2 approval)"
         );
 
         for tool in &tools {

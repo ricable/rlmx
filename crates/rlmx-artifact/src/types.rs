@@ -2,6 +2,27 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
+use uuid::Uuid;
+
+/// Crate-local domain events for the Artifact bounded context (ADR-030).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ArtifactEvent {
+    /// A content-addressed artifact was created.
+    Created {
+        artifact_id: Uuid,
+        creator: u64,
+        content_type: String,
+        parent_ids: Vec<Uuid>,
+        timestamp: DateTime<Utc>,
+    },
+    /// A named branch advanced to a new head.
+    BranchAdvanced {
+        branch_name: String,
+        old_head: Uuid,
+        new_head: Uuid,
+        timestamp: DateTime<Utc>,
+    },
+}
 
 /// Content-addressed artifact identifier (SHA-256 hash).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -10,6 +10,19 @@ use uuid::Uuid;
 
 use crate::error::{BillingError, BillingResult};
 
+/// Crate-local domain events for the Budget bounded context (ADR-032).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum BudgetEvent {
+    /// An agent's budget threshold was reached.
+    ThresholdReached {
+        agent_id: Uuid,
+        threshold_type: String,
+        spent: u64,
+        limit: u64,
+        timestamp: DateTime<Utc>,
+    },
+}
+
 /// A single cost entry recording one LLM inference call.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BudgetEntry {

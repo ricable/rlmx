@@ -12,4 +12,4 @@ pub mod teams;
 pub mod discord;
 
 pub use registry::{ChannelAdapter, ChannelRegistry};
-pub use types::{ChannelConfig, ChannelError, ChannelId, ChannelMessage};
+pub use types::{ChannelConfig, ChannelError, ChannelEvent, ChannelId, ChannelMessage};

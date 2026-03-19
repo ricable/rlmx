@@ -116,6 +116,98 @@ impl AgentType {
         }
     }
 
+    /// A2A skill identifier (kebab-case) for this agent type.
+    pub fn a2a_id(&self) -> &'static str {
+        match self {
+            AgentType::Coordinator => "coordinator",
+            AgentType::Researcher => "researcher",
+            AgentType::Router => "router",
+            AgentType::Experimenter => "experimenter",
+            AgentType::Worker => "worker",
+            AgentType::Monitor => "monitor",
+            AgentType::Reviewer => "reviewer",
+            AgentType::Trainer => "trainer",
+            AgentType::Validator => "validator",
+            AgentType::Replicator => "replicator",
+            AgentType::Embedder => "embedder",
+            AgentType::Analyst => "analyst",
+            AgentType::VoiceCoordinator => "voice-coordinator",
+            AgentType::MarketplaceManager => "marketplace-manager",
+            AgentType::MeshCoordinator => "mesh-coordinator",
+            AgentType::FederationAgent => "federation-agent",
+            AgentType::BillingManager => "billing-manager",
+        }
+    }
+
+    /// Human-readable name for A2A agent cards.
+    pub fn a2a_name(&self) -> &'static str {
+        match self {
+            AgentType::Coordinator => "Coordinator",
+            AgentType::Researcher => "Researcher",
+            AgentType::Router => "Router",
+            AgentType::Experimenter => "Experimenter",
+            AgentType::Worker => "Worker",
+            AgentType::Monitor => "Monitor",
+            AgentType::Reviewer => "Reviewer",
+            AgentType::Trainer => "Trainer",
+            AgentType::Validator => "Validator",
+            AgentType::Replicator => "Replicator",
+            AgentType::Embedder => "Embedder",
+            AgentType::Analyst => "Analyst",
+            AgentType::VoiceCoordinator => "Voice Coordinator",
+            AgentType::MarketplaceManager => "Marketplace Manager",
+            AgentType::MeshCoordinator => "Mesh Coordinator",
+            AgentType::FederationAgent => "Federation Agent",
+            AgentType::BillingManager => "Billing Manager",
+        }
+    }
+
+    /// A2A skill description for this agent type.
+    pub fn a2a_description(&self) -> &'static str {
+        match self {
+            AgentType::Coordinator => "Orchestrates multi-agent workflows, assigns tasks, and manages agent lifecycle",
+            AgentType::Researcher => "Performs deep research, gathers information, and synthesizes findings",
+            AgentType::Router => "Routes queries to appropriate agents based on intent and domain classification",
+            AgentType::Experimenter => "Designs and runs experiments, A/B tests, and hypothesis validation",
+            AgentType::Worker => "Executes general-purpose tasks and processes work items from the queue",
+            AgentType::Monitor => "Monitors system health, resource usage, and performance metrics",
+            AgentType::Reviewer => "Reviews agent outputs, validates quality, and provides feedback",
+            AgentType::Trainer => "Trains and fine-tunes models, manages training data and pipelines",
+            AgentType::Validator => "Validates data integrity, schema compliance, and proof verification",
+            AgentType::Replicator => "Replicates data and state across nodes for redundancy and availability",
+            AgentType::Embedder => "Generates vector embeddings for text, images, and structured data",
+            AgentType::Analyst => "Analyzes data patterns, generates reports, and extracts insights",
+            AgentType::VoiceCoordinator => "Manages voice sessions, transcription pipelines, and speech synthesis",
+            AgentType::MarketplaceManager => "Manages marketplace listings, reviews, and agent distribution",
+            AgentType::MeshCoordinator => "Coordinates personal device mesh topology and cross-device sync",
+            AgentType::FederationAgent => "Participates in federated learning cycles with differential privacy",
+            AgentType::BillingManager => "Manages subscriptions, usage tracking, and billing enforcement",
+        }
+    }
+
+    /// A2A skill tags for this agent type.
+    pub fn a2a_tags(&self) -> &'static [&'static str] {
+        match self {
+            AgentType::Coordinator => &["orchestration", "workflow", "management"],
+            AgentType::Researcher => &["research", "analysis", "information-gathering"],
+            AgentType::Router => &["routing", "classification", "intent"],
+            AgentType::Experimenter => &["experimentation", "testing", "hypothesis"],
+            AgentType::Worker => &["execution", "task-processing", "general"],
+            AgentType::Monitor => &["monitoring", "health", "metrics"],
+            AgentType::Reviewer => &["review", "quality", "validation"],
+            AgentType::Trainer => &["training", "fine-tuning", "ml"],
+            AgentType::Validator => &["validation", "verification", "compliance"],
+            AgentType::Replicator => &["replication", "redundancy", "sync"],
+            AgentType::Embedder => &["embeddings", "vectors", "semantic"],
+            AgentType::Analyst => &["analysis", "reporting", "insights"],
+            AgentType::VoiceCoordinator => &["voice", "speech", "transcription"],
+            AgentType::MarketplaceManager => &["marketplace", "distribution", "publishing"],
+            AgentType::MeshCoordinator => &["mesh", "devices", "sync"],
+            AgentType::FederationAgent => &["federation", "privacy", "distributed-learning"],
+            AgentType::BillingManager => &["billing", "subscriptions", "usage"],
+        }
+    }
+
     /// Maximum concurrent instances allowed.
     pub fn max_instances(&self) -> usize {
         match self {
@@ -269,6 +361,22 @@ pub struct AgentInstallation {
     pub config_overrides: Option<serde_json::Value>,
 }
 
+/// Build A2A skills for all agent types, using [`AgentType`] as the single source of truth.
+///
+/// Returns a `Vec<rlmx_kernel::a2a::A2ASkill>` suitable for passing to
+/// [`rlmx_kernel::a2a::AgentCardBuilder::with_skills`].
+pub fn build_a2a_skills() -> Vec<rlmx_kernel::a2a::A2ASkill> {
+    AgentType::all()
+        .iter()
+        .map(|at| rlmx_kernel::a2a::A2ASkill {
+            id: at.a2a_id().to_string(),
+            name: at.a2a_name().to_string(),
+            description: at.a2a_description().to_string(),
+            tags: at.a2a_tags().iter().map(|t| t.to_string()).collect(),
+        })
+        .collect()
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum AgentError {
     #[error("Agent not found: {0}")]
@@ -401,5 +509,58 @@ mod tests {
         let id1 = AgentId::default();
         let id2 = AgentId::default();
         assert_ne!(id1.0, id2.0);
+    }
+
+    #[test]
+    fn test_build_a2a_skills_returns_17() {
+        let skills = build_a2a_skills();
+        assert_eq!(skills.len(), 17);
+    }
+
+    #[test]
+    fn test_a2a_skill_ids_are_unique() {
+        let skills = build_a2a_skills();
+        let mut ids: Vec<&str> = skills.iter().map(|s| s.id.as_str()).collect();
+        let len_before = ids.len();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), len_before, "A2A skill IDs must be unique");
+    }
+
+    #[test]
+    fn test_a2a_skills_have_nonempty_fields() {
+        let skills = build_a2a_skills();
+        for skill in &skills {
+            assert!(!skill.id.is_empty(), "skill has empty id");
+            assert!(!skill.name.is_empty(), "skill {} has empty name", skill.id);
+            assert!(
+                !skill.description.is_empty(),
+                "skill {} has empty description",
+                skill.id
+            );
+            assert!(!skill.tags.is_empty(), "skill {} has no tags", skill.id);
+        }
+    }
+
+    #[test]
+    fn test_a2a_methods_cover_all_variants() {
+        // Ensures every AgentType variant has a2a_id/description/tags.
+        // If a new variant is added to AgentType without updating these methods,
+        // this test will fail to compile (non-exhaustive match).
+        for at in AgentType::all() {
+            assert!(!at.a2a_id().is_empty());
+            assert!(!at.a2a_description().is_empty());
+            assert!(!at.a2a_tags().is_empty());
+        }
+    }
+
+    #[test]
+    fn test_build_a2a_skills_integrates_with_agent_card_builder() {
+        let skills = build_a2a_skills();
+        let builder = rlmx_kernel::a2a::AgentCardBuilder::new("http://localhost:3000", "0.1.0")
+            .with_skills(skills);
+        let card = builder.build();
+        assert_eq!(card.skills.len(), 17);
+        assert!(card.description.contains("17"));
     }
 }

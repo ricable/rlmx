@@ -8,7 +8,7 @@
 //!
 //! - **protocol**: JSON-RPC 2.0 types for MCP communication
 //! - **server**: Core MCP server with tool registration and request dispatch
-//! - **tools**: All 39 RLMX MCP tool definitions and handlers
+//! - **tools**: All 49 RLMX MCP tool definitions and handlers
 //! - **stdio**: Stdio transport (line-delimited JSON-RPC via stdin/stdout)
 //! - **http**: HTTP transport (POST /mcp endpoint via TCP)
 //! - **ws**: WebSocket transport for real-time SwarmEvent streaming

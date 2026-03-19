@@ -91,70 +91,13 @@ pub enum DomainEvent {
     },
 
     // --- AgentOS Cherry-Pick Integration (ADR-030 through ADR-039) ---
-
-    /// Emitted when a content-addressed artifact is created (ADR-030).
-    /// Consumer: Swarm Coordination (artifact DAG tracking).
-    ArtifactCreated {
-        artifact_id: Uuid,
-        creator: u64,
-        content_type: String,
-        parent_ids: Vec<Uuid>,
-        timestamp: DateTime<Utc>,
-    },
-    /// Emitted when a named branch advances to a new head (ADR-030).
-    /// Consumer: Observation & Health (tracks artifact lineage).
-    ArtifactBranchAdvanced {
-        branch_name: String,
-        old_head: Uuid,
-        new_head: Uuid,
-        timestamp: DateTime<Utc>,
-    },
-
-    /// Emitted when a post is created on a coordination board (ADR-031).
-    /// Consumer: Swarm Coordination (board activity tracking).
-    BoardPostCreated {
-        board_id: Uuid,
-        post_id: Uuid,
-        author: u64,
-        tags: Vec<String>,
-        timestamp: DateTime<Utc>,
-    },
-
-    /// Emitted when an agent's budget threshold is reached (ADR-032).
-    /// Consumer: Billing (cost alerting and enforcement).
-    BudgetThresholdReached {
-        agent_id: Uuid,
-        threshold_type: String,
-        spent: u64,
-        limit: u64,
-        timestamp: DateTime<Utc>,
-    },
-
-    /// Emitted when an evolved function changes state (ADR-036).
-    /// Consumer: Cognitive (SONA pattern bank integration).
-    FunctionEvolved {
-        function_id: Uuid,
-        name: String,
-        version: u32,
-        status: String,
-        timestamp: DateTime<Utc>,
-    },
-    /// Emitted when an evolved function is scored (ADR-036).
-    /// Consumer: Observation & Health (function quality tracking).
-    FunctionScored {
-        function_id: Uuid,
-        overall: f64,
-        correctness: f64,
-        safety: f64,
-        timestamp: DateTime<Utc>,
-    },
-    /// Emitted when an evolved function is killed (ADR-036).
-    /// Consumer: Agent Lifecycle (removes function from available tools).
-    FunctionKilled {
-        function_id: Uuid,
-        reason: String,
-        timestamp: DateTime<Utc>,
-    },
+    // Artifact, Channel, Board, Budget, and Evolve events are now crate-local
+    // (see respective crate types.rs / board.rs / budget.rs):
+    //   - ArtifactEvent       in rlmx-artifact::types
+    //   - BoardEvent           in rlmx-swarm::board
+    //   - BudgetEvent          in rlmx-billing::budget
+    //   - EvolveEvent          in rlmx-evolve::types
+    //   - ChannelEvent         in rlmx-channels::types
 
     /// Emitted when human approval is requested (ADR-037).
     /// Consumer: All UI channels (mobile, MCP, WebSocket, CLI).
@@ -171,22 +114,6 @@ pub enum DomainEvent {
         operation: String,
         approved: bool,
         decided_by: String,
-        timestamp: DateTime<Utc>,
-    },
-
-    /// Emitted when a channel message is received (ADR-039).
-    /// Consumer: Trigger Registry (routes to bound functions).
-    ChannelMessageReceived {
-        channel_type: String,
-        sender: String,
-        content_preview: String,
-        timestamp: DateTime<Utc>,
-    },
-    /// Emitted when a channel message is sent (ADR-039).
-    /// Consumer: Observation & Health (channel activity tracking).
-    ChannelMessageSent {
-        channel_type: String,
-        recipient: String,
         timestamp: DateTime<Utc>,
     },
 }

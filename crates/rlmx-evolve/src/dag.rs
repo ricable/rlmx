@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 
-use crate::lifecycle::LifecycleManager;
 use crate::types::{FunctionId, FunctionStatus};
 
 /// Maximum lineage traversal depth to prevent unbounded recursion.
@@ -67,29 +66,44 @@ impl FunctionDag {
         path
     }
 
-    /// Get frontier nodes (leaves with no children), excluding Killed functions.
-    /// Optionally filter by function name.
+    /// Get frontier nodes (leaves with no children), filtered by a caller-supplied
+    /// lookup function. The lookup receives a `FunctionId` and returns
+    /// `Some((status, name))` when the function is known, or `None` to skip it.
+    /// Nodes whose status is `Killed` are always excluded.
+    /// When `name_filter` is `Some`, only nodes whose name matches are included.
     pub fn leaves(
         &self,
         name_filter: Option<&str>,
-        lifecycle: &LifecycleManager,
+        lookup: impl Fn(&FunctionId) -> Option<(FunctionStatus, String)>,
     ) -> Vec<FunctionId> {
         self.children
             .iter()
             .filter(|(_, kids)| kids.is_empty())
             .filter_map(|(id, _)| {
-                let func = lifecycle.get(*id)?;
-                if func.status == FunctionStatus::Killed {
+                let (status, name) = lookup(id)?;
+                if status == FunctionStatus::Killed {
                     return None;
                 }
-                if let Some(name) = name_filter {
-                    if func.name != name {
+                if let Some(nf) = name_filter {
+                    if name != nf {
                         return None;
                     }
                 }
                 Some(*id)
             })
             .collect()
+    }
+
+    /// Convenience: get leaves using a `LifecycleManager` directly.
+    pub fn leaves_from_manager(
+        &self,
+        name_filter: Option<&str>,
+        lifecycle: &crate::lifecycle::LifecycleManager,
+    ) -> Vec<FunctionId> {
+        self.leaves(name_filter, |id| {
+            let func = lifecycle.get(*id)?;
+            Some((func.status, func.name.clone()))
+        })
     }
 
     /// Get direct children of a node.
@@ -202,7 +216,7 @@ mod tests {
         // Kill id2
         mgr.transition(id2, FunctionStatus::Killed).unwrap();
 
-        let lvs = dag.leaves(None, &mgr);
+        let lvs = dag.leaves_from_manager(None, &mgr);
         // id1 has children (id2), so it's not a leaf
         // id2 is killed, so excluded
         assert!(lvs.is_empty());
@@ -219,11 +233,11 @@ mod tests {
         let id_b = mgr.create("beta", "code", "goal", None);
         dag.add(id_b, None);
 
-        let alpha_leaves = dag.leaves(Some("alpha"), &mgr);
+        let alpha_leaves = dag.leaves_from_manager(Some("alpha"), &mgr);
         assert_eq!(alpha_leaves.len(), 1);
         assert_eq!(alpha_leaves[0], id_a);
 
-        let all_leaves = dag.leaves(None, &mgr);
+        let all_leaves = dag.leaves_from_manager(None, &mgr);
         assert_eq!(all_leaves.len(), 2);
     }
 
@@ -237,9 +251,39 @@ mod tests {
         let child = mgr.create("fn", "v2", "goal", Some(root));
         dag.add(child, Some(root));
 
-        let lvs = dag.leaves(None, &mgr);
+        let lvs = dag.leaves_from_manager(None, &mgr);
         assert_eq!(lvs.len(), 1);
         assert_eq!(lvs[0], child);
+    }
+
+    #[test]
+    fn leaves_with_closure() {
+        let mut dag = FunctionDag::new();
+        let id_a = FunctionId::new();
+        let id_b = FunctionId::new();
+        dag.add(id_a, None);
+        dag.add(id_b, None);
+
+        // Use a closure lookup without LifecycleManager
+        let lookup_data: HashMap<FunctionId, (FunctionStatus, String)> = [
+            (id_a, (FunctionStatus::Production, "alpha".to_string())),
+            (id_b, (FunctionStatus::Killed, "beta".to_string())),
+        ]
+        .into_iter()
+        .collect();
+
+        let lvs = dag.leaves(None, |id| lookup_data.get(id).cloned());
+        // id_b is Killed, so only id_a
+        assert_eq!(lvs.len(), 1);
+        assert_eq!(lvs[0], id_a);
+
+        // Filter by name
+        let lvs = dag.leaves(Some("alpha"), |id| lookup_data.get(id).cloned());
+        assert_eq!(lvs.len(), 1);
+        assert_eq!(lvs[0], id_a);
+
+        let lvs = dag.leaves(Some("beta"), |id| lookup_data.get(id).cloned());
+        assert!(lvs.is_empty()); // beta is Killed
     }
 
     #[test]

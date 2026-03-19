@@ -14,7 +14,7 @@ pub mod tier;
 pub mod usage;
 
 // Re-export primary types for convenient access.
-pub use budget::{BudgetDecision, BudgetEntry, BudgetLedger, BudgetPolicy};
+pub use budget::{BudgetDecision, BudgetEntry, BudgetEvent, BudgetLedger, BudgetPolicy};
 pub use capability_enforcement::{TierCapabilityEnforcer, TierCapabilityToken, TierCaveat};
 pub use developer::{DeveloperAccount, PayoutMethod, PayoutRecord, SaleRecord};
 pub use error::{BillingError, BillingResult};

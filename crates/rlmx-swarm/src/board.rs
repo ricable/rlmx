@@ -6,6 +6,19 @@ use uuid::Uuid;
 
 use crate::types::ClusterId;
 
+/// Crate-local domain events for the Board bounded context (ADR-031).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum BoardEvent {
+    /// A post was created on a coordination board.
+    PostCreated {
+        board_id: Uuid,
+        post_id: Uuid,
+        author: u64,
+        tags: Vec<String>,
+        timestamp: DateTime<Utc>,
+    },
+}
+
 /// Maximum number of posts per board.
 const MAX_POSTS: usize = 1_000;
 

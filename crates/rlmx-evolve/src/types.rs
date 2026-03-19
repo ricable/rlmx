@@ -6,6 +6,33 @@ use std::collections::HashMap;
 use std::fmt;
 use uuid::Uuid;
 
+/// Crate-local domain events for the Evolve bounded context (ADR-036).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum EvolveEvent {
+    /// An evolved function changed lifecycle state.
+    FunctionEvolved {
+        function_id: Uuid,
+        name: String,
+        version: u32,
+        status: String,
+        timestamp: DateTime<Utc>,
+    },
+    /// An evolved function was scored.
+    FunctionScored {
+        function_id: Uuid,
+        overall: f64,
+        correctness: f64,
+        safety: f64,
+        timestamp: DateTime<Utc>,
+    },
+    /// An evolved function was killed.
+    FunctionKilled {
+        function_id: Uuid,
+        reason: String,
+        timestamp: DateTime<Utc>,
+    },
+}
+
 /// Unique identifier for an evolved function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FunctionId(pub Uuid);

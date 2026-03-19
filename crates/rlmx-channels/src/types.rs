@@ -5,6 +5,24 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
 
+/// Crate-local domain events for the Channel bounded context (ADR-039).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ChannelEvent {
+    /// A channel message was received.
+    MessageReceived {
+        channel_type: String,
+        sender: String,
+        content_preview: String,
+        timestamp: DateTime<Utc>,
+    },
+    /// A channel message was sent.
+    MessageSent {
+        channel_type: String,
+        recipient: String,
+        timestamp: DateTime<Utc>,
+    },
+}
+
 /// Newtype wrapper around UUID identifying a channel instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ChannelId(pub Uuid);

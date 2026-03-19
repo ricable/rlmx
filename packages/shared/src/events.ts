@@ -2,7 +2,14 @@ import { EventEmitter } from 'node:events';
 
 // ---------------------------------------------------------------------------
 // Domain event discriminated union
-// Maps 1:1 to rlmx-kernel DomainEvent enum (10 variants).
+// TS keeps all event types centralized in @aix/shared (no circular dep issue).
+// In Rust, AgentOS events are crate-local per CLAUDE.md conventions:
+//   Kernel:   SyscallDispatched..FederationCycleCompleted, ApprovalRequested/Decided
+//   Artifact: ArtifactCreated, ArtifactBranchAdvanced  (rlmx-artifact::types)
+//   Swarm:    BoardPostCreated                          (rlmx-swarm::board)
+//   Billing:  BudgetThresholdReached                    (rlmx-billing::budget)
+//   Evolve:   FunctionEvolved/Scored/Killed             (rlmx-evolve::types)
+//   Channels: ChannelMessageReceived/Sent               (rlmx-channels::types)
 // ---------------------------------------------------------------------------
 
 export interface SyscallDispatchedEvent {

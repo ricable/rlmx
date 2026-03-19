@@ -1,7 +1,10 @@
 //! A2A (Agent-to-Agent) protocol types and agent card builder (ADR-034).
 //!
 //! Provides core types for the A2A protocol: task state machine, skills,
-//! agent cards, and a builder that maps all 17 RLMX agent types to A2A skills.
+//! agent cards, and a builder. Agent type descriptors (names, descriptions,
+//! tags) are derived from `AgentType` in `rlmx-agents` — see
+//! `AgentType::a2a_id()`, `a2a_description()`, `a2a_tags()`, and the
+//! convenience function `rlmx_agents::build_a2a_skills()`.
 
 use serde::{Deserialize, Serialize};
 
@@ -72,158 +75,55 @@ pub struct AuthenticationInfo {
     pub schemes: Vec<String>,
 }
 
-/// Agent type descriptor used by [`AgentCardBuilder`] to generate skills.
-struct AgentTypeDescriptor {
-    id: &'static str,
-    name: &'static str,
-    description: &'static str,
-    tags: &'static [&'static str],
-}
 
-/// All 17 RLMX agent types with their A2A skill metadata.
-const AGENT_TYPE_DESCRIPTORS: &[AgentTypeDescriptor] = &[
-    AgentTypeDescriptor {
-        id: "coordinator",
-        name: "Coordinator",
-        description: "Orchestrates multi-agent workflows, assigns tasks, and manages agent lifecycle",
-        tags: &["orchestration", "workflow", "management"],
-    },
-    AgentTypeDescriptor {
-        id: "researcher",
-        name: "Researcher",
-        description: "Performs deep research, gathers information, and synthesizes findings",
-        tags: &["research", "analysis", "information-gathering"],
-    },
-    AgentTypeDescriptor {
-        id: "router",
-        name: "Router",
-        description: "Routes queries to appropriate agents based on intent and domain classification",
-        tags: &["routing", "classification", "intent"],
-    },
-    AgentTypeDescriptor {
-        id: "experimenter",
-        name: "Experimenter",
-        description: "Designs and runs experiments, A/B tests, and hypothesis validation",
-        tags: &["experimentation", "testing", "hypothesis"],
-    },
-    AgentTypeDescriptor {
-        id: "worker",
-        name: "Worker",
-        description: "Executes general-purpose tasks and processes work items from the queue",
-        tags: &["execution", "task-processing", "general"],
-    },
-    AgentTypeDescriptor {
-        id: "monitor",
-        name: "Monitor",
-        description: "Monitors system health, resource usage, and performance metrics",
-        tags: &["monitoring", "health", "metrics"],
-    },
-    AgentTypeDescriptor {
-        id: "reviewer",
-        name: "Reviewer",
-        description: "Reviews agent outputs, validates quality, and provides feedback",
-        tags: &["review", "quality", "validation"],
-    },
-    AgentTypeDescriptor {
-        id: "trainer",
-        name: "Trainer",
-        description: "Trains and fine-tunes models, manages training data and pipelines",
-        tags: &["training", "fine-tuning", "ml"],
-    },
-    AgentTypeDescriptor {
-        id: "validator",
-        name: "Validator",
-        description: "Validates data integrity, schema compliance, and proof verification",
-        tags: &["validation", "verification", "compliance"],
-    },
-    AgentTypeDescriptor {
-        id: "replicator",
-        name: "Replicator",
-        description: "Replicates data and state across nodes for redundancy and availability",
-        tags: &["replication", "redundancy", "sync"],
-    },
-    AgentTypeDescriptor {
-        id: "embedder",
-        name: "Embedder",
-        description: "Generates vector embeddings for text, images, and structured data",
-        tags: &["embeddings", "vectors", "semantic"],
-    },
-    AgentTypeDescriptor {
-        id: "analyst",
-        name: "Analyst",
-        description: "Analyzes data patterns, generates reports, and extracts insights",
-        tags: &["analysis", "reporting", "insights"],
-    },
-    AgentTypeDescriptor {
-        id: "voice-coordinator",
-        name: "Voice Coordinator",
-        description: "Manages voice sessions, transcription pipelines, and speech synthesis",
-        tags: &["voice", "speech", "transcription"],
-    },
-    AgentTypeDescriptor {
-        id: "marketplace-manager",
-        name: "Marketplace Manager",
-        description: "Manages marketplace listings, reviews, and agent distribution",
-        tags: &["marketplace", "distribution", "publishing"],
-    },
-    AgentTypeDescriptor {
-        id: "mesh-coordinator",
-        name: "Mesh Coordinator",
-        description: "Coordinates personal device mesh topology and cross-device sync",
-        tags: &["mesh", "devices", "sync"],
-    },
-    AgentTypeDescriptor {
-        id: "federation-agent",
-        name: "Federation Agent",
-        description: "Participates in federated learning cycles with differential privacy",
-        tags: &["federation", "privacy", "distributed-learning"],
-    },
-    AgentTypeDescriptor {
-        id: "billing-manager",
-        name: "Billing Manager",
-        description: "Manages subscriptions, usage tracking, and billing enforcement",
-        tags: &["billing", "subscriptions", "usage"],
-    },
-];
-
-/// Builder for [`AgentCard`] from kernel agent registry.
+/// Builder for [`AgentCard`] from externally-provided A2A skills.
+///
+/// Skills should be derived from the canonical `AgentType` enum in `rlmx-agents`
+/// (via `AgentType::a2a_id()`, `a2a_description()`, `a2a_tags()`). Use
+/// `rlmx_agents::build_a2a_skills()` to generate them from the single source of truth.
 pub struct AgentCardBuilder {
     base_url: String,
     version: String,
+    skills: Vec<A2ASkill>,
 }
 
 impl AgentCardBuilder {
     /// Create a new builder with the given base URL and version.
+    ///
+    /// Use [`Self::with_skills`] to provide skills derived from `AgentType`.
     pub fn new(base_url: impl Into<String>, version: impl Into<String>) -> Self {
         Self {
             base_url: base_url.into(),
             version: version.into(),
+            skills: Vec::new(),
         }
     }
 
-    /// Build an agent card exposing all 17 agent types as A2A skills.
-    pub fn build(&self) -> AgentCard {
-        let skills: Vec<A2ASkill> = AGENT_TYPE_DESCRIPTORS
-            .iter()
-            .map(|desc| A2ASkill {
-                id: desc.id.to_string(),
-                name: desc.name.to_string(),
-                description: desc.description.to_string(),
-                tags: desc.tags.iter().map(|t| t.to_string()).collect(),
-            })
-            .collect();
+    /// Set the skills for this agent card.
+    ///
+    /// Skills should be generated via `rlmx_agents::build_a2a_skills()` to stay
+    /// in sync with the canonical `AgentType` enum.
+    pub fn with_skills(mut self, skills: Vec<A2ASkill>) -> Self {
+        self.skills = skills;
+        self
+    }
 
+    /// Build the agent card with the configured skills.
+    pub fn build(&self) -> AgentCard {
+        let skill_count = self.skills.len();
         AgentCard {
             name: "RLMX Agent".to_string(),
             version: self.version.clone(),
-            description: "RLMX cognition kernel agent with 17 specialized agent types".to_string(),
+            description: format!(
+                "RLMX cognition kernel agent with {skill_count} specialized agent types"
+            ),
             url: self.base_url.clone(),
             capabilities: AgentCapabilities {
                 streaming: false,
                 push_notifications: false,
                 state_transition_history: true,
             },
-            skills,
+            skills: self.skills.clone(),
             authentication: AuthenticationInfo {
                 schemes: vec!["bearer".to_string()],
             },
@@ -269,6 +169,30 @@ pub struct A2ATask {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Build a small set of test skills (not dependent on rlmx-agents).
+    fn test_skills() -> Vec<A2ASkill> {
+        vec![
+            A2ASkill {
+                id: "coordinator".to_string(),
+                name: "Coordinator".to_string(),
+                description: "Orchestrates multi-agent workflows".to_string(),
+                tags: vec!["orchestration".to_string(), "workflow".to_string()],
+            },
+            A2ASkill {
+                id: "worker".to_string(),
+                name: "Worker".to_string(),
+                description: "Executes general-purpose tasks".to_string(),
+                tags: vec!["execution".to_string(), "general".to_string()],
+            },
+            A2ASkill {
+                id: "researcher".to_string(),
+                name: "Researcher".to_string(),
+                description: "Performs deep research".to_string(),
+                tags: vec!["research".to_string()],
+            },
+        ]
+    }
 
     #[test]
     fn task_state_terminal() {
@@ -328,17 +252,29 @@ mod tests {
     }
 
     #[test]
-    fn agent_card_builder_creates_17_skills() {
-        let builder = AgentCardBuilder::new("http://localhost:3000", "0.1.0");
+    fn agent_card_builder_creates_skills_from_input() {
+        let skills = test_skills();
+        let builder = AgentCardBuilder::new("http://localhost:3000", "0.1.0")
+            .with_skills(skills);
         let card = builder.build();
-        assert_eq!(card.skills.len(), 17);
+        assert_eq!(card.skills.len(), 3);
         assert_eq!(card.version, "0.1.0");
         assert_eq!(card.url, "http://localhost:3000");
+        assert!(card.description.contains("3 specialized"));
+    }
+
+    #[test]
+    fn agent_card_builder_empty_without_skills() {
+        let builder = AgentCardBuilder::new("http://localhost:3000", "0.1.0");
+        let card = builder.build();
+        assert!(card.skills.is_empty());
+        assert!(card.description.contains("0 specialized"));
     }
 
     #[test]
     fn agent_card_skills_have_unique_ids() {
-        let builder = AgentCardBuilder::new("http://localhost:3000", "0.1.0");
+        let builder = AgentCardBuilder::new("http://localhost:3000", "0.1.0")
+            .with_skills(test_skills());
         let card = builder.build();
         let mut ids: Vec<&str> = card.skills.iter().map(|s| s.id.as_str()).collect();
         let len_before = ids.len();
@@ -349,7 +285,8 @@ mod tests {
 
     #[test]
     fn agent_card_skills_have_nonempty_descriptions() {
-        let builder = AgentCardBuilder::new("http://localhost:3000", "0.1.0");
+        let builder = AgentCardBuilder::new("http://localhost:3000", "0.1.0")
+            .with_skills(test_skills());
         let card = builder.build();
         for skill in &card.skills {
             assert!(!skill.description.is_empty(), "skill {} has empty description", skill.id);
@@ -360,14 +297,16 @@ mod tests {
 
     #[test]
     fn agent_card_has_bearer_auth() {
-        let builder = AgentCardBuilder::new("http://localhost:3000", "0.1.0");
+        let builder = AgentCardBuilder::new("http://localhost:3000", "0.1.0")
+            .with_skills(test_skills());
         let card = builder.build();
         assert!(card.authentication.schemes.contains(&"bearer".to_string()));
     }
 
     #[test]
     fn agent_card_capabilities_defaults() {
-        let builder = AgentCardBuilder::new("http://localhost:3000", "0.1.0");
+        let builder = AgentCardBuilder::new("http://localhost:3000", "0.1.0")
+            .with_skills(test_skills());
         let card = builder.build();
         assert!(!card.capabilities.streaming);
         assert!(!card.capabilities.push_notifications);
@@ -376,7 +315,8 @@ mod tests {
 
     #[test]
     fn agent_card_builder_filtered() {
-        let builder = AgentCardBuilder::new("http://localhost:3000", "0.1.0");
+        let builder = AgentCardBuilder::new("http://localhost:3000", "0.1.0")
+            .with_skills(test_skills());
         let card = builder.build_filtered(&["coordinator", "worker"]);
         assert_eq!(card.skills.len(), 2);
         assert!(card.skills.iter().any(|s| s.id == "coordinator"));
@@ -385,14 +325,16 @@ mod tests {
 
     #[test]
     fn agent_card_builder_filtered_empty() {
-        let builder = AgentCardBuilder::new("http://localhost:3000", "0.1.0");
+        let builder = AgentCardBuilder::new("http://localhost:3000", "0.1.0")
+            .with_skills(test_skills());
         let card = builder.build_filtered(&[]);
         assert!(card.skills.is_empty());
     }
 
     #[test]
     fn agent_card_serializes_to_json() {
-        let builder = AgentCardBuilder::new("http://localhost:3000", "0.1.0");
+        let builder = AgentCardBuilder::new("http://localhost:3000", "0.1.0")
+            .with_skills(test_skills());
         let card = builder.build();
         let json = serde_json::to_string(&card).expect("serialize");
         assert!(json.contains("RLMX Agent"));
@@ -423,12 +365,13 @@ mod tests {
 
     #[test]
     fn agent_card_roundtrip() {
-        let builder = AgentCardBuilder::new("http://localhost:3000", "0.1.0");
+        let builder = AgentCardBuilder::new("http://localhost:3000", "0.1.0")
+            .with_skills(test_skills());
         let card = builder.build();
         let json = serde_json::to_string(&card).expect("serialize");
         let deserialized: AgentCard = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(deserialized.name, card.name);
-        assert_eq!(deserialized.skills.len(), 17);
+        assert_eq!(deserialized.skills.len(), 3);
     }
 
     #[test]

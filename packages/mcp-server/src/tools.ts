@@ -128,6 +128,10 @@ export function createAllTools(state: ToolStateData): RegisteredTool[] {
     createRlmxBillingUpgrade(state),
     createRlmxBillingUsage(state),
     createRlmxBillingFamily(state),
+
+    // --- Approval tools (48-49, ADR-037) ---
+    createRlmxApprovalList(state),
+    createRlmxApprovalDecide(state),
   ];
 }
 
@@ -1357,6 +1361,53 @@ function createRlmxBillingFamily(_state: ToolStateData): RegisteredTool {
       family_group: null,
       members: [],
       max_members: 6,
+      status: 'stub',
+    }),
+  );
+}
+
+// ===========================================================================
+// 48. rlmx_approval_list (ADR-037)
+// ===========================================================================
+
+function createRlmxApprovalList(_state: ToolStateData): RegisteredTool {
+  return tool(
+    'rlmx_approval_list',
+    'List all pending human-in-the-loop approval requests (ADR-037).',
+    {
+      type: 'object',
+      properties: {},
+    },
+    async () => ({
+      pending: [],
+      total: 0,
+      status: 'stub',
+    }),
+  );
+}
+
+// ===========================================================================
+// 49. rlmx_approval_decide (ADR-037)
+// ===========================================================================
+
+function createRlmxApprovalDecide(_state: ToolStateData): RegisteredTool {
+  return tool(
+    'rlmx_approval_decide',
+    'Approve or deny a pending approval request (ADR-037).',
+    {
+      type: 'object',
+      properties: {
+        request_id: { type: 'string', description: 'UUID of the pending approval request' },
+        approved: { type: 'boolean', description: 'Whether to approve or deny' },
+        decided_by: { type: 'string', description: 'Identity of the human decider' },
+      },
+      required: ['request_id', 'approved', 'decided_by'],
+    },
+    async (params: Record<string, unknown>) => ({
+      request_id: params.request_id ?? '',
+      approved: params.approved ?? false,
+      decided_by: params.decided_by ?? '',
+      decided_at: new Date().toISOString(),
       status: 'stub',
     }),
   );
