@@ -173,11 +173,7 @@ mod tests {
         let id = sched.schedule("task", 5, Duration::from_secs(10));
         sched.complete_task(id);
 
-        let completed = sched
-            .scheduled_tasks
-            .iter()
-            .find(|t| t.id == id)
-            .unwrap();
+        let completed = sched.scheduled_tasks.iter().find(|t| t.id == id).unwrap();
         assert_eq!(completed.status, TaskStatus::Completed);
         assert!(completed.completed_at.is_some());
     }

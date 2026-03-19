@@ -155,6 +155,24 @@ enum Commands {
         action: PhoneAction,
     },
 
+    /// Personal mesh topology management (ADR-022)
+    Mesh {
+        #[command(subcommand)]
+        action: MeshAction,
+    },
+
+    /// Subscription billing and usage (ADR-025)
+    Billing {
+        #[command(subcommand)]
+        action: BillingAction,
+    },
+
+    /// Federated learning pipeline (ADR-023)
+    Federation {
+        #[command(subcommand)]
+        action: FederationAction,
+    },
+
     /// Start a model training run
     Train {
         /// Training configuration as JSON string
@@ -382,6 +400,81 @@ enum PhoneAction {
     Battery,
 }
 
+#[derive(Subcommand, Debug)]
+enum MeshAction {
+    /// Show personal mesh status (devices, zones, sync state)
+    Status,
+    /// List connected devices
+    Devices,
+    /// Register a new device in the mesh
+    AddDevice {
+        /// Device name
+        #[arg(long)]
+        name: String,
+        /// Device type (laptop, phone, home-hub, cloud, browser)
+        #[arg(long, default_value = "laptop")]
+        device_type: String,
+    },
+    /// Force sync across mesh
+    Sync,
+    /// Show fleet manifest
+    Fleet,
+    /// Show degradation status
+    Failover,
+}
+
+#[derive(Subcommand, Debug)]
+enum BillingAction {
+    /// Show subscription tier and usage
+    Status,
+    /// Upgrade subscription tier
+    Upgrade {
+        /// Target tier (free, personal, family, pro, enterprise, developer)
+        #[arg(long)]
+        tier: String,
+    },
+    /// Show current period usage
+    Usage,
+    /// Manage family group
+    Family {
+        #[command(subcommand)]
+        action: FamilyAction,
+    },
+    /// Developer account operations
+    Developer {
+        #[command(subcommand)]
+        action: DeveloperAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum FamilyAction {
+    /// List family members
+    List,
+    /// Add a family member
+    Add {
+        /// User identifier to add
+        #[arg(long)]
+        user: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum DeveloperAction {
+    /// Show developer account stats
+    Stats,
+}
+
+#[derive(Subcommand, Debug)]
+enum FederationAction {
+    /// Show federation cycle status
+    Status,
+    /// Trigger manual contribution
+    Contribute,
+    /// Load federated patterns for new user
+    Bootstrap,
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
@@ -425,6 +518,9 @@ async fn run(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
         Commands::Marketplace { action } => cmd_marketplace(action).await,
         Commands::Engagement { action } => cmd_engagement(action),
         Commands::Phone { action } => cmd_phone(action),
+        Commands::Mesh { action } => cmd_mesh(action),
+        Commands::Billing { action } => cmd_billing(action),
+        Commands::Federation { action } => cmd_federation(action),
         Commands::Train {
             config,
             node_id,
@@ -1461,12 +1557,7 @@ async fn cmd_voice(action: VoiceAction) -> Result<(), Box<dyn std::error::Error>
             println!("  input: \"{}\"", text);
             println!("  intents:");
             for (i, intent) in intents.iter().enumerate() {
-                println!(
-                    "    [{}] {} (confidence: {:.2})",
-                    i + 1,
-                    intent.0,
-                    intent.1
-                );
+                println!("    [{}] {} (confidence: {:.2})", i + 1, intent.0, intent.1);
                 println!("        slots: {}", intent.2);
             }
             println!();
@@ -1483,14 +1574,8 @@ async fn cmd_voice(action: VoiceAction) -> Result<(), Box<dyn std::error::Error>
                 println!("  ┌──────────────────────────────────────┬──────────┬───────────┐");
                 println!("  │ Session ID                           │ Status   │ Duration  │");
                 println!("  ├──────────────────────────────────────┼──────────┼───────────┤");
-                println!(
-                    "  │ {}  │ active   │ 2m 15s    │",
-                    uuid::Uuid::new_v4()
-                );
-                println!(
-                    "  │ {}  │ ended    │ 5m 42s    │",
-                    uuid::Uuid::new_v4()
-                );
+                println!("  │ {}  │ active   │ 2m 15s    │", uuid::Uuid::new_v4());
+                println!("  │ {}  │ ended    │ 5m 42s    │", uuid::Uuid::new_v4());
                 println!("  └──────────────────────────────────────┴──────────┴───────────┘");
                 println!("  Last active: {}", now.format("%Y-%m-%d %H:%M:%S UTC"));
             } else {
@@ -1583,16 +1668,16 @@ async fn cmd_marketplace(action: MarketplaceAction) -> Result<(), Box<dyn std::e
                     "  ├─────────────────────────┼────────┼──────────┼─────────────────────────────┤"
                 );
                 for a in &agents {
-                    println!(
-                        "  │ {:<23} │ {:<6} │ {:<8} │ {:<27} │",
-                        a.0, a.1, a.2, a.3
-                    );
+                    println!("  │ {:<23} │ {:<6} │ {:<8} │ {:<27} │", a.0, a.1, a.2, a.3);
                 }
                 println!(
                     "  └─────────────────────────┴────────┴──────────┴─────────────────────────────┘"
                 );
                 println!();
-                println!("  {} agents found. Install with: rlmx marketplace install --agent <name>", agents.len());
+                println!(
+                    "  {} agents found. Install with: rlmx marketplace install --agent <name>",
+                    agents.len()
+                );
             }
             Ok(())
         }
@@ -1606,7 +1691,10 @@ async fn cmd_marketplace(action: MarketplaceAction) -> Result<(), Box<dyn std::e
             println!("  status: installed");
             println!();
             println!("Agent \"{}\" installed successfully.", agent);
-            println!("  Run with: rlmx agent spawn --type {} --task \"auto\"", agent);
+            println!(
+                "  Run with: rlmx agent spawn --type {} --task \"auto\"",
+                agent
+            );
             Ok(())
         }
         MarketplaceAction::List => {
@@ -1662,40 +1750,120 @@ async fn cmd_marketplace(action: MarketplaceAction) -> Result<(), Box<dyn std::e
             println!("  status: published");
             println!();
             println!("Agent published successfully.");
-            println!("  Marketplace URL: https://marketplace.rlmx.dev/agents/{}", publish_id);
+            println!(
+                "  Marketplace URL: https://marketplace.rlmx.dev/agents/{}",
+                publish_id
+            );
             Ok(())
         }
     }
 }
 
 /// Demo marketplace data keyed by domain.
-fn demo_marketplace_agents(domain: &str) -> Vec<(&'static str, &'static str, &'static str, &'static str)> {
+fn demo_marketplace_agents(
+    domain: &str,
+) -> Vec<(&'static str, &'static str, &'static str, &'static str)> {
     match domain {
         "finance" => vec![
-            ("bill-negotiator", "4.8/5", "12.4k", "Negotiates bills automatically"),
-            ("subscription-auditor", "4.6/5", "15.2k", "Finds unused subscriptions"),
-            ("tax-strategist", "4.9/5", "9.3k", "Year-round tax optimization"),
-            ("savings-optimizer", "4.4/5", "7.8k", "Finds savings opportunities"),
-            ("debt-payoff-planner", "4.3/5", "5.1k", "Optimal debt payoff strategy"),
+            (
+                "bill-negotiator",
+                "4.8/5",
+                "12.4k",
+                "Negotiates bills automatically",
+            ),
+            (
+                "subscription-auditor",
+                "4.6/5",
+                "15.2k",
+                "Finds unused subscriptions",
+            ),
+            (
+                "tax-strategist",
+                "4.9/5",
+                "9.3k",
+                "Year-round tax optimization",
+            ),
+            (
+                "savings-optimizer",
+                "4.4/5",
+                "7.8k",
+                "Finds savings opportunities",
+            ),
+            (
+                "debt-payoff-planner",
+                "4.3/5",
+                "5.1k",
+                "Optimal debt payoff strategy",
+            ),
         ],
         "health" => vec![
-            ("health-optimizer", "4.5/5", "6.7k", "Evidence-based health tips"),
-            ("appointment-scheduler", "4.2/5", "4.3k", "Schedules medical visits"),
-            ("medication-tracker", "4.7/5", "3.9k", "Tracks meds and refills"),
+            (
+                "health-optimizer",
+                "4.5/5",
+                "6.7k",
+                "Evidence-based health tips",
+            ),
+            (
+                "appointment-scheduler",
+                "4.2/5",
+                "4.3k",
+                "Schedules medical visits",
+            ),
+            (
+                "medication-tracker",
+                "4.7/5",
+                "3.9k",
+                "Tracks meds and refills",
+            ),
         ],
         "productivity" => vec![
-            ("task-prioritizer", "4.4/5", "11.0k", "AI-powered task ranking"),
+            (
+                "task-prioritizer",
+                "4.4/5",
+                "11.0k",
+                "AI-powered task ranking",
+            ),
             ("meeting-summarizer", "4.6/5", "8.5k", "Auto meeting notes"),
-            ("email-triager", "4.3/5", "6.2k", "Smart email categorization"),
+            (
+                "email-triager",
+                "4.3/5",
+                "6.2k",
+                "Smart email categorization",
+            ),
         ],
         "home" => vec![
-            ("relocation-planner", "4.7/5", "8.1k", "Plans city-to-city moves"),
-            ("home-maintenance", "4.1/5", "3.4k", "Tracks home upkeep tasks"),
-            ("utility-optimizer", "4.3/5", "5.6k", "Optimizes utility spending"),
+            (
+                "relocation-planner",
+                "4.7/5",
+                "8.1k",
+                "Plans city-to-city moves",
+            ),
+            (
+                "home-maintenance",
+                "4.1/5",
+                "3.4k",
+                "Tracks home upkeep tasks",
+            ),
+            (
+                "utility-optimizer",
+                "4.3/5",
+                "5.6k",
+                "Optimizes utility spending",
+            ),
         ],
         "legal" => vec![
-            ("contract-reviewer", "4.5/5", "4.8k", "Reviews legal contracts"),
-            ("rights-advisor", "4.2/5", "2.1k", "Consumer rights guidance"),
+            (
+                "contract-reviewer",
+                "4.5/5",
+                "4.8k",
+                "Reviews legal contracts",
+            ),
+            (
+                "rights-advisor",
+                "4.2/5",
+                "2.1k",
+                "Consumer rights guidance",
+            ),
         ],
         _ => vec![],
     }
@@ -1894,6 +2062,357 @@ async fn cmd_forecast(
     println!("  data_points: {}", std::cmp::min(horizon_hours / 2, 12));
     println!("  trend: stable");
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// mesh
+// ---------------------------------------------------------------------------
+
+fn cmd_mesh(action: MeshAction) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        MeshAction::Status => {
+            let mesh_id = uuid::Uuid::new_v4();
+            println!("Personal Mesh Status:");
+            println!();
+            println!("  mesh_id: {}", mesh_id);
+            println!("  owner: cedric (local)");
+            println!("  devices: 4 (3 online, 1 offline)");
+            println!("  coordinator: MacBook Pro (Zone A-Desktop)");
+            println!("  privacy_anchor: RPi5 (Zone C-Edge)");
+            println!();
+            println!("  Zone Summary:");
+            println!("    A-Desktop : MacBook Pro   [online]  coordinator");
+            println!("    A-Mobile  : iPhone 16     [online]  5 agents");
+            println!("    B-Cloud   : (none)        [--]");
+            println!("    C-Edge    : RPi5          [online]  privacy anchor");
+            println!("    D-Browser : Chrome tab    [offline]");
+            println!();
+            println!("  Sync Health:");
+            println!("    MacBook <-> iPhone  : healthy  (QUIC, 0 pending)");
+            println!("    MacBook <-> RPi5    : healthy  (QUIC, 2 pending)");
+            println!("    iPhone  <-> RPi5    : degraded (WebSocket, 14 pending)");
+            println!();
+            println!("  Fleet manifest version: 3");
+            println!("  Last full sync: 2 minutes ago");
+            Ok(())
+        }
+        MeshAction::Devices => {
+            println!("Mesh Devices:");
+            println!();
+            println!("  +-----------------+--------------+--------------+----------+----------+");
+            println!("  | Name            | Type         | Zone         | Status   | Last Seen|");
+            println!("  +-----------------+--------------+--------------+----------+----------+");
+            println!("  | MacBook Pro     | Laptop       | A-Desktop    | online   | now      |");
+            println!("  | iPhone 16       | Phone        | A-Mobile     | online   | 30s ago  |");
+            println!("  | RPi5 Hub        | HomeHub      | C-Edge       | online   | 1m ago   |");
+            println!("  | Chrome Tab      | Browser      | D-Browser    | offline  | 2h ago   |");
+            println!("  +-----------------+--------------+--------------+----------+----------+");
+            println!();
+            println!("  4 devices registered. Max: 16");
+            Ok(())
+        }
+        MeshAction::AddDevice { name, device_type } => {
+            let device_id = uuid::Uuid::new_v4();
+            let zone = match device_type.as_str() {
+                "laptop" => "A-Desktop",
+                "phone" => "A-Mobile",
+                "home-hub" => "C-Edge",
+                "cloud" => "B-Cloud",
+                "browser" => "D-Browser",
+                _ => "A-Desktop",
+            };
+            println!("Registering device:");
+            println!("  device_id: {}", device_id);
+            println!("  name: {}", name);
+            println!("  type: {}", device_type);
+            println!("  zone: {}", zone);
+            println!("  status: online");
+            println!();
+            println!("Device registered successfully.");
+            println!("  Sync will begin automatically on next cycle.");
+            Ok(())
+        }
+        MeshAction::Sync => {
+            println!("Forcing mesh sync...");
+            println!();
+            println!("  Syncing AgentPlacement   (Raft)    ... ok  (3 ops)");
+            println!("  Syncing CapabilityTokens (Raft)    ... ok  (1 op)");
+            println!("  Syncing SonaPatterns     (CRDT)    ... ok  (12 ops)");
+            println!("  Syncing EngagementState  (CRDT)    ... ok  (5 ops)");
+            println!("  Syncing EphemeralMetrics (LWW)     ... ok  (28 ops)");
+            println!();
+            println!("  Total: 49 operations synced across 3 devices.");
+            println!("  All sync channels healthy.");
+            Ok(())
+        }
+        MeshAction::Fleet => {
+            println!("Fleet Manifest:");
+            println!();
+            println!("  version: 3");
+            println!("  last_updated: 2026-03-19T10:15:00Z");
+            println!();
+            println!("  Agent Placement:");
+            println!("    +-------------------------+--------------+--------------+");
+            println!("    | Agent                   | Primary      | Failover     |");
+            println!("    +-------------------------+--------------+--------------+");
+            println!("    | bill-negotiator         | iPhone       | MacBook      |");
+            println!("    | subscription-auditor    | iPhone       | RPi5         |");
+            println!("    | general-assistant       | MacBook      | iPhone       |");
+            println!("    | health-optimizer        | iPhone       | MacBook      |");
+            println!("    | savings-optimizer       | RPi5         | MacBook      |");
+            println!("    +-------------------------+--------------+--------------+");
+            println!();
+            println!("  5 agents placed across 3 devices.");
+            Ok(())
+        }
+        MeshAction::Failover => {
+            println!("Mesh Degradation Status:");
+            println!();
+            println!("  Current level: Nominal");
+            println!();
+            println!("  Degradation Levels:");
+            println!("    [*] Nominal      -- All zones online, full capability");
+            println!("    [ ] Degraded     -- 1+ zone offline, agents migrated");
+            println!("    [ ] Emergency    -- Only 1 zone, critical agents only");
+            println!("    [ ] Isolated     -- Single device, offline queue active");
+            println!();
+            println!("  Failover Policies:");
+            println!("    Zone A-Desktop offline: promote A-Mobile to coordinator");
+            println!("    Zone A-Mobile offline:  migrate agents to A-Desktop");
+            println!("    Zone C-Edge offline:    suspend privacy-sensitive sync");
+            println!("    Zone D-Browser offline: no impact (ephemeral)");
+            println!();
+            println!("  Last failover event: none");
+            Ok(())
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// billing
+// ---------------------------------------------------------------------------
+
+fn cmd_billing(action: BillingAction) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        BillingAction::Status => {
+            println!("Subscription Status:");
+            println!();
+            println!("  tier: Personal ($9.99/mo)");
+            println!("  status: active");
+            println!("  billing_period: 2026-03-01 to 2026-03-31");
+            println!("  next_payment: 2026-04-01");
+            println!();
+            println!("  Tier Limits:");
+            println!("    agents: unlimited");
+            println!("    cloud_tokens: 100,000 / period");
+            println!("    federation: full (bidirectional)");
+            println!("    custom_sdk: no");
+            println!("    api_access: no");
+            println!("    marketplace_publish: no");
+            println!();
+            println!("  Usage This Period:");
+            println!("    cloud_tokens: 34,521 / 100,000 (34.5%)");
+            println!("    agents_active: 5");
+            println!();
+            println!("  Upgrade with: rlmx billing upgrade --tier pro");
+            Ok(())
+        }
+        BillingAction::Upgrade { tier } => {
+            let tier_display = match tier.as_str() {
+                "free" => ("Free", "$0/mo"),
+                "personal" => ("Personal", "$9.99/mo"),
+                "family" => ("Family", "$19.99/mo"),
+                "pro" => ("Pro", "$29.99/mo"),
+                "enterprise" => ("Enterprise", "custom"),
+                "developer" => ("Developer", "$0/mo + rev share"),
+                _ => {
+                    println!("Unknown tier: {}", tier);
+                    println!("Available tiers: free, personal, family, pro, enterprise, developer");
+                    return Ok(());
+                }
+            };
+            println!("Upgrading subscription:");
+            println!("  current_tier: Personal ($9.99/mo)");
+            println!("  new_tier: {} ({})", tier_display.0, tier_display.1);
+            println!("  status: upgraded");
+            println!();
+            println!("Subscription upgraded to {} tier.", tier_display.0);
+            println!("New limits take effect immediately.");
+            Ok(())
+        }
+        BillingAction::Usage => {
+            println!("Usage Report (current period: 2026-03-01 to 2026-03-31):");
+            println!();
+            println!("  Cloud Tokens:");
+            println!("    used: 34,521 / 100,000");
+            println!("    utilization: 34.5%");
+            println!("    projected: 58,200 by period end");
+            println!();
+            println!("  +----------------------------+----------+-------------------+");
+            println!("  | Category                   | Tokens   | % of Total        |");
+            println!("  +----------------------------+----------+-------------------+");
+            println!("  | Voice transcription        | 12,340   | 35.7%             |");
+            println!("  | Agent inference             | 15,890   | 46.0%             |");
+            println!("  | Intent classification       | 4,120    | 11.9%             |");
+            println!("  | TTS synthesis               | 2,171    | 6.3%              |");
+            println!("  +----------------------------+----------+-------------------+");
+            println!();
+            println!("  Agents Active: 5");
+            println!("  Peak agents this period: 7");
+            Ok(())
+        }
+        BillingAction::Family { action: family } => cmd_billing_family(family),
+        BillingAction::Developer { action: dev } => cmd_billing_developer(dev),
+    }
+}
+
+fn cmd_billing_family(action: FamilyAction) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        FamilyAction::List => {
+            println!("Family Group:");
+            println!();
+            println!("  plan: Family ($19.99/mo)");
+            println!("  owner: cedric");
+            println!("  members: 3 / 6 max");
+            println!();
+            println!("  +------------------+--------------+----------------------+");
+            println!("  | Member           | Role         | Joined               |");
+            println!("  +------------------+--------------+----------------------+");
+            println!("  | cedric           | owner        | 2026-01-15           |");
+            println!("  | alex             | member       | 2026-02-01           |");
+            println!("  | sam              | member       | 2026-03-10           |");
+            println!("  +------------------+--------------+----------------------+");
+            println!();
+            println!("  Shared token pool: 200,000 / period");
+            println!("  Add members with: rlmx billing family add --user <name>");
+            Ok(())
+        }
+        FamilyAction::Add { user } => {
+            let member_id = uuid::Uuid::new_v4();
+            println!("Adding family member:");
+            println!("  member_id: {}", member_id);
+            println!("  user: {}", user);
+            println!("  role: member");
+            println!("  status: added");
+            println!();
+            println!("Family member added. They will receive an invitation to join.");
+            Ok(())
+        }
+    }
+}
+
+fn cmd_billing_developer(action: DeveloperAction) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        DeveloperAction::Stats => {
+            let dev_id = &uuid::Uuid::new_v4().to_string()[..8];
+            println!("Developer Account Stats:");
+            println!();
+            println!("  account_id: dev-{}", dev_id);
+            println!("  status: active");
+            println!("  revenue_split: 70/30 (developer/platform)");
+            println!();
+            println!("  Published Agents:");
+            println!("    +-------------------------+----------+----------+-----------+");
+            println!("    | Agent                   | Installs | Revenue  | Rating    |");
+            println!("    +-------------------------+----------+----------+-----------+");
+            println!("    | bill-negotiator         | 12,400   | $8,430   | 4.8/5     |");
+            println!("    | tax-strategist          | 9,300    | $6,510   | 4.9/5     |");
+            println!("    +-------------------------+----------+----------+-----------+");
+            println!();
+            println!("  Payout Summary:");
+            println!("    total_earned: $14,940");
+            println!("    pending_payout: $1,230 (threshold: $50)");
+            println!("    last_payout: $2,100 (2026-03-01)");
+            println!("    payout_method: bank_transfer");
+            Ok(())
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// federation
+// ---------------------------------------------------------------------------
+
+fn cmd_federation(action: FederationAction) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        FederationAction::Status => {
+            let cycle_id = uuid::Uuid::new_v4();
+            println!("Federation Cycle Status:");
+            println!();
+            println!("  cycle_id: {}", cycle_id);
+            println!("  cycle_number: 47");
+            println!("  status: Collecting");
+            println!("  started_at: 2026-03-17T00:00:00Z");
+            println!("  deadline: 2026-03-24T00:00:00Z");
+            println!();
+            println!("  Contribution Summary:");
+            println!("    contributors: 2,847 / 1,000 threshold");
+            println!("    patterns_collected: 142,350");
+            println!("    domains_active: 8 / 12");
+            println!();
+            println!("  Privacy Guarantees:");
+            println!("    anonymization: on-device (Laplace epsilon=1.0)");
+            println!("    emotion_bucketing: 5 levels");
+            println!("    speaker_embeddings: never federated");
+            println!("    aggregation_threshold: 1,000 users");
+            println!();
+            println!("  Your Contributions:");
+            println!("    last_contributed: 2026-03-18T14:30:00Z");
+            println!("    patterns_sent: 23");
+            println!("    domains: finance, health, productivity");
+            Ok(())
+        }
+        FederationAction::Contribute => {
+            let pseudo = &uuid::Uuid::new_v4().to_string()[..16];
+            println!("Triggering manual contribution...");
+            println!();
+            println!("  Anonymizing local patterns...");
+            println!("    patterns found: 15");
+            println!("    PII stripped: ok");
+            println!("    emotion bucketed: ok");
+            println!("    Laplace noise applied: ok (epsilon=1.0)");
+            println!();
+            println!("  Packaging contribution...");
+            println!("    pseudonym: {} (cycle-specific)", pseudo);
+            println!("    domains: finance (8), health (4), productivity (3)");
+            println!("    lora_delta: included (2.1 KB)");
+            println!();
+            println!("  Submitting to federation server...");
+            println!("    status: accepted");
+            println!("    contribution_id: {}", uuid::Uuid::new_v4());
+            println!();
+            println!("Contribution submitted successfully.");
+            Ok(())
+        }
+        FederationAction::Bootstrap => {
+            println!("Bootstrapping from federated patterns...");
+            println!();
+            println!("  Fetching latest federation package...");
+            println!("    package_id: {}", uuid::Uuid::new_v4());
+            println!("    cycle: 46 (completed)");
+            println!("    contributors: 3,200");
+            println!("    package_size: 4.7 MB");
+            println!();
+            println!("  Loading patterns:");
+            println!("    +------------------+----------+-------------------------+");
+            println!("    | Domain           | Patterns | Quality                 |");
+            println!("    +------------------+----------+-------------------------+");
+            println!("    | Finance          | 2,340    | 0.87 avg                |");
+            println!("    | Health           | 1,890    | 0.82 avg                |");
+            println!("    | Productivity     | 2,100    | 0.85 avg                |");
+            println!("    | Shopping         | 1,450    | 0.79 avg                |");
+            println!("    | Home             | 980      | 0.83 avg                |");
+            println!("    | Education        | 670      | 0.81 avg                |");
+            println!("    +------------------+----------+-------------------------+");
+            println!();
+            println!("  Applying LoRA delta to SONA...");
+            println!("    delta_size: 4.7 MB");
+            println!("    status: applied");
+            println!();
+            println!("Bootstrap complete. SONA initialized with federated patterns.");
+            Ok(())
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

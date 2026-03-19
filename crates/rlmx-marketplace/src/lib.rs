@@ -18,9 +18,9 @@ pub mod review;
 pub use analytics::MarketplaceAnalytics;
 pub use billing::BillingEngine;
 pub use domain::{
-    AgentPrice, DeviceType, DeveloperType, LifeDomain, ListingStatus, MarketplaceDomainEvent,
-    ModelTier, PayoutMethod, Permission, PublisherId, RevenueSplit, ReviewStatus, SecurityCheck,
-    SecurityCheckType, Severity,
+    AgentPack, AgentPrice, DeveloperType, DeviceType, LifeDomain, ListingStatus,
+    MarketplaceDomainEvent, ModelTier, PayoutMethod, Permission, PublisherId, RevenueSplit,
+    ReviewStatus, SecurityCheck, SecurityCheckType, Severity,
 };
 pub use error::{MarketplaceError, MarketplaceResult};
 pub use featured::{FeaturedEngine, ScoredAgent};

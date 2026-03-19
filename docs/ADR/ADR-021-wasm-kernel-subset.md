@@ -1,6 +1,6 @@
 # ADR-021: WASM Kernel Subset for Phone Zone D
 
-Status: Proposed
+Status: Implemented
 
 ## Context
 RuVix Mesh runs agents on the user's phone via Progressive Web App or native WebView. The phone (Zone D) needs a subset of the kernel compiled to WebAssembly, complementing the existing `@ruvector/ruvllm-wasm` (which provides inference primitives). This new `rlmx-wasm` crate provides kernel syscalls in the browser.

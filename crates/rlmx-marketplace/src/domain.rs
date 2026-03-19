@@ -208,6 +208,61 @@ impl RevenueSplit {
     }
 }
 
+/// Celebrity/Influencer agent pack (curated bundle of agents).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentPack {
+    pub id: Uuid,
+    pub name: String,
+    pub creator: PublisherId,
+    /// Agent IDs included in this pack.
+    pub agents: Vec<Uuid>,
+    pub price: AgentPrice,
+    /// Revenue split: 50/30/20 creator/platform/base-dev for celebrity packs.
+    pub revenue_split: RevenueSplit,
+    pub description: String,
+}
+
+impl AgentPack {
+    /// Create a new agent pack with the celebrity revenue split.
+    pub fn new(
+        name: String,
+        creator: PublisherId,
+        agents: Vec<Uuid>,
+        price: AgentPrice,
+        description: String,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            name,
+            creator,
+            agents,
+            price,
+            revenue_split: RevenueSplit::celebrity(),
+            description,
+        }
+    }
+
+    /// Create a new agent pack with a custom revenue split.
+    pub fn with_split(
+        name: String,
+        creator: PublisherId,
+        agents: Vec<Uuid>,
+        price: AgentPrice,
+        description: String,
+        split: RevenueSplit,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            name,
+            creator,
+            agents,
+            price,
+            revenue_split: split,
+            description,
+        }
+    }
+}
+
 /// Security check types for the review pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SecurityCheckType {
@@ -256,6 +311,41 @@ mod tests {
         assert_eq!(AgentPrice::Free.amount_cents(), 0);
         assert_eq!(AgentPrice::OneTime(999).amount_cents(), 999);
         assert_eq!(AgentPrice::Monthly(499).amount_cents(), 499);
+    }
+
+    #[test]
+    fn agent_pack_default_celebrity_split() {
+        let pack = AgentPack::new(
+            "CoolPack".into(),
+            PublisherId::new(),
+            vec![Uuid::new_v4(), Uuid::new_v4()],
+            AgentPrice::OneTime(1999),
+            "A curated pack".into(),
+        );
+        assert!(pack.revenue_split.is_valid());
+        assert_eq!(pack.revenue_split.creator_pct, 50);
+        assert_eq!(pack.revenue_split.platform_pct, 30);
+        assert_eq!(pack.revenue_split.base_dev_pct, 20);
+        assert_eq!(pack.agents.len(), 2);
+    }
+
+    #[test]
+    fn agent_pack_custom_split() {
+        let split = RevenueSplit {
+            creator_pct: 60,
+            platform_pct: 30,
+            base_dev_pct: 10,
+        };
+        let pack = AgentPack::with_split(
+            "CustomPack".into(),
+            PublisherId::new(),
+            vec![Uuid::new_v4()],
+            AgentPrice::Monthly(499),
+            "Custom split pack".into(),
+            split,
+        );
+        assert!(pack.revenue_split.is_valid());
+        assert_eq!(pack.revenue_split.creator_pct, 60);
     }
 
     #[test]

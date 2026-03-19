@@ -167,7 +167,10 @@ mod tests {
         analytics.record_install(agent_id, Uuid::new_v4(), LifeDomain::Finance);
 
         assert_eq!(analytics.total_installs(), 2);
-        assert_eq!(analytics.agent_metrics(&agent_id).unwrap().total_installs, 2);
+        assert_eq!(
+            analytics.agent_metrics(&agent_id).unwrap().total_installs,
+            2
+        );
     }
 
     #[test]

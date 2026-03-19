@@ -1096,6 +1096,8 @@ const VALID_AGENT_TYPES: &[&str] = &[
     "replicator",
     "embedder",
     "analyst",
+    "voice_coordinator",
+    "marketplace_manager",
 ];
 
 fn create_rlmx_agent_spawn(state: SharedToolState) -> McpTool {
@@ -2203,7 +2205,9 @@ fn create_rlmx_marketplace_search(state: SharedToolState) -> McpTool {
     }
 }
 
-struct MarketplaceSearchHandler { state: SharedToolState }
+struct MarketplaceSearchHandler {
+    state: SharedToolState,
+}
 
 #[async_trait]
 impl ToolHandler for MarketplaceSearchHandler {
@@ -2239,14 +2243,21 @@ fn create_rlmx_marketplace_install(state: SharedToolState) -> McpTool {
     }
 }
 
-struct MarketplaceInstallHandler { state: SharedToolState }
+struct MarketplaceInstallHandler {
+    state: SharedToolState,
+}
 
 #[async_trait]
 impl ToolHandler for MarketplaceInstallHandler {
     async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let agent_id = params.get("agent_id").and_then(|v| v.as_str())
+        let agent_id = params
+            .get("agent_id")
+            .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: agent_id"))?;
-        let version = params.get("version").and_then(|v| v.as_str()).unwrap_or("latest");
+        let version = params
+            .get("version")
+            .and_then(|v| v.as_str())
+            .unwrap_or("latest");
         let _ = self.state.read().await;
         Ok(json!({
             "status": "stub",
@@ -2272,12 +2283,16 @@ fn create_rlmx_marketplace_uninstall(state: SharedToolState) -> McpTool {
     }
 }
 
-struct MarketplaceUninstallHandler { state: SharedToolState }
+struct MarketplaceUninstallHandler {
+    state: SharedToolState,
+}
 
 #[async_trait]
 impl ToolHandler for MarketplaceUninstallHandler {
     async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let agent_id = params.get("agent_id").and_then(|v| v.as_str())
+        let agent_id = params
+            .get("agent_id")
+            .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: agent_id"))?;
         let _ = self.state.read().await;
         Ok(json!({
@@ -2305,14 +2320,20 @@ fn create_rlmx_marketplace_rate(state: SharedToolState) -> McpTool {
     }
 }
 
-struct MarketplaceRateHandler { state: SharedToolState }
+struct MarketplaceRateHandler {
+    state: SharedToolState,
+}
 
 #[async_trait]
 impl ToolHandler for MarketplaceRateHandler {
     async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let agent_id = params.get("agent_id").and_then(|v| v.as_str())
+        let agent_id = params
+            .get("agent_id")
+            .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: agent_id"))?;
-        let rating = params.get("rating").and_then(|v| v.as_u64())
+        let rating = params
+            .get("rating")
+            .and_then(|v| v.as_u64())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: rating"))?;
         let review = params.get("review").and_then(|v| v.as_str());
         let _ = self.state.read().await;
@@ -2340,7 +2361,9 @@ fn create_rlmx_marketplace_list_installed(state: SharedToolState) -> McpTool {
     }
 }
 
-struct MarketplaceListInstalledHandler { state: SharedToolState }
+struct MarketplaceListInstalledHandler {
+    state: SharedToolState,
+}
 
 #[async_trait]
 impl ToolHandler for MarketplaceListInstalledHandler {
@@ -2379,15 +2402,22 @@ fn create_rlmx_marketplace_publish(state: SharedToolState) -> McpTool {
     }
 }
 
-struct MarketplacePublishHandler { state: SharedToolState }
+struct MarketplacePublishHandler {
+    state: SharedToolState,
+}
 
 #[async_trait]
 impl ToolHandler for MarketplacePublishHandler {
     async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let name = params.get("name").and_then(|v| v.as_str())
+        let name = params
+            .get("name")
+            .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: name"))?;
         let domain = params.get("domain").and_then(|v| v.as_str()).unwrap_or("");
-        let version = params.get("version").and_then(|v| v.as_str()).unwrap_or("0.1.0");
+        let version = params
+            .get("version")
+            .and_then(|v| v.as_str())
+            .unwrap_or("0.1.0");
         let _ = self.state.read().await;
         Ok(json!({
             "status": "stub",
@@ -2413,7 +2443,9 @@ fn create_rlmx_marketplace_featured(state: SharedToolState) -> McpTool {
     }
 }
 
-struct MarketplaceFeaturedHandler { state: SharedToolState }
+struct MarketplaceFeaturedHandler {
+    state: SharedToolState,
+}
 
 #[async_trait]
 impl ToolHandler for MarketplaceFeaturedHandler {
@@ -2441,7 +2473,9 @@ fn create_rlmx_marketplace_categories(state: SharedToolState) -> McpTool {
     }
 }
 
-struct MarketplaceCategoriesHandler { state: SharedToolState }
+struct MarketplaceCategoriesHandler {
+    state: SharedToolState,
+}
 
 #[async_trait]
 impl ToolHandler for MarketplaceCategoriesHandler {
@@ -2488,15 +2522,24 @@ fn create_rlmx_voice_transcribe(state: SharedToolState) -> McpTool {
     }
 }
 
-struct VoiceTranscribeHandler { state: SharedToolState }
+struct VoiceTranscribeHandler {
+    state: SharedToolState,
+}
 
 #[async_trait]
 impl ToolHandler for VoiceTranscribeHandler {
     async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let _audio = params.get("audio_base64").and_then(|v| v.as_str())
+        let _audio = params
+            .get("audio_base64")
+            .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: audio_base64"))?;
-        let language = params.get("language").and_then(|v| v.as_str()).unwrap_or("en");
-        let session_id = params.get("session_id").and_then(|v| v.as_str())
+        let language = params
+            .get("language")
+            .and_then(|v| v.as_str())
+            .unwrap_or("en");
+        let session_id = params
+            .get("session_id")
+            .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| Uuid::new_v4().to_string());
         let _ = self.state.read().await;
@@ -2528,14 +2571,21 @@ fn create_rlmx_voice_synthesize(state: SharedToolState) -> McpTool {
     }
 }
 
-struct VoiceSynthesizeHandler { state: SharedToolState }
+struct VoiceSynthesizeHandler {
+    state: SharedToolState,
+}
 
 #[async_trait]
 impl ToolHandler for VoiceSynthesizeHandler {
     async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let text = params.get("text").and_then(|v| v.as_str())
+        let text = params
+            .get("text")
+            .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: text"))?;
-        let voice = params.get("voice").and_then(|v| v.as_str()).unwrap_or("default");
+        let voice = params
+            .get("voice")
+            .and_then(|v| v.as_str())
+            .unwrap_or("default");
         let speed = params.get("speed").and_then(|v| v.as_f64()).unwrap_or(1.0);
         let _ = self.state.read().await;
         Ok(json!({
@@ -2575,17 +2625,26 @@ fn create_rlmx_voice_session(state: SharedToolState) -> McpTool {
     }
 }
 
-struct VoiceSessionHandler { state: SharedToolState }
+struct VoiceSessionHandler {
+    state: SharedToolState,
+}
 
 #[async_trait]
 impl ToolHandler for VoiceSessionHandler {
     async fn handle(&self, params: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let action = params.get("action").and_then(|v| v.as_str())
+        let action = params
+            .get("action")
+            .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::invalid_params("Missing required parameter: action"))?;
-        let session_id = params.get("session_id").and_then(|v| v.as_str())
+        let session_id = params
+            .get("session_id")
+            .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| Uuid::new_v4().to_string());
-        let mode = params.get("mode").and_then(|v| v.as_str()).unwrap_or("multimodal");
+        let mode = params
+            .get("mode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("multimodal");
         let _ = self.state.read().await;
         Ok(json!({
             "status": "stub",

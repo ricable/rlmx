@@ -1,6 +1,6 @@
 # ADR-024: Ruvnet Crate Integration Strategy
 
-Status: Proposed
+Status: Implemented
 
 ## Context
 The RuVix Mesh PRD references 40+ external ruvnet crates that replace current stub implementations in the RLMX kernel. These crates span vector storage, consensus, inference, neural primitives, and bare-metal HAL. Integration must be phased, feature-gated, and must not break the stub build (`cargo build --workspace` without features MUST compile clean).

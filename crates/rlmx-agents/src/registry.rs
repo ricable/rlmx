@@ -7,7 +7,7 @@ use crate::types::AgentType;
 // Re-export SyscallPermission from the kernel instead of duplicating it.
 pub use rlmx_kernel::types::SyscallPermission;
 
-/// Returns all 15 concrete syscall permission variants (excludes `All`).
+/// Returns all 17 concrete syscall permission variants (excludes `All`).
 pub fn all_concrete_permissions() -> &'static [SyscallPermission] {
     &[
         SyscallPermission::VecInsert,
@@ -25,6 +25,8 @@ pub fn all_concrete_permissions() -> &'static [SyscallPermission] {
         SyscallPermission::VoiceTranscribe,
         SyscallPermission::VoiceSynthesize,
         SyscallPermission::IntentRoute,
+        SyscallPermission::MeshSync,
+        SyscallPermission::FederationContribute,
     ]
 }
 
@@ -58,14 +60,14 @@ impl AgentPermissions {
     }
 }
 
-/// The 14x15 permission matrix type (agent_type_index x syscall_permission_index).
-pub type PermissionMatrix = [[bool; 15]; 14];
+/// The 17x17 permission matrix type (agent_type_index x syscall_permission_index).
+pub type PermissionMatrix = [[bool; 17]; 17];
 
 /// Static permission registry mapping each AgentType to allowed syscalls.
 pub struct PermissionRegistry;
 
 impl PermissionRegistry {
-    /// Returns the permissions for a given agent type (the 14x15 matrix).
+    /// Returns the permissions for a given agent type (the 17x17 matrix).
     pub fn permissions_for(agent_type: AgentType) -> AgentPermissions {
         use SyscallPermission::*;
         let perms: Vec<SyscallPermission> = match agent_type {
@@ -222,6 +224,41 @@ impl PermissionRegistry {
                 VoiceSynthesize,
                 IntentRoute,
             ],
+            // MeshCoordinator: graph, vectors, fork, messaging, attention, mesh sync, voice synth, intent
+            AgentType::MeshCoordinator => vec![
+                VecInsert,
+                VecSearch,
+                GraphQuery,
+                GraphDiffuse,
+                ProcessFork,
+                ProcessSend,
+                ProcessRecv,
+                AttentionSelect,
+                MeshSync,
+                VoiceSynthesize,
+                IntentRoute,
+            ],
+            // FederationAgent: search, messaging, attention, federation, voice synth, intent
+            AgentType::FederationAgent => vec![
+                VecSearch,
+                ProcessSend,
+                ProcessRecv,
+                AttentionSelect,
+                FederationContribute,
+                VoiceSynthesize,
+                IntentRoute,
+            ],
+            // BillingManager: vector ops, messaging, state mutation, voice synth, intent
+            AgentType::BillingManager => vec![
+                VecInsert,
+                VecSearch,
+                VecDelete,
+                ProcessSend,
+                ProcessRecv,
+                StateMutate,
+                VoiceSynthesize,
+                IntentRoute,
+            ],
         };
         AgentPermissions::new(perms)
     }
@@ -256,6 +293,9 @@ impl PermissionRegistry {
                 AgentType::Analyst,
                 AgentType::VoiceCoordinator,
                 AgentType::MarketplaceManager,
+                AgentType::MeshCoordinator,
+                AgentType::FederationAgent,
+                AgentType::BillingManager,
             ],
         );
 
@@ -269,9 +309,6 @@ impl PermissionRegistry {
             ],
         );
 
-        // Router can spawn Workers
-        map.insert(AgentType::Router, vec![AgentType::Worker]);
-
         // Experimenter can spawn Workers
         map.insert(AgentType::Experimenter, vec![AgentType::Worker]);
 
@@ -280,6 +317,9 @@ impl PermissionRegistry {
             AgentType::VoiceCoordinator,
             vec![AgentType::Worker, AgentType::Embedder],
         );
+
+        // MeshCoordinator can spawn Workers for mesh tasks
+        map.insert(AgentType::MeshCoordinator, vec![AgentType::Worker]);
 
         map
     }
@@ -292,7 +332,7 @@ mod tests {
     #[test]
     fn test_coordinator_has_all_permissions() {
         let perms = PermissionRegistry::permissions_for(AgentType::Coordinator);
-        assert_eq!(perms.count(), 15);
+        assert_eq!(perms.count(), 17);
         for p in all_concrete_permissions() {
             assert!(perms.has(*p), "Coordinator missing {:?}", p);
         }
@@ -324,12 +364,12 @@ mod tests {
     fn test_only_fork_agents_have_process_fork() {
         for agent_type in AgentType::all() {
             let perms = PermissionRegistry::permissions_for(*agent_type);
-            if agent_type.can_fork() {
-                assert!(
-                    perms.has(SyscallPermission::ProcessFork),
-                    "{agent_type} can_fork but lacks ProcessFork permission"
-                );
-            }
+            let has_fork_perm = perms.has(SyscallPermission::ProcessFork);
+            let can_fork = agent_type.can_fork();
+            assert_eq!(
+                has_fork_perm, can_fork,
+                "{agent_type}: ProcessFork permission ({has_fork_perm}) != can_fork ({can_fork})"
+            );
         }
     }
 
@@ -486,6 +526,73 @@ mod tests {
                 "{agent_type} VoiceTranscribe mismatch"
             );
         }
+    }
+
+    #[test]
+    fn test_mesh_coordinator_permissions() {
+        let perms = PermissionRegistry::permissions_for(AgentType::MeshCoordinator);
+        assert!(perms.has(SyscallPermission::MeshSync));
+        assert!(perms.has(SyscallPermission::ProcessFork));
+        assert!(perms.has(SyscallPermission::GraphQuery));
+        assert!(perms.has(SyscallPermission::VoiceSynthesize));
+        assert!(perms.has(SyscallPermission::IntentRoute));
+        assert!(!perms.has(SyscallPermission::VoiceTranscribe));
+        assert!(!perms.has(SyscallPermission::StateMutate));
+    }
+
+    #[test]
+    fn test_federation_agent_permissions() {
+        let perms = PermissionRegistry::permissions_for(AgentType::FederationAgent);
+        assert!(perms.has(SyscallPermission::FederationContribute));
+        assert!(perms.has(SyscallPermission::VecSearch));
+        assert!(perms.has(SyscallPermission::AttentionSelect));
+        assert!(perms.has(SyscallPermission::VoiceSynthesize));
+        assert!(perms.has(SyscallPermission::IntentRoute));
+        assert!(!perms.has(SyscallPermission::VoiceTranscribe));
+        assert!(!perms.has(SyscallPermission::StateMutate));
+        assert!(!perms.has(SyscallPermission::ProcessFork));
+    }
+
+    #[test]
+    fn test_billing_manager_permissions() {
+        let perms = PermissionRegistry::permissions_for(AgentType::BillingManager);
+        assert!(perms.has(SyscallPermission::StateMutate));
+        assert!(perms.has(SyscallPermission::VecInsert));
+        assert!(perms.has(SyscallPermission::VecDelete));
+        assert!(perms.has(SyscallPermission::VoiceSynthesize));
+        assert!(perms.has(SyscallPermission::IntentRoute));
+        assert!(!perms.has(SyscallPermission::VoiceTranscribe));
+        assert!(!perms.has(SyscallPermission::ProcessFork));
+        assert!(!perms.has(SyscallPermission::MeshSync));
+    }
+
+    #[test]
+    fn test_new_types_no_voice_transcribe() {
+        // New agent types should NOT have VoiceTranscribe
+        assert!(
+            !PermissionRegistry::permissions_for(AgentType::MeshCoordinator)
+                .has(SyscallPermission::VoiceTranscribe)
+        );
+        assert!(
+            !PermissionRegistry::permissions_for(AgentType::FederationAgent)
+                .has(SyscallPermission::VoiceTranscribe)
+        );
+        assert!(
+            !PermissionRegistry::permissions_for(AgentType::BillingManager)
+                .has(SyscallPermission::VoiceTranscribe)
+        );
+    }
+
+    #[test]
+    fn test_spawn_hierarchy_mesh_coordinator() {
+        assert!(PermissionRegistry::can_spawn(
+            AgentType::MeshCoordinator,
+            AgentType::Worker
+        ));
+        assert!(!PermissionRegistry::can_spawn(
+            AgentType::MeshCoordinator,
+            AgentType::Coordinator
+        ));
     }
 
     #[test]

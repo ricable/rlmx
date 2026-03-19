@@ -2,7 +2,7 @@
 
 | Field    | Value                     |
 |----------|---------------------------|
-| Status   | Proposed                  |
+| Status   | Implemented               |
 | Date     | 2026-03-19                |
 | Authors  | Cedric                    |
 | Replaces | —                         |

@@ -5,96 +5,164 @@
 //! in Health and Shopping domains). The `MultiIntentDecomposer` handles
 //! this decomposition with domain embedding similarity (stub cosine sim).
 
+pub use rlmx_kernel::{Intent, LifeDomain};
 use serde::{Deserialize, Serialize};
 
-/// The 12 life domains that intents can be classified into.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum LifeDomain {
-    Finance,
-    Health,
-    Legal,
-    Shopping,
-    Calendar,
-    Emergency,
-    Travel,
-    Education,
-    Entertainment,
-    HomeAutomation,
-    Communication,
-    Productivity,
-}
+/// All 12 kernel life domain variants for iteration.
+const ALL_LIFE_DOMAINS: [LifeDomain; 12] = [
+    LifeDomain::Finance,
+    LifeDomain::Health,
+    LifeDomain::Legal,
+    LifeDomain::Career,
+    LifeDomain::Education,
+    LifeDomain::Home,
+    LifeDomain::Shopping,
+    LifeDomain::Travel,
+    LifeDomain::Social,
+    LifeDomain::Government,
+    LifeDomain::Automotive,
+    LifeDomain::Pet,
+];
 
-impl LifeDomain {
-    /// Returns all 12 life domain variants.
-    pub fn all() -> &'static [LifeDomain] {
-        &[
-            LifeDomain::Finance,
-            LifeDomain::Health,
-            LifeDomain::Legal,
-            LifeDomain::Shopping,
-            LifeDomain::Calendar,
-            LifeDomain::Emergency,
-            LifeDomain::Travel,
-            LifeDomain::Education,
-            LifeDomain::Entertainment,
-            LifeDomain::HomeAutomation,
-            LifeDomain::Communication,
-            LifeDomain::Productivity,
-        ]
-    }
-
-    /// Returns stub keyword associations for domain classification.
-    fn keywords(&self) -> &'static [&'static str] {
-        match self {
-            LifeDomain::Finance => &[
-                "pay", "money", "transfer", "balance", "bank", "invest", "bill",
-                "budget", "savings", "stock", "crypto", "price",
-            ],
-            LifeDomain::Health => &[
-                "doctor", "appointment", "medicine", "health", "dentist", "symptom",
-                "prescription", "exercise", "workout", "calories", "hospital",
-            ],
-            LifeDomain::Legal => &[
-                "lawyer", "contract", "sue", "legal", "court", "rights", "law",
-                "attorney", "compliance", "regulation",
-            ],
-            LifeDomain::Shopping => &[
-                "buy", "order", "purchase", "cart", "shop", "price", "deal",
-                "discount", "deliver", "product", "food", "grocery",
-            ],
-            LifeDomain::Calendar => &[
-                "schedule", "meeting", "remind", "calendar", "event", "tomorrow",
-                "today", "appointment", "book", "cancel", "reschedule",
-            ],
-            LifeDomain::Emergency => &[
-                "emergency", "help", "urgent", "911", "fire", "ambulance",
-                "police", "danger", "accident", "sos",
-            ],
-            LifeDomain::Travel => &[
-                "flight", "hotel", "travel", "trip", "book", "destination",
-                "airport", "train", "uber", "lyft", "taxi",
-            ],
-            LifeDomain::Education => &[
-                "learn", "study", "course", "class", "teach", "homework",
-                "exam", "lecture", "tutorial", "school", "university",
-            ],
-            LifeDomain::Entertainment => &[
-                "play", "music", "movie", "game", "watch", "listen", "show",
-                "stream", "concert", "podcast",
-            ],
-            LifeDomain::HomeAutomation => &[
-                "light", "thermostat", "lock", "alarm", "camera", "smart",
-                "temperature", "door", "garage", "vacuum",
-            ],
-            LifeDomain::Communication => &[
-                "call", "text", "message", "email", "send", "reply", "chat",
-                "contact", "phone", "notification",
-            ],
-            LifeDomain::Productivity => &[
-                "todo", "task", "note", "list", "project", "deadline", "plan",
-                "organize", "workflow", "focus",
-            ],
-        }
+/// Returns stub keyword associations for domain classification.
+fn keywords_for_domain(domain: &LifeDomain) -> &'static [&'static str] {
+    match domain {
+        LifeDomain::Finance => &[
+            "pay", "money", "transfer", "balance", "bank", "invest", "bill", "budget", "savings",
+            "stock", "crypto", "price",
+        ],
+        LifeDomain::Health => &[
+            "doctor",
+            "appointment",
+            "medicine",
+            "health",
+            "dentist",
+            "symptom",
+            "prescription",
+            "exercise",
+            "workout",
+            "calories",
+            "hospital",
+            "emergency",
+            "help",
+            "urgent",
+            "911",
+            "fire",
+            "ambulance",
+            "police",
+            "danger",
+            "accident",
+            "sos",
+        ],
+        LifeDomain::Legal => &[
+            "lawyer",
+            "contract",
+            "sue",
+            "legal",
+            "court",
+            "rights",
+            "law",
+            "attorney",
+            "compliance",
+            "regulation",
+        ],
+        LifeDomain::Career => &[
+            "todo", "task", "note", "list", "project", "deadline", "plan", "organize", "workflow",
+            "focus",
+        ],
+        LifeDomain::Education => &[
+            "learn",
+            "study",
+            "course",
+            "class",
+            "teach",
+            "homework",
+            "exam",
+            "lecture",
+            "tutorial",
+            "school",
+            "university",
+            "schedule",
+            "meeting",
+            "remind",
+            "calendar",
+            "event",
+            "tomorrow",
+            "today",
+            "book",
+            "cancel",
+            "reschedule",
+        ],
+        LifeDomain::Home => &[
+            "light",
+            "thermostat",
+            "lock",
+            "alarm",
+            "camera",
+            "smart",
+            "temperature",
+            "door",
+            "garage",
+            "vacuum",
+        ],
+        LifeDomain::Shopping => &[
+            "buy", "order", "purchase", "cart", "shop", "price", "deal", "discount", "deliver",
+            "product", "food", "grocery",
+        ],
+        LifeDomain::Travel => &[
+            "flight",
+            "hotel",
+            "travel",
+            "trip",
+            "destination",
+            "airport",
+            "train",
+            "uber",
+            "lyft",
+            "taxi",
+        ],
+        LifeDomain::Social => &[
+            "play",
+            "music",
+            "movie",
+            "game",
+            "watch",
+            "listen",
+            "show",
+            "stream",
+            "concert",
+            "podcast",
+            "call",
+            "text",
+            "message",
+            "email",
+            "send",
+            "reply",
+            "chat",
+            "contact",
+            "phone",
+            "notification",
+        ],
+        LifeDomain::Government => &[
+            "tax", "license", "passport", "permit", "visa", "census", "vote", "dmv", "registry",
+            "filing",
+        ],
+        LifeDomain::Automotive => &[
+            "car",
+            "gas",
+            "parking",
+            "mechanic",
+            "tire",
+            "oil",
+            "engine",
+            "mileage",
+            "insurance",
+            "drive",
+        ],
+        LifeDomain::Pet => &[
+            "vet", "dog", "cat", "pet", "walk", "feed", "groom", "kibble", "leash", "puppy",
+            "kitten",
+        ],
     }
 }
 
@@ -109,19 +177,9 @@ pub struct ExtractedEntity {
     pub span: (usize, usize),
 }
 
-/// A structured intent extracted from a voice utterance.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Intent {
-    /// Which life domain this intent belongs to.
-    pub domain: LifeDomain,
-    /// The action to perform (e.g., "cancel", "search", "compare").
-    pub action: String,
-    /// Entities extracted from the utterance.
-    pub entities: Vec<ExtractedEntity>,
-    /// Urgency score in [0, 1].
-    pub urgency: f32,
-    /// Decomposition confidence in [0, 1].
-    pub confidence: f32,
+/// Convert extracted entities to simple string values for kernel Intent.
+fn entities_to_strings(entities: &[ExtractedEntity]) -> Vec<String> {
+    entities.iter().map(|e| e.value.clone()).collect()
 }
 
 /// Classifies a transcript into a primary life domain.
@@ -147,11 +205,9 @@ impl IntentClassifier {
         let lower = transcript.to_lowercase();
         let mut best: Option<(LifeDomain, f32)> = None;
 
-        for domain in LifeDomain::all() {
-            let score = Self::keyword_score(&lower, domain.keywords());
-            if score > self.confidence_threshold
-                && best.as_ref().is_none_or(|(_, s)| score > *s)
-            {
+        for domain in &ALL_LIFE_DOMAINS {
+            let score = Self::keyword_score(&lower, keywords_for_domain(domain));
+            if score > self.confidence_threshold && best.as_ref().is_none_or(|(_, s)| score > *s) {
                 best = Some((*domain, score));
             }
         }
@@ -200,11 +256,7 @@ impl MultiIntentDecomposer {
         for clause in &clauses {
             if let Some((domain, confidence)) = self.classifier.classify(clause) {
                 if confidence < 0.3 {
-                    tracing::debug!(
-                        confidence,
-                        clause,
-                        "discarding low-confidence intent"
-                    );
+                    tracing::debug!(confidence, clause, "discarding low-confidence intent");
                     continue;
                 }
 
@@ -215,15 +267,19 @@ impl MultiIntentDecomposer {
                 intents.push(Intent {
                     domain,
                     action,
-                    entities,
-                    urgency,
-                    confidence,
+                    entities: entities_to_strings(&entities),
+                    urgency: urgency as f64,
+                    confidence: confidence as f64,
                 });
             }
         }
 
         // Sort by urgency descending (highest first).
-        intents.sort_by(|a, b| b.urgency.partial_cmp(&a.urgency).unwrap_or(std::cmp::Ordering::Equal));
+        intents.sort_by(|a, b| {
+            b.urgency
+                .partial_cmp(&a.urgency)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         intents
     }
 
@@ -251,9 +307,9 @@ impl MultiIntentDecomposer {
     /// Extract the primary action verb from a clause (stub).
     fn extract_action(clause: &str) -> String {
         let action_words = [
-            "cancel", "book", "order", "buy", "pay", "send", "call", "search",
-            "compare", "schedule", "remind", "play", "turn", "set", "check",
-            "find", "get", "start", "stop", "open", "close", "lock", "unlock",
+            "cancel", "book", "order", "buy", "pay", "send", "call", "search", "compare",
+            "schedule", "remind", "play", "turn", "set", "check", "find", "get", "start", "stop",
+            "open", "close", "lock", "unlock",
         ];
         let lower = clause.to_lowercase();
         for word in &action_words {
@@ -287,9 +343,21 @@ impl MultiIntentDecomposer {
         }
 
         // Detect time-related words.
-        let time_words = ["tomorrow", "today", "tonight", "monday", "tuesday",
-            "wednesday", "thursday", "friday", "saturday", "sunday",
-            "morning", "afternoon", "evening"];
+        let time_words = [
+            "tomorrow",
+            "today",
+            "tonight",
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+            "morning",
+            "afternoon",
+            "evening",
+        ];
         for tw in &time_words {
             if let Some(pos) = lower.find(tw) {
                 let offset = full_transcript.to_lowercase().find(tw).unwrap_or(pos);
@@ -309,21 +377,30 @@ impl MultiIntentDecomposer {
         let lower = clause.to_lowercase();
         let mut urgency: f32 = 0.3; // base urgency
 
-        // Emergency domain always has high urgency.
-        if domain == LifeDomain::Emergency {
+        // Health domain with emergency keywords always has high urgency.
+        let emergency_words = ["emergency", "911", "ambulance", "fire", "sos", "danger"];
+        if domain == LifeDomain::Health && emergency_words.iter().any(|w| lower.contains(w)) {
             return 1.0;
         }
 
-        let urgent_markers = ["urgent", "asap", "immediately", "right now", "hurry",
-            "emergency", "critical", "important"];
+        let urgent_markers = [
+            "urgent",
+            "asap",
+            "immediately",
+            "right now",
+            "hurry",
+            "emergency",
+            "critical",
+            "important",
+        ];
         for marker in &urgent_markers {
             if lower.contains(marker) {
                 urgency += 0.3;
             }
         }
 
-        // Calendar items for today/tomorrow get a bump.
-        if domain == LifeDomain::Calendar
+        // Education items for today/tomorrow get a bump (calendar-like).
+        if domain == LifeDomain::Education
             && (lower.contains("today") || lower.contains("tomorrow"))
         {
             urgency += 0.2;
@@ -338,8 +415,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_life_domain_all_returns_12() {
-        assert_eq!(LifeDomain::all().len(), 12);
+    fn test_all_life_domains_returns_12() {
+        assert_eq!(ALL_LIFE_DOMAINS.len(), 12);
     }
 
     #[test]
@@ -385,13 +462,14 @@ mod tests {
     #[test]
     fn test_decomposer_multi_intent() {
         let decomposer = MultiIntentDecomposer::new(0.3);
-        let intents =
-            decomposer.decompose("cancel my dentist appointment and order more dog food");
-        assert!(intents.len() >= 2, "expected at least 2 intents, got {}", intents.len());
+        let intents = decomposer.decompose("cancel my dentist appointment and order more dog food");
+        assert!(
+            intents.len() >= 2,
+            "expected at least 2 intents, got {}",
+            intents.len()
+        );
 
         let domains: Vec<LifeDomain> = intents.iter().map(|i| i.domain).collect();
-        // Should have at least Health and Shopping (calendar might also match
-        // due to "cancel"+"appointment").
         assert!(
             domains.contains(&LifeDomain::Shopping),
             "missing Shopping domain"
@@ -408,9 +486,8 @@ mod tests {
     #[test]
     fn test_decomposer_urgency_ordering() {
         let decomposer = MultiIntentDecomposer::new(0.3);
-        let intents = decomposer.decompose(
-            "call 911 for an emergency and also order some groceries",
-        );
+        let intents =
+            decomposer.decompose("call 911 for an emergency and also order some groceries");
         if intents.len() >= 2 {
             assert!(
                 intents[0].urgency >= intents[1].urgency,
@@ -444,7 +521,10 @@ mod tests {
             "schedule for tomorrow",
             "schedule for tomorrow",
         );
-        let dates: Vec<_> = entities.iter().filter(|e| e.entity_type == "date").collect();
+        let dates: Vec<_> = entities
+            .iter()
+            .filter(|e| e.entity_type == "date")
+            .collect();
         assert!(!dates.is_empty());
         assert_eq!(dates[0].value, "tomorrow");
     }
@@ -452,7 +532,7 @@ mod tests {
     #[test]
     fn test_emergency_always_max_urgency() {
         let urgency =
-            MultiIntentDecomposer::estimate_urgency("call 911 emergency", LifeDomain::Emergency);
+            MultiIntentDecomposer::estimate_urgency("call 911 emergency", LifeDomain::Health);
         assert!((urgency - 1.0).abs() < f32::EPSILON);
     }
 
@@ -469,6 +549,10 @@ mod tests {
     #[test]
     fn test_split_clauses() {
         let clauses = MultiIntentDecomposer::split_clauses("do A and then do B also do C");
-        assert!(clauses.len() >= 3, "expected >= 3 clauses, got {:?}", clauses);
+        assert!(
+            clauses.len() >= 3,
+            "expected >= 3 clauses, got {:?}",
+            clauses
+        );
     }
 }

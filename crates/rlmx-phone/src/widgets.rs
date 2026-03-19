@@ -73,11 +73,7 @@ impl WidgetManager {
     }
 
     /// Update a widget's data.
-    pub fn update_widget(
-        &mut self,
-        widget_type: WidgetType,
-        data: serde_json::Value,
-    ) -> bool {
+    pub fn update_widget(&mut self, widget_type: WidgetType, data: serde_json::Value) -> bool {
         if !self.can_update(widget_type) {
             return false;
         }
@@ -112,7 +108,11 @@ impl WidgetManager {
     }
 
     /// Generate agent status widget data.
-    pub fn agent_status_data(active_count: usize, pending_tasks: usize, last_action: &str) -> serde_json::Value {
+    pub fn agent_status_data(
+        active_count: usize,
+        pending_tasks: usize,
+        last_action: &str,
+    ) -> serde_json::Value {
         serde_json::json!({
             "active_agents": active_count,
             "pending_tasks": pending_tasks,

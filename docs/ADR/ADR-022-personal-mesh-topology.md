@@ -1,6 +1,6 @@
 # ADR-022: Personal Mesh Topology
 
-Status: Proposed
+Status: Implemented
 
 ## Context
 RuVix Mesh extends the existing 5-zone swarm topology (ADR-001) into a personal multi-device mesh where each user's devices form a coordinated agent runtime. The mesh must handle device discovery, state synchronization, zone assignment, and graceful degradation when devices go offline.

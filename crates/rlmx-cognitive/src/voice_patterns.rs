@@ -165,16 +165,11 @@ impl VoicePatternBank {
 
         // Evict lowest-quality pattern if at capacity.
         if self.patterns.len() >= self.max_patterns {
-            if let Some((idx, _)) =
-                self.patterns
-                    .iter()
-                    .enumerate()
-                    .min_by(|(_, a), (_, b)| {
-                        a.result_quality
-                            .partial_cmp(&b.result_quality)
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
-            {
+            if let Some((idx, _)) = self.patterns.iter().enumerate().min_by(|(_, a), (_, b)| {
+                a.result_quality
+                    .partial_cmp(&b.result_quality)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            }) {
                 self.patterns.remove(idx);
             }
         }
@@ -184,7 +179,11 @@ impl VoicePatternBank {
     }
 
     /// Search patterns by emotion valence range.
-    pub fn search_by_emotion(&self, min_valence: f32, max_valence: f32) -> Vec<&VoiceEnrichedPattern> {
+    pub fn search_by_emotion(
+        &self,
+        min_valence: f32,
+        max_valence: f32,
+    ) -> Vec<&VoiceEnrichedPattern> {
         self.patterns
             .iter()
             .filter(|p| {
@@ -255,20 +254,49 @@ impl VoicePatternBank {
 /// 1. Strip PII from transcript embedding (re-embed without named entities).
 /// 2. Bucket emotion valence into 5 discrete categories.
 /// 3. Add Laplace noise (epsilon=1.0) to urgency and satisfaction scores.
+///
+/// Also enforces ADR-017 privacy invariant 5: minimum aggregation threshold
+/// (patterns are only safe to federate when >= `min_aggregation_threshold`
+/// users share the same domain+region bucket).
 pub struct FederatedAnonymizer {
     /// Differential privacy epsilon parameter.
     pub epsilon: f64,
+    /// Minimum number of users in a domain+region bucket before patterns from
+    /// that bucket may be federated (ADR-017 invariant 5). Default: 1000.
+    pub min_aggregation_threshold: usize,
 }
 
 impl Default for FederatedAnonymizer {
     fn default() -> Self {
-        Self { epsilon: 1.0 }
+        Self {
+            epsilon: 1.0,
+            min_aggregation_threshold: 1000,
+        }
     }
 }
 
 impl FederatedAnonymizer {
     pub fn new(epsilon: f64) -> Self {
-        Self { epsilon }
+        Self {
+            epsilon,
+            min_aggregation_threshold: 1000,
+        }
+    }
+
+    /// Create an anonymizer with a custom aggregation threshold.
+    pub fn with_aggregation_threshold(epsilon: f64, min_aggregation_threshold: usize) -> Self {
+        Self {
+            epsilon,
+            min_aggregation_threshold,
+        }
+    }
+
+    /// Check whether a domain+region bucket has enough users to safely
+    /// federate patterns from it (ADR-017 invariant 5).
+    ///
+    /// Returns `true` if `bucket_user_count >= min_aggregation_threshold`.
+    pub fn meets_aggregation_threshold(&self, bucket_user_count: usize) -> bool {
+        bucket_user_count >= self.min_aggregation_threshold
     }
 
     /// Strip PII by zeroing embedding dimensions associated with named entities.
@@ -321,7 +349,9 @@ impl FederatedAnonymizer {
         let sanitized_embedding = Self::strip_pii(&pattern.query_embedding);
         let emotion_bucket = pattern.voice_trigger_emotion.map(Self::bucket_emotion);
         let noisy_urgency = self.add_laplace_noise(pattern.urgency_level);
-        let noisy_satisfaction = pattern.response_satisfaction.map(|s| self.add_laplace_noise(s));
+        let noisy_satisfaction = pattern
+            .response_satisfaction
+            .map(|s| self.add_laplace_noise(s));
 
         AnonymizedPattern {
             id: Uuid::new_v4(), // New ID — breaks linkability.
@@ -544,9 +574,7 @@ mod tests {
     fn test_record_rejects_invalid_valence() {
         let mut bank = VoicePatternBank::new(100);
         let err = bank
-            .record_voice_interaction(
-                "query", vec![], 0.5, Some(1.5), 0.5, Modality::Text, None,
-            )
+            .record_voice_interaction("query", vec![], 0.5, Some(1.5), 0.5, Modality::Text, None)
             .unwrap_err();
         assert!(matches!(err, VoicePatternError::InvalidValence(_)));
     }
@@ -555,9 +583,7 @@ mod tests {
     fn test_record_rejects_invalid_urgency() {
         let mut bank = VoicePatternBank::new(100);
         let err = bank
-            .record_voice_interaction(
-                "query", vec![], 0.5, None, 1.5, Modality::Text, None,
-            )
+            .record_voice_interaction("query", vec![], 0.5, None, 1.5, Modality::Text, None)
             .unwrap_err();
         assert!(matches!(err, VoicePatternError::InvalidUrgency(_)));
     }
@@ -580,12 +606,36 @@ mod tests {
     #[test]
     fn test_search_by_emotion() {
         let mut bank = VoicePatternBank::new(100);
-        bank.record_voice_interaction("happy query", vec![], 0.8, Some(0.8), 0.1, Modality::Voice, None)
-            .unwrap();
-        bank.record_voice_interaction("sad query", vec![], 0.7, Some(-0.7), 0.1, Modality::Voice, None)
-            .unwrap();
-        bank.record_voice_interaction("neutral query", vec![], 0.6, Some(0.0), 0.1, Modality::Text, None)
-            .unwrap();
+        bank.record_voice_interaction(
+            "happy query",
+            vec![],
+            0.8,
+            Some(0.8),
+            0.1,
+            Modality::Voice,
+            None,
+        )
+        .unwrap();
+        bank.record_voice_interaction(
+            "sad query",
+            vec![],
+            0.7,
+            Some(-0.7),
+            0.1,
+            Modality::Voice,
+            None,
+        )
+        .unwrap();
+        bank.record_voice_interaction(
+            "neutral query",
+            vec![],
+            0.6,
+            Some(0.0),
+            0.1,
+            Modality::Text,
+            None,
+        )
+        .unwrap();
         bank.record_voice_interaction("no emotion", vec![], 0.5, None, 0.1, Modality::Text, None)
             .unwrap();
 
@@ -641,25 +691,56 @@ mod tests {
         let original = Sona::simple_embedding("some user query with John Smith");
         let sanitized = FederatedAnonymizer::strip_pii(&original);
         let norm: f32 = sanitized.iter().map(|v| v * v).sum::<f32>().sqrt();
-        assert!((norm - 1.0).abs() < 0.01, "Sanitized embedding should be ~unit norm, got {}", norm);
+        assert!(
+            (norm - 1.0).abs() < 0.01,
+            "Sanitized embedding should be ~unit norm, got {}",
+            norm
+        );
     }
 
     #[test]
     fn test_bucket_emotion() {
-        assert_eq!(FederatedAnonymizer::bucket_emotion(-0.9), EmotionBucket::VeryNegative);
-        assert_eq!(FederatedAnonymizer::bucket_emotion(-0.4), EmotionBucket::Negative);
-        assert_eq!(FederatedAnonymizer::bucket_emotion(0.0), EmotionBucket::Neutral);
-        assert_eq!(FederatedAnonymizer::bucket_emotion(0.4), EmotionBucket::Positive);
-        assert_eq!(FederatedAnonymizer::bucket_emotion(0.9), EmotionBucket::VeryPositive);
+        assert_eq!(
+            FederatedAnonymizer::bucket_emotion(-0.9),
+            EmotionBucket::VeryNegative
+        );
+        assert_eq!(
+            FederatedAnonymizer::bucket_emotion(-0.4),
+            EmotionBucket::Negative
+        );
+        assert_eq!(
+            FederatedAnonymizer::bucket_emotion(0.0),
+            EmotionBucket::Neutral
+        );
+        assert_eq!(
+            FederatedAnonymizer::bucket_emotion(0.4),
+            EmotionBucket::Positive
+        );
+        assert_eq!(
+            FederatedAnonymizer::bucket_emotion(0.9),
+            EmotionBucket::VeryPositive
+        );
     }
 
     #[test]
     fn test_bucket_emotion_boundaries() {
         // Exact boundary values.
-        assert_eq!(FederatedAnonymizer::bucket_emotion(-0.6), EmotionBucket::VeryNegative);
-        assert_eq!(FederatedAnonymizer::bucket_emotion(-0.2), EmotionBucket::Negative);
-        assert_eq!(FederatedAnonymizer::bucket_emotion(0.2), EmotionBucket::Neutral);
-        assert_eq!(FederatedAnonymizer::bucket_emotion(0.6), EmotionBucket::Positive);
+        assert_eq!(
+            FederatedAnonymizer::bucket_emotion(-0.6),
+            EmotionBucket::VeryNegative
+        );
+        assert_eq!(
+            FederatedAnonymizer::bucket_emotion(-0.2),
+            EmotionBucket::Negative
+        );
+        assert_eq!(
+            FederatedAnonymizer::bucket_emotion(0.2),
+            EmotionBucket::Neutral
+        );
+        assert_eq!(
+            FederatedAnonymizer::bucket_emotion(0.6),
+            EmotionBucket::Positive
+        );
     }
 
     #[test]
@@ -668,7 +749,9 @@ mod tests {
         let original = 0.5;
         // Run many times and check that at least some values differ.
         let noisy_values: Vec<f32> = (0..100).map(|_| anon.add_laplace_noise(original)).collect();
-        let all_same = noisy_values.iter().all(|&v| (v - original).abs() < f32::EPSILON);
+        let all_same = noisy_values
+            .iter()
+            .all(|&v| (v - original).abs() < f32::EPSILON);
         assert!(!all_same, "Laplace noise should produce varying values");
     }
 
@@ -809,10 +892,16 @@ mod tests {
 
         let model = NotificationFatigueModel::default();
         let score = model.fatigue_score(&tracker, "alert");
-        assert!((score - 1.0).abs() < 0.01, "All ignored should give fatigue=1.0");
+        assert!(
+            (score - 1.0).abs() < 0.01,
+            "All ignored should give fatigue=1.0"
+        );
 
         let score_unknown = model.fatigue_score(&tracker, "unknown");
-        assert!((score_unknown - 0.0).abs() < 0.01, "No history should give fatigue=0.0");
+        assert!(
+            (score_unknown - 0.0).abs() < 0.01,
+            "No history should give fatigue=0.0"
+        );
     }
 
     #[test]
@@ -821,5 +910,32 @@ mod tests {
         let model = NotificationFatigueModel::default();
         // No history should assume user will respond.
         assert!(model.predict_response(&tracker, "anything"));
+    }
+
+    // -- Aggregation threshold tests (ADR-017 invariant 5) --
+
+    #[test]
+    fn test_aggregation_threshold_default() {
+        let anon = FederatedAnonymizer::default();
+        assert_eq!(anon.min_aggregation_threshold, 1000);
+    }
+
+    #[test]
+    fn test_aggregation_threshold_enforced() {
+        let anon = FederatedAnonymizer::default();
+        // Below threshold: not safe to federate.
+        assert!(!anon.meets_aggregation_threshold(999));
+        assert!(!anon.meets_aggregation_threshold(0));
+        // At or above threshold: safe.
+        assert!(anon.meets_aggregation_threshold(1000));
+        assert!(anon.meets_aggregation_threshold(5000));
+    }
+
+    #[test]
+    fn test_custom_aggregation_threshold() {
+        let anon = FederatedAnonymizer::with_aggregation_threshold(1.0, 500);
+        assert_eq!(anon.min_aggregation_threshold, 500);
+        assert!(!anon.meets_aggregation_threshold(499));
+        assert!(anon.meets_aggregation_threshold(500));
     }
 }

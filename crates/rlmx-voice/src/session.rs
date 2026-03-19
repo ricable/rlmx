@@ -5,23 +5,10 @@
 //! delivery. All mutations to turns, intent state, and emotion tracking
 //! flow through the session.
 
-use crate::intent::{Intent, LifeDomain};
 use chrono::{DateTime, Utc};
+pub use rlmx_kernel::{Intent, LifeDomain, ResponseMode};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-
-/// How the system delivers responses to the user.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ResponseMode {
-    /// Driving, AirPods, screen off -- voice only.
-    VoiceOnly,
-    /// Text preference, quiet environment.
-    Visual,
-    /// Phone in hand, screen on -- voice + visual + haptic.
-    Multimodal,
-    /// Phone locked, background notifications.
-    Ambient,
-}
 
 /// Direction of a conversation turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -306,7 +293,6 @@ pub enum VoiceDomainEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::intent::LifeDomain;
 
     fn sample_intent(domain: LifeDomain) -> Intent {
         Intent {

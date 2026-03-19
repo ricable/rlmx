@@ -17,10 +17,14 @@ pub mod types;
 // Re-export primary types for convenient access.
 pub use capability::{CapabilityManager, CapabilityToken};
 pub use events::{create_event_bus, DomainEvent, DomainEventBus};
+#[cfg(feature = "ruvnet-phase1")]
+pub use graph::EnhancedGraph;
 pub use graph::Graph;
 #[cfg(feature = "ruvector")]
 pub use memory::HnswMemoryRegion;
 pub use memory::{cosine_similarity, text_to_embedding, ContextSegment, MemoryRegion, EMBED_DIM};
+#[cfg(feature = "ruvnet-phase1")]
+pub use memory::{BloomScreenedRegion, NamespacedMemoryStore};
 pub use process::{Process, ProcessManager, ProcessStatus};
 pub use proof::{Proof, ProofEngine, Witness, WitnessChain};
 pub use router::{RouterInput, RouterOutput, TinyDancerRouter};

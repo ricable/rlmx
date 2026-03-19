@@ -35,11 +35,19 @@ impl LifeScore {
         score
     }
 
+    /// Maximum history entries to retain (prevents unbounded growth).
+    const MAX_HISTORY: usize = 365;
+
     /// Recalculate the composite score (weighted average, clamped to [30, 100]).
     pub fn recalculate(&mut self) {
         let raw = self.finance * 0.30 + self.health * 0.25 + self.time * 0.25 + self.safety * 0.20;
         self.composite = raw.clamp(30.0, 100.0);
         self.history.push((Utc::now(), self.composite));
+        // Cap history to prevent unbounded growth on mobile devices.
+        if self.history.len() > Self::MAX_HISTORY {
+            let excess = self.history.len() - Self::MAX_HISTORY;
+            self.history.drain(..excess);
+        }
     }
 
     /// Update a single domain and recalculate.
@@ -94,6 +102,9 @@ pub struct SavingsEvent {
     pub timestamp: DateTime<Utc>,
 }
 
+/// Maximum savings events to retain (prevents unbounded growth).
+const MAX_SAVINGS_EVENTS: usize = 1000;
+
 /// Cumulative savings counter (invariant 5: all events require proof_id).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MoneySaved {
@@ -129,6 +140,11 @@ impl MoneySaved {
             proof_id,
             timestamp: Utc::now(),
         });
+        // Cap events to prevent unbounded growth on mobile.
+        if self.events.len() > MAX_SAVINGS_EVENTS {
+            let excess = self.events.len() - MAX_SAVINGS_EVENTS;
+            self.events.drain(..excess);
+        }
 
         tracing::info!(
             amount_cents,
@@ -323,20 +339,13 @@ impl AgentCollection {
         let current_xp = self.agent_xp.entry(agent_type.to_string()).or_insert(0);
         *current_xp += xp;
 
-        let current_level = self
-            .agent_levels
-            .entry(agent_type.to_string())
-            .or_insert(1);
+        let current_level = self.agent_levels.entry(agent_type.to_string()).or_insert(1);
 
         if *current_level < 10 {
             let next_level_xp = Self::xp_for_level(*current_level + 1);
             if *current_xp >= next_level_xp {
                 *current_level += 1;
-                tracing::info!(
-                    agent_type,
-                    new_level = *current_level,
-                    "agent leveled up"
-                );
+                tracing::info!(agent_type, new_level = *current_level, "agent leveled up");
                 return true;
             }
         }
@@ -428,7 +437,11 @@ impl UserEngagement {
     /// Initialise 50 achievements.
     fn init_achievements() -> Vec<Achievement> {
         let defs = [
-            ("first_save", "First Save", "Record your first savings event"),
+            (
+                "first_save",
+                "First Save",
+                "Record your first savings event",
+            ),
             ("save_100", "Benjamin", "Save $100 total"),
             ("save_1000", "Grand Saver", "Save $1,000 total"),
             ("save_10000", "Money Master", "Save $10,000 total"),
@@ -441,43 +454,111 @@ impl UserEngagement {
             ("streak_365", "Year of Growth", "Achieve a 365-day streak"),
             ("agent_lv5", "Agent Trainer", "Level any agent to 5"),
             ("agent_lv10", "Agent Master", "Level any agent to 10"),
-            ("all_free_agents", "Full Roster", "Activate all 5 free agents"),
-            ("life_score_80", "Life Optimizer", "Reach 80+ composite life score"),
-            ("life_score_90", "Elite Life", "Reach 90+ composite life score"),
+            (
+                "all_free_agents",
+                "Full Roster",
+                "Activate all 5 free agents",
+            ),
+            (
+                "life_score_80",
+                "Life Optimizer",
+                "Reach 80+ composite life score",
+            ),
+            (
+                "life_score_90",
+                "Elite Life",
+                "Reach 90+ composite life score",
+            ),
             ("finance_80", "Finance Pro", "Reach 80+ finance score"),
             ("health_80", "Health Guru", "Reach 80+ health score"),
             ("time_80", "Time Lord", "Reach 80+ time score"),
             ("safety_80", "Safety First", "Reach 80+ safety score"),
-            ("first_offline", "Off the Grid", "Complete a task while offline"),
-            ("10_offline", "Offline Champion", "Complete 10 tasks while offline"),
+            (
+                "first_offline",
+                "Off the Grid",
+                "Complete a task while offline",
+            ),
+            (
+                "10_offline",
+                "Offline Champion",
+                "Complete 10 tasks while offline",
+            ),
             ("widget_user", "Dashboard Fan", "Use all widget types"),
             ("voice_first", "Voice Pioneer", "Complete 10 voice commands"),
             ("voice_50", "Voice Veteran", "Complete 50 voice commands"),
-            ("notif_engage", "Alert Responder", "Respond to 10 notifications"),
-            ("notif_master", "Notification Ninja", "Respond to 100 notifications"),
+            (
+                "notif_engage",
+                "Alert Responder",
+                "Respond to 10 notifications",
+            ),
+            (
+                "notif_master",
+                "Notification Ninja",
+                "Respond to 100 notifications",
+            ),
             ("early_bird", "Early Bird", "Use the app before 6 AM"),
             ("night_owl", "Night Owl", "Use the app after midnight"),
-            ("weekend_warrior", "Weekend Warrior", "Active every weekend for a month"),
-            ("first_research", "Curious Mind", "Start your first research task"),
-            ("5_domains", "Diversified", "Use agents across 5 different domains"),
-            ("battery_saver", "Eco Mode", "Run agents in low-power mode for a week"),
+            (
+                "weekend_warrior",
+                "Weekend Warrior",
+                "Active every weekend for a month",
+            ),
+            (
+                "first_research",
+                "Curious Mind",
+                "Start your first research task",
+            ),
+            (
+                "5_domains",
+                "Diversified",
+                "Use agents across 5 different domains",
+            ),
+            (
+                "battery_saver",
+                "Eco Mode",
+                "Run agents in low-power mode for a week",
+            ),
             ("swarm_join", "Swarm Member", "Join a distributed swarm"),
-            ("cross_device", "Multi-Device", "Sync between phone and desktop"),
-            ("calendar_100", "Schedule Master", "Process 100 calendar events"),
+            (
+                "cross_device",
+                "Multi-Device",
+                "Sync between phone and desktop",
+            ),
+            (
+                "calendar_100",
+                "Schedule Master",
+                "Process 100 calendar events",
+            ),
             ("email_500", "Inbox Zero", "Triage 500 emails"),
             ("shopping_save", "Deal Hunter", "Find 10 better prices"),
             ("news_read", "Informed Citizen", "Read 100 news digests"),
-            ("weather_check", "Weather Watcher", "Check weather 30 consecutive days"),
+            (
+                "weather_check",
+                "Weather Watcher",
+                "Check weather 30 consecutive days",
+            ),
             ("first_freeze", "Freeze Frame", "Use a streak freeze"),
-            ("perfect_month", "Perfect Month", "30-day streak without a freeze"),
+            (
+                "perfect_month",
+                "Perfect Month",
+                "30-day streak without a freeze",
+            ),
             ("level_10", "Rising Star", "Reach user level 10"),
             ("level_25", "Expert", "Reach user level 25"),
             ("level_50", "Grand Master", "Reach user level 50"),
             ("xp_1000", "XP Collector", "Earn 1,000 total XP"),
             ("xp_10000", "XP Hoarder", "Earn 10,000 total XP"),
             ("xp_100000", "XP Legend", "Earn 100,000 total XP"),
-            ("collection_half", "Half Collection", "Unlock half the collection grid"),
-            ("collection_full", "Full Collection", "Complete the entire collection grid"),
+            (
+                "collection_half",
+                "Half Collection",
+                "Unlock half the collection grid",
+            ),
+            (
+                "collection_full",
+                "Full Collection",
+                "Complete the entire collection grid",
+            ),
         ];
 
         defs.iter()

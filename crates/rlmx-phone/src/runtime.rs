@@ -32,7 +32,8 @@ pub struct PhoneRuntime {
 impl PhoneRuntime {
     /// Create a new phone runtime for a device.
     pub fn new(device_id: Uuid, user_id: Uuid, capabilities: DeviceCapabilities) -> Self {
-        let max_concurrent = BatteryAwareScheduler::new(capabilities.clone()).max_concurrent_agents();
+        let max_concurrent =
+            BatteryAwareScheduler::new(capabilities.clone()).max_concurrent_agents();
         Self {
             device_id,
             user_id,
@@ -136,19 +137,22 @@ impl PhoneRuntime {
                 }
             }
 
-            self.events.push(PhoneDomainEvent::BatteryPolicyChanged { new_policy });
-            tracing::info!(?new_policy, battery_pct, ?thermal_state, "battery policy updated");
+            self.events
+                .push(PhoneDomainEvent::BatteryPolicyChanged { new_policy });
+            tracing::info!(
+                ?new_policy,
+                battery_pct,
+                ?thermal_state,
+                "battery policy updated"
+            );
         }
     }
 
     /// Record verified savings (domain service: record_savings).
-    pub fn record_savings(
-        &mut self,
-        amount_cents: u64,
-        domain: &str,
-        proof_id: Uuid,
-    ) {
-        self.engagement.money_saved.record(amount_cents, domain, proof_id);
+    pub fn record_savings(&mut self, amount_cents: u64, domain: &str, proof_id: Uuid) {
+        self.engagement
+            .money_saved
+            .record(amount_cents, domain, proof_id);
 
         // Recalculate finance score (rough heuristic).
         let finance_bump = (amount_cents as f32 / 100.0).min(5.0);
@@ -308,7 +312,9 @@ mod tests {
         // Non-essential agent should be suspended.
         assert_eq!(rt.coordinator.running_count(), 5);
         let events = rt.drain_events();
-        assert!(events.iter().any(|e| matches!(e, PhoneDomainEvent::BatteryPolicyChanged { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, PhoneDomainEvent::BatteryPolicyChanged { .. })));
     }
 
     #[test]
@@ -317,7 +323,9 @@ mod tests {
         rt.record_savings(1500, "shopping", Uuid::new_v4());
         assert_eq!(rt.engagement.money_saved.total_cents, 1500);
         let events = rt.drain_events();
-        assert!(events.iter().any(|e| matches!(e, PhoneDomainEvent::SavingsRecorded { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, PhoneDomainEvent::SavingsRecorded { .. })));
     }
 
     #[test]

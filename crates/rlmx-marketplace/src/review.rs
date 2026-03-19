@@ -305,9 +305,7 @@ mod tests {
         let sub_id = pipeline.submit(agent_id);
 
         // Auto-passed, not flagged
-        pipeline
-            .run_automated_review(&sub_id, &[])
-            .unwrap();
+        pipeline.run_automated_review(&sub_id, &[]).unwrap();
 
         let result = pipeline.complete_human_review(
             &sub_id,

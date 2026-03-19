@@ -18,6 +18,14 @@ neural = [
     "dep:ruvector-memopt",
     "dep:cognitum-rs",
 ]
+ruvnet-phase4 = ["ruvnet-phase3", "neural"]
+ruvnet-phase3 = [
+    "neural",
+    "dep:ruvector-attention",
+    "dep:ruvector-attn-mincut",
+    "dep:cognitum-gate-tilezero",
+    "dep:cognitum-gate-kernel",
+]
 
 [dependencies]
 tokio = { workspace = true }
@@ -40,3 +48,9 @@ ruv-neural-memory = { version = "0.1.0", optional = true }
 ruvector-cognitive-container = { version = "2.0.4", optional = true }
 ruvector-memopt = { version = "0.5.0", optional = true }
 cognitum-rs = { version = "0.1.0", optional = true }
+
+# Optional: Phase 3 attention & gate crates
+ruvector-attention = { version = "2.0.4", optional = true }
+ruvector-attn-mincut = { version = "2.0.4", optional = true }
+cognitum-gate-tilezero = { version = "0.1.1", optional = true }
+cognitum-gate-kernel = { version = "0.1.1", optional = true }

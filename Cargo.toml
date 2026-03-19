@@ -15,6 +15,11 @@ members = [
     "crates/rlmx-phone",
     "crates/rlmx-cli",
     "crates/rlmx-marketplace",
+    "crates/rlmx-napi",
+    "crates/rlmx-wasm",
+    "crates/rlmx-mesh",
+    "crates/rlmx-federation",
+    "crates/rlmx-billing",
 ]
 
 [workspace.dependencies]

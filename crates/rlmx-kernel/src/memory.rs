@@ -327,6 +327,135 @@ impl MemoryRegion {
 
 // ---------------------------------------------------------------------------
 // Tests
+
+#[cfg(feature = "ruvnet-phase1")]
+pub mod phase1_integration {
+    use super::*;
+    use ruvector_collections as rvc_col;
+    use ruvector_filter as rvf;
+    use tracing::debug;
+    const BUCKET_COUNT: u32 = 16;
+    fn embedding_to_bucket_key(embedding: &[f32]) -> String {
+        let dims = embedding.len().min(8);
+        let mut key = String::with_capacity(dims * 3);
+        for (i, &v) in embedding.iter().take(dims).enumerate() {
+            let clamped = v.clamp(-1.0, 1.0);
+            let bucket = ((clamped + 1.0) / 2.0 * (BUCKET_COUNT - 1) as f32).round() as u32;
+            if i > 0 {
+                key.push(':');
+            }
+            key.push_str(&bucket.to_string());
+        }
+        key
+    }
+    pub struct BloomScreenedRegion {
+        pub name: String,
+        inner: HnswMemoryRegion,
+        filter: rvf::BloomFilter,
+    }
+    impl BloomScreenedRegion {
+        pub fn new(
+            name: impl Into<String>,
+            dim: usize,
+            expected_items: usize,
+            fp_rate: f64,
+        ) -> Self {
+            let name = name.into();
+            let filter = rvf::BloomFilter::new(expected_items, fp_rate);
+            debug!(region = %name, dim, expected_items, fp_rate, "created BloomScreenedRegion");
+            Self {
+                name: name.clone(),
+                inner: HnswMemoryRegion::new(name, dim),
+                filter,
+            }
+        }
+        pub fn insert(
+            &mut self,
+            embedding: Vec<f32>,
+            content: String,
+            metadata: SegmentMetadata,
+        ) -> Uuid {
+            let key = embedding_to_bucket_key(&embedding);
+            self.filter.insert(&key);
+            self.inner.insert(embedding, content, metadata)
+        }
+        pub fn delete(&mut self, segment_id: &Uuid) -> KernelResult<bool> {
+            self.inner.delete(segment_id)
+        }
+        pub fn search(&self, query: &[f32], k: usize, filters: &SearchFilters) -> Vec<SearchHit> {
+            let key = embedding_to_bucket_key(query);
+            if !self.filter.contains(&key) {
+                debug!(region = %self.name, "bloom filter rejected query");
+                return Vec::new();
+            }
+            self.inner.search(query, k, filters)
+        }
+        pub fn len(&self) -> usize {
+            self.inner.len()
+        }
+        pub fn is_empty(&self) -> bool {
+            self.inner.is_empty()
+        }
+        pub fn bloom_fp_estimate(&self) -> f64 {
+            self.filter.estimated_fpp()
+        }
+    }
+    pub struct NamespacedMemoryStore {
+        namespaces: rvc_col::TypedCollection<HnswMemoryRegion>,
+        dim: usize,
+    }
+    impl NamespacedMemoryStore {
+        pub fn new(dim: usize) -> Self {
+            Self {
+                namespaces: rvc_col::TypedCollection::new(),
+                dim,
+            }
+        }
+        pub fn get_or_create(&mut self, namespace: &str) -> &mut HnswMemoryRegion {
+            if !self.namespaces.contains(namespace) {
+                let region = HnswMemoryRegion::new(namespace, self.dim);
+                self.namespaces.insert(namespace.to_string(), region);
+                debug!(namespace, dim = self.dim, "created new memory namespace");
+            }
+            self.namespaces
+                .get_mut(namespace)
+                .expect("namespace just inserted")
+        }
+        pub fn insert(
+            &mut self,
+            namespace: &str,
+            embedding: Vec<f32>,
+            content: String,
+            metadata: SegmentMetadata,
+        ) -> Uuid {
+            self.get_or_create(namespace)
+                .insert(embedding, content, metadata)
+        }
+        pub fn search(
+            &mut self,
+            namespace: &str,
+            query: &[f32],
+            k: usize,
+            filters: &SearchFilters,
+        ) -> Vec<SearchHit> {
+            self.get_or_create(namespace).search(query, k, filters)
+        }
+        pub fn namespaces(&self) -> Vec<String> {
+            self.namespaces.keys()
+        }
+        pub fn total_segments(&self) -> usize {
+            self.namespaces
+                .keys()
+                .iter()
+                .filter_map(|k| self.namespaces.get(k))
+                .map(|r| r.len())
+                .sum()
+        }
+    }
+}
+#[cfg(feature = "ruvnet-phase1")]
+pub use phase1_integration::{BloomScreenedRegion, NamespacedMemoryStore};
+
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]

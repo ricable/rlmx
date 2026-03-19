@@ -1,6 +1,6 @@
 # ADR-025: Subscription & Billing Tiers
 
-Status: Proposed
+Status: Implemented
 
 ## Context
 RuVix Mesh monetizes through a tiered subscription model. The billing system must enforce agent limits, cloud burst access, federation participation, and family sharing while keeping the core agent runtime on-device and functional even without payment.

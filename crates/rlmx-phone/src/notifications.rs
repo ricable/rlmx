@@ -65,9 +65,7 @@ impl NotificationBudget {
         match priority {
             NotificationPriority::Critical => self.sent_critical < self.max_critical,
             NotificationPriority::Actionable => self.sent_actionable < self.max_actionable,
-            NotificationPriority::Informational => {
-                self.sent_informational < self.max_informational
-            }
+            NotificationPriority::Informational => self.sent_informational < self.max_informational,
         }
     }
 
@@ -154,8 +152,13 @@ impl Default for FatigueModel {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NotificationOutcome {
     Sent,
-    Suppressed { reason: String },
-    Downgraded { from: NotificationPriority, to: NotificationPriority },
+    Suppressed {
+        reason: String,
+    },
+    Downgraded {
+        from: NotificationPriority,
+        to: NotificationPriority,
+    },
     BudgetExhausted,
 }
 

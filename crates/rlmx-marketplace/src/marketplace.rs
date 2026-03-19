@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::analytics::MarketplaceAnalytics;
 use crate::billing::BillingEngine;
 use crate::domain::{
-    AgentPrice, DeviceType, DeveloperType, LifeDomain, ListingStatus, MarketplaceDomainEvent,
+    AgentPrice, DeveloperType, DeviceType, LifeDomain, ListingStatus, MarketplaceDomainEvent,
     ModelTier, Permission, PublisherId, ReviewStatus,
 };
 use crate::error::MarketplaceError;
@@ -60,7 +60,9 @@ impl Marketplace {
         email: String,
         developer_type: DeveloperType,
     ) -> Result<PublisherId, MarketplaceError> {
-        let id = self.publisher_portal.register(name, email, developer_type)?;
+        let id = self
+            .publisher_portal
+            .register(name, email, developer_type)?;
         self.billing.ensure_account(id);
         Ok(id)
     }
@@ -191,10 +193,7 @@ impl Marketplace {
                 .update_status(&agent_id, ListingStatus::Published)?;
         }
 
-        let event = MarketplaceDomainEvent::ReviewCompleted {
-            agent_id,
-            status,
-        };
+        let event = MarketplaceDomainEvent::ReviewCompleted { agent_id, status };
 
         Ok((status, event))
     }
@@ -238,14 +237,38 @@ impl Marketplace {
         })
     }
 
+    /// Uninstall an agent for a user.
+    pub fn uninstall_agent(
+        &mut self,
+        agent_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<MarketplaceDomainEvent, MarketplaceError> {
+        // Verify the listing exists
+        let _listing = self
+            .registry
+            .get(&agent_id)
+            .ok_or(MarketplaceError::ListingNotFound(agent_id))?;
+
+        self.analytics.record_uninstall(agent_id, user_id);
+
+        tracing::info!(agent_id = %agent_id, user_id = %user_id, "agent uninstalled");
+
+        Ok(MarketplaceDomainEvent::AgentUninstalled {
+            agent_id,
+            user_id,
+        })
+    }
+
     /// Rate an agent.
+    /// Enforces DDD-010 invariant 6: auto-suspends agents with rating < 2.0
+    /// after 50+ ratings and returns both the rating event and any suspension events.
     pub fn rate_agent(
         &mut self,
         agent_id: Uuid,
         user_id: Uuid,
         rating: f32,
         review: Option<String>,
-    ) -> Result<MarketplaceDomainEvent, MarketplaceError> {
+    ) -> Result<Vec<MarketplaceDomainEvent>, MarketplaceError> {
         let listing = self
             .registry
             .get_mut(&agent_id)
@@ -253,20 +276,27 @@ impl Marketplace {
 
         listing.add_rating(rating);
 
-        Ok(MarketplaceDomainEvent::AgentRated {
+        let mut events = vec![MarketplaceDomainEvent::AgentRated {
             agent_id,
             user_id,
             rating,
             review,
-        })
+        }];
+
+        // Enforce rating policy: auto-suspend if rating < 2.0 after 50+ ratings.
+        let suspended = self.registry.enforce_rating_policy();
+        for id in suspended {
+            events.push(MarketplaceDomainEvent::AgentSuspended {
+                agent_id: id,
+                reason: "Auto-suspended: rating below 2.0 after 50+ ratings".into(),
+            });
+        }
+
+        Ok(events)
     }
 
     /// Search the registry.
-    pub fn search(
-        &self,
-        filter: &ListingFilter,
-        sort: ListingSort,
-    ) -> Vec<&AgentListing> {
+    pub fn search(&self, filter: &ListingFilter, sort: ListingSort) -> Vec<&AgentListing> {
         self.registry.search(filter, sort)
     }
 
@@ -309,7 +339,11 @@ mod tests {
 
         // Register publisher
         let pub_id = mp
-            .register_publisher("TestDev".into(), "dev@test.com".into(), DeveloperType::Individual)
+            .register_publisher(
+                "TestDev".into(),
+                "dev@test.com".into(),
+                DeveloperType::Individual,
+            )
             .unwrap();
 
         // Submit agent
@@ -346,9 +380,10 @@ mod tests {
         assert_eq!(listing.install_count, 1);
 
         // Rate
-        let _event = mp
+        let events = mp
             .rate_agent(agent_id, Uuid::new_v4(), 4.5, Some("Great!".into()))
             .unwrap();
+        assert_eq!(events.len(), 1); // Just the rating event, no suspension
 
         let listing = mp.registry.get(&agent_id).unwrap();
         assert!((listing.rating - 4.5).abs() < 0.01);
@@ -358,7 +393,11 @@ mod tests {
     fn sensitive_agent_requires_human_review() {
         let mut mp = Marketplace::new();
         let pub_id = mp
-            .register_publisher("HealthDev".into(), "health@dev.com".into(), DeveloperType::Organization)
+            .register_publisher(
+                "HealthDev".into(),
+                "health@dev.com".into(),
+                DeveloperType::Organization,
+            )
             .unwrap();
 
         let (_agent_id, sub_id, _) = mp
@@ -382,8 +421,115 @@ mod tests {
 
         // Human approves
         let (status, _) = mp
-            .complete_human_review(sub_id, "doc_reviewer".into(), ReviewDecision::Approve, "HIPAA compliant".into())
+            .complete_human_review(
+                sub_id,
+                "doc_reviewer".into(),
+                ReviewDecision::Approve,
+                "HIPAA compliant".into(),
+            )
             .unwrap();
         assert_eq!(status, ReviewStatus::Approved);
+    }
+
+    #[test]
+    fn uninstall_agent_tracks_analytics() {
+        let mut mp = Marketplace::new();
+        let pub_id = mp
+            .register_publisher(
+                "UninstDev".into(),
+                "uninst@dev.com".into(),
+                DeveloperType::Individual,
+            )
+            .unwrap();
+
+        let (agent_id, sub_id, _) = mp
+            .submit_agent(
+                "RemoveMe".into(),
+                "Agent to uninstall".into(),
+                LifeDomain::Shopping,
+                pub_id,
+                [3u8; 32],
+                semver::Version::new(1, 0, 0),
+                AgentPrice::Free,
+                vec![],
+                vec![DeviceType::Desktop],
+                ModelTier::Small,
+                1024,
+            )
+            .unwrap();
+
+        mp.run_review(sub_id).unwrap();
+
+        let user_id = Uuid::new_v4();
+        mp.install_agent(agent_id, user_id, DeviceType::Desktop)
+            .unwrap();
+
+        let event = mp.uninstall_agent(agent_id, user_id).unwrap();
+        match event {
+            MarketplaceDomainEvent::AgentUninstalled {
+                agent_id: eid,
+                user_id: uid,
+            } => {
+                assert_eq!(eid, agent_id);
+                assert_eq!(uid, user_id);
+            }
+            _ => panic!("Expected AgentUninstalled event"),
+        }
+
+        // Verify analytics recorded the uninstall
+        let metrics = mp.analytics.agent_metrics(&agent_id).unwrap();
+        assert_eq!(metrics.total_uninstalls, 1);
+    }
+
+    #[test]
+    fn low_rating_auto_suspends() {
+        let mut mp = Marketplace::new();
+        let pub_id = mp
+            .register_publisher(
+                "BadDev".into(),
+                "bad@dev.com".into(),
+                DeveloperType::Individual,
+            )
+            .unwrap();
+
+        let (agent_id, sub_id, _) = mp
+            .submit_agent(
+                "BadAgent".into(),
+                "Poorly rated agent".into(),
+                LifeDomain::Social,
+                pub_id,
+                [4u8; 32],
+                semver::Version::new(1, 0, 0),
+                AgentPrice::Free,
+                vec![],
+                vec![DeviceType::Desktop],
+                ModelTier::Small,
+                512,
+            )
+            .unwrap();
+
+        mp.run_review(sub_id).unwrap();
+
+        // Simulate 50+ bad ratings to trigger auto-suspension
+        // Directly set the listing stats to avoid 50+ rate_agent calls
+        if let Some(listing) = mp.registry.get_mut(&agent_id) {
+            listing.rating = 1.8;
+            listing.rating_count = 49;
+        }
+
+        // The 50th rating should trigger the policy
+        let events = mp
+            .rate_agent(agent_id, Uuid::new_v4(), 1.0, None)
+            .unwrap();
+
+        // Should have both the rating event and the suspension event
+        assert_eq!(events.len(), 2);
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, MarketplaceDomainEvent::AgentSuspended { .. })));
+
+        // Verify listing is suspended
+        let listing = mp.registry.get(&agent_id).unwrap();
+        assert_eq!(listing.status, ListingStatus::Suspended);
     }
 }

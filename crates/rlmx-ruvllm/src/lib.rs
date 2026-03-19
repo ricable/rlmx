@@ -20,6 +20,7 @@ pub mod engine;
 pub mod error;
 pub mod mlx_bridge;
 pub mod model;
+pub mod phase3;
 pub mod tiered;
 
 // Re-export primary types for convenience
@@ -30,4 +31,5 @@ pub use engine::{ChatMessage, GenerateResult, LocalEngine};
 pub use error::RuvllmError;
 pub use mlx_bridge::{MlxResponse, MlxSubprocess};
 pub use model::ModelManager;
+pub use phase3::{AttentionOptimizer, AttentionResult, GateKernelConfig, MemoryProfile};
 pub use tiered::{TieredEngine, TieredResult, TieredStats};

@@ -215,11 +215,19 @@ impl AgentRegistry {
             .collect();
 
         match sort {
-            ListingSort::Rating => results.sort_by(|a, b| b.rating.partial_cmp(&a.rating).unwrap_or(std::cmp::Ordering::Equal)),
+            ListingSort::Rating => results.sort_by(|a, b| {
+                b.rating
+                    .partial_cmp(&a.rating)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            }),
             ListingSort::Installs => results.sort_by(|a, b| b.install_count.cmp(&a.install_count)),
             ListingSort::Newest => results.sort_by(|a, b| b.created_at.cmp(&a.created_at)),
-            ListingSort::PriceLow => results.sort_by(|a, b| a.price.amount_cents().cmp(&b.price.amount_cents())),
-            ListingSort::PriceHigh => results.sort_by(|a, b| b.price.amount_cents().cmp(&a.price.amount_cents())),
+            ListingSort::PriceLow => {
+                results.sort_by(|a, b| a.price.amount_cents().cmp(&b.price.amount_cents()))
+            }
+            ListingSort::PriceHigh => {
+                results.sort_by(|a, b| b.price.amount_cents().cmp(&a.price.amount_cents()))
+            }
         }
 
         results
@@ -244,9 +252,7 @@ impl AgentRegistry {
             .listings
             .values()
             .filter(|l| {
-                l.status == ListingStatus::Published
-                    && l.rating_count >= 50
-                    && l.rating < 2.0
+                l.status == ListingStatus::Published && l.rating_count >= 50 && l.rating < 2.0
             })
             .map(|l| l.id)
             .collect();
@@ -305,8 +311,16 @@ mod tests {
     #[test]
     fn search_by_domain() {
         let mut reg = AgentRegistry::new();
-        reg.insert(make_listing("FinAgent", LifeDomain::Finance, AgentPrice::Free));
-        reg.insert(make_listing("HealthAgent", LifeDomain::Health, AgentPrice::Free));
+        reg.insert(make_listing(
+            "FinAgent",
+            LifeDomain::Finance,
+            AgentPrice::Free,
+        ));
+        reg.insert(make_listing(
+            "HealthAgent",
+            LifeDomain::Health,
+            AgentPrice::Free,
+        ));
 
         let filter = ListingFilter {
             domain: Some(LifeDomain::Finance),
@@ -320,8 +334,16 @@ mod tests {
     #[test]
     fn search_by_keyword() {
         let mut reg = AgentRegistry::new();
-        reg.insert(make_listing("BudgetTracker", LifeDomain::Finance, AgentPrice::Free));
-        reg.insert(make_listing("FitnessCoach", LifeDomain::Health, AgentPrice::Free));
+        reg.insert(make_listing(
+            "BudgetTracker",
+            LifeDomain::Finance,
+            AgentPrice::Free,
+        ));
+        reg.insert(make_listing(
+            "FitnessCoach",
+            LifeDomain::Health,
+            AgentPrice::Free,
+        ));
 
         let filter = ListingFilter {
             keyword: Some("budget".to_string()),
@@ -334,8 +356,16 @@ mod tests {
     #[test]
     fn search_by_max_price() {
         let mut reg = AgentRegistry::new();
-        reg.insert(make_listing("Cheap", LifeDomain::Finance, AgentPrice::OneTime(500)));
-        reg.insert(make_listing("Expensive", LifeDomain::Finance, AgentPrice::OneTime(5000)));
+        reg.insert(make_listing(
+            "Cheap",
+            LifeDomain::Finance,
+            AgentPrice::OneTime(500),
+        ));
+        reg.insert(make_listing(
+            "Expensive",
+            LifeDomain::Finance,
+            AgentPrice::OneTime(5000),
+        ));
 
         let filter = ListingFilter {
             max_price_cents: Some(1000),

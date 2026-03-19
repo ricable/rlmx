@@ -17,6 +17,22 @@ ndarray = "0.16"
 # Optional: ruvector SONA
 ruvector-sona = { version = "0.1.6", optional = true }
 
+# Optional: Phase 3 — Inference & Attention
+ruvector-solver = { version = "2.0.4", optional = true }
+ruvector-gnn = { version = "2.0.5", optional = true }
+cognitum-rs = { version = "0.1.0", optional = true }
+ruv-neural-embed = { version = "0.1.0", optional = true }
+ruv-neural-memory = { version = "0.1.0", optional = true }
+ruv-neural-graph = { version = "0.1.0", optional = true }
+
 [features]
 default = []
 ruvector-sona = ["dep:ruvector-sona"]
+ruvnet-phase3 = [
+    "dep:ruvector-solver",
+    "dep:ruvector-gnn",
+    "dep:cognitum-rs",
+    "dep:ruv-neural-embed",
+    "dep:ruv-neural-memory",
+    "dep:ruv-neural-graph",
+]

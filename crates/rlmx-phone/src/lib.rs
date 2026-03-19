@@ -28,8 +28,8 @@ pub use engagement::{
 };
 pub use events::PhoneDomainEvent;
 pub use notifications::{
-    FatigueModel, Notification, NotificationBudget, NotificationOrchestrator,
-    NotificationOutcome, NotificationPriority, NotificationResponse,
+    FatigueModel, Notification, NotificationBudget, NotificationOrchestrator, NotificationOutcome,
+    NotificationPriority, NotificationResponse,
 };
 pub use offline::{OfflineOutbox, QueuedRequest, RetryPolicy};
 pub use runtime::PhoneRuntime;

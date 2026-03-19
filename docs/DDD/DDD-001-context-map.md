@@ -2,9 +2,9 @@
 
 ## Overview
 
-RLMX is a cognition kernel with 9 existing crates and 2 planned crates,
-organized into 11 bounded contexts. This document maps those contexts, their
-responsibilities, and integration relationships.
+RLMX is a cognition kernel with 19 crates organized into 13 bounded contexts.
+This document maps those contexts, their responsibilities, and integration
+relationships.
 
 ## Bounded Contexts
 

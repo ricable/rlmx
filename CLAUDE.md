@@ -26,7 +26,7 @@
 
 RLMX ("RuVix") is a **voice-first cognition kernel** — an OS-kernel-inspired runtime for LLM agents, activated by voice. It provides capability-secured syscall primitives that agents call instead of accessing arbitrary APIs. Written in Rust (edition 2021), async on Tokio, with a React Native mobile app for Android/iOS.
 
-**14 crates, 39 MCP tools, 14 agent types, 5 swarm zones, 695+ tests, 20+ dashboard views, 11 sandbox profiles, 19 ADRs, 10 DDD bounded contexts.**
+**19 crates, 39 MCP tools, 17 agent types, 6 swarm zones, 930+ tests, 20+ dashboard views, 11 sandbox profiles, 25 ADRs, 13 DDD bounded contexts.**
 
 The system supports six interaction paths:
 - **Voice-First**: On-device STT (Whisper-tiny Q4) → TinyDancerRouter (18-dim) → Multi-Intent Decomposition → Agent Swarm → Multimodal Response (voice + cards + haptics)
@@ -40,8 +40,8 @@ The system supports six interaction paths:
 
 ```bash
 # === Standard Development ===
-cargo build --workspace              # Build all 14 crates
-cargo test --workspace               # Run all tests (695+)
+cargo build --workspace              # Build all 19 crates
+cargo test --workspace               # Run all tests (930+)
 cargo test -p rlmx-kernel            # Run tests for a single crate
 cargo clippy --workspace -- -D warnings  # Lint (must be zero warnings)
 cargo fmt --check                    # Check formatting
@@ -74,6 +74,26 @@ cargo run -p rlmx-cli -- phone status                             # Phone runtim
 cargo run -p rlmx-cli -- phone agents                             # List on-device agents
 cargo run -p rlmx-cli -- phone battery                            # Battery-aware scheduling info
 
+# === Personal Mesh Commands (CLI) ===
+cargo run -p rlmx-cli -- mesh status                              # Personal mesh status
+cargo run -p rlmx-cli -- mesh devices                             # List mesh devices
+cargo run -p rlmx-cli -- mesh add-device --name pi --type hub     # Register new device
+cargo run -p rlmx-cli -- mesh sync                                # Force cross-device sync
+cargo run -p rlmx-cli -- mesh fleet                               # Fleet overview
+cargo run -p rlmx-cli -- mesh failover                            # Failover status
+
+# === Billing Commands (CLI) ===
+cargo run -p rlmx-cli -- billing status                           # Subscription status
+cargo run -p rlmx-cli -- billing upgrade --tier personal          # Upgrade tier
+cargo run -p rlmx-cli -- billing usage                            # Usage metrics
+cargo run -p rlmx-cli -- billing family                           # Family plan info
+cargo run -p rlmx-cli -- billing developer                        # Developer revenue info
+
+# === Federation Commands (CLI) ===
+cargo run -p rlmx-cli -- federation status                        # Federation cycle status
+cargo run -p rlmx-cli -- federation contribute                    # Trigger manual contribution
+cargo run -p rlmx-cli -- federation bootstrap                     # Bootstrap from latest package
+
 # === Original Commands ===
 cargo run -p rlmx-cli -- query -i "search term"    # Semantic search
 cargo run -p rlmx-cli -- swarm start --zone A       # Start swarm node
@@ -97,6 +117,22 @@ adb install mobile/android/app/build/outputs/apk/debug/app-debug.apk  # Install 
 # === Frontend (separate terminal) ===
 cd frontend && python3 -m http.server 8080            # Serve web dashboard at :8080
 
+# === Feature-Gated Builds (ADR-024) ===
+cargo build -p rlmx-kernel --features ruvnet-phase1    # Phase 1: Vector & Storage
+cargo build -p rlmx-swarm --features ruvnet-phase2     # Phase 2: Consensus & Networking
+cargo build -p rlmx-ruvllm --features ruvnet-phase3    # Phase 3: Enhanced Inference
+cargo build -p rlmx-ruvllm --features ruvnet-phase4    # Phase 4: Neural Integration
+cargo build -p rlmx-kernel --features ruvnet-phase5    # Phase 5: Bare-Metal Verification
+
+# === NAPI (Node.js) Bindings (ADR-020) ===
+cd crates/rlmx-napi && cargo build --features napi     # Build NAPI module
+
+# === WASM Module (ADR-021) ===
+cargo build -p rlmx-wasm --features wasm --target wasm32-unknown-unknown  # Build WASM module
+
+# === Full Feature Build ===
+cargo build -p rlmx-cli --features "ruvector,ruvnet-phase1,ruvnet-phase2,ruvnet-phase3"
+
 # === Cross-compilation (RPi5/ARM64) ===
 rustup target add aarch64-unknown-linux-gnu
 cargo build --release --target aarch64-unknown-linux-gnu -p rlmx-cli --features ruvllm
@@ -104,11 +140,38 @@ cargo build --release --target aarch64-unknown-linux-gnu -p rlmx-cli --features 
 
 No Makefile, no CI pipeline. Default rustfmt and clippy settings apply.
 
-## Workspace Structure (14 crates)
+## Feature Gates (ADR-024)
+
+Ruvnet ecosystem crates are integrated behind opt-in feature gates. Stub implementations remain the default -- ruvnet crates activate only when features are enabled.
+
+| Feature | Crate | What It Enables |
+|---------|-------|-----------------|
+| `ruvector` | `rlmx-kernel` | Core ruvector dependencies (HNSW, TinyDancer, attention, GNN) |
+| `ruvnet-phase1` | `rlmx-kernel` | Vector & Storage: BloomScreenedRegion, NamespacedMemoryStore, EnhancedGraph via ruvector-graph/filter/collections |
+| `ruvnet-phase2` | `rlmx-swarm` | Consensus & Networking: QuDagConsensusLayer, RuVectorRaftConsensus, TransportManager, SwarmDiscovery via qudag/ruvector-raft/ruv-swarm |
+| `ruvnet-phase3` | `rlmx-ruvllm`, `rlmx-cognitive` | Enhanced Inference: BudgetOptimizer, AttentionOptimizer via ruvector-attention/sona/solver; LifeGraphGnn, CognitiveFramework via cognitum |
+| `ruvnet-phase4` | `rlmx-ruvllm` | Neural Integration: ruv-neural-core/signal/graph/embed/memory + ruvector-cognitive-container |
+| `ruvnet-phase5` | `rlmx-kernel` | Bare-Metal Verification: MacaroonCapabilityManager, Phase5ProofEngine, IsolatedMemoryRegion via ruvix-cap/types/region |
+| `rvf-ext` | `rlmx-rvf` | Extended RVF: rvf-types/runtime/wire/index/quant/crypto |
+| `midstreamer` | `rlmx-kernel` | Midstreamer scheduler integration |
+| `verified` | `rlmx-kernel` | Formal verification via ruvector-verified |
+| `ruvllm` | `rlmx-ruvllm` | Edge inference via Candle backend |
+| `metal` | `rlmx-ruvllm` | Apple Metal GPU acceleration |
+| `napi` | `rlmx-napi` | NAPI-RS Node.js native bindings |
+| `wasm` | `rlmx-wasm` | wasm-bindgen browser bindings |
+
+Build examples:
+```bash
+cargo build -p rlmx-cli --features "ruvnet-phase1,ruvnet-phase2"  # Phases 1+2
+cargo build -p rlmx-cli --features "ruvnet-phase5"                # Bare-metal verification
+cargo build -p rlmx-cli --features "cognitive-phase3"             # Cognitive with phase 3
+```
+
+## Workspace Structure (19 crates)
 
 ```
 rlmx-cli (binary)
-  ├── rlmx-kernel       (core — 15 syscalls, router, events, types)
+  ├── rlmx-kernel       (core — 17 syscalls, router, events, types)
   ├── rlmx-mcp          → rlmx-kernel, rlmx-rvf, rlmx-ruvllm
   ├── rlmx-swarm        → rlmx-kernel
   ├── rlmx-agents       → rlmx-kernel, rlmx-cognitive
@@ -117,7 +180,12 @@ rlmx-cli (binary)
   ├── rlmx-marketplace  → rlmx-kernel, rlmx-rvf (agent marketplace)
   ├── rlmx-rvf          (standalone — container format)
   ├── rlmx-plugin       (standalone — domain plugins)
-  └── rlmx-ruvllm       (standalone — feature-gated edge inference)
+  ├── rlmx-ruvllm       (standalone — feature-gated edge inference)
+  ├── rlmx-napi         → rlmx-kernel (Node.js native bindings via napi-rs)
+  ├── rlmx-wasm         (standalone — WebAssembly compute module)
+  ├── rlmx-mesh         → rlmx-kernel, rlmx-swarm (personal mesh network)
+  ├── rlmx-federation   → rlmx-kernel, rlmx-cognitive (federated learning)
+  └── rlmx-billing      → rlmx-kernel (subscription billing)
 
 rlmx-rlm               (standalone — vLLM HTTP client)
 rlmx-trm               (standalone — pure numeric NN)
@@ -130,14 +198,14 @@ Additional directories:
 - `frontend/dashboard/` — Svelte 5 + TailwindCSS v4 dashboard (Vite, :5173)
 - `deploy/` — Systemd service for RPi5
 - `scripts/hooks/` — 5 preconfigured event hooks (voice, savings, streaks, agent levels)
-- `docs/ADR/` — 19 Architecture Decision Records
-- `docs/DDD/` — 10 Domain-Driven Design documents
+- `docs/ADR/` — 25 Architecture Decision Records
+- `docs/DDD/` — 13 Domain-Driven Design documents
 - `.cargo/` — Cross-compilation config
 
 ## Architecture
 
 ### Kernel (`rlmx-kernel`)
-**15-syscall dispatch** (12 original + VoiceTranscribe, VoiceSynthesize, IntentRoute) with `DomainEventBus` (8 cross-context events including VoiceSessionStarted, IntentsDecomposed). `TinyDancerRouter` (FastGRNN **18→32→5**) with 4 voice-aware dimensions (speaker_confidence, emotion_valence, urgency_score, ambient_noise_level) and online learning with 0.6 confidence gating. `Strategy` enum includes `Swarm { scatter_zones, gather_strategy, timeout_ms }`.
+**17-syscall dispatch** (12 original + VoiceTranscribe, VoiceSynthesize, IntentRoute, MeshSync, FederationContribute) with `DomainEventBus` (8 cross-context events including VoiceSessionStarted, IntentsDecomposed). `TinyDancerRouter` (FastGRNN **18→32→5**) with 4 voice-aware dimensions (speaker_confidence, emotion_valence, urgency_score, ambient_noise_level) and online learning with 0.6 confidence gating. `Strategy` enum includes `Swarm { scatter_zones, gather_strategy, timeout_ms }`.
 
 New types: `ResponseMode` (VoiceOnly/Visual/Multimodal/Ambient), `VoicePersona` (6 domain personas), `LifeDomain` (12 life categories), `Intent` struct.
 
@@ -151,13 +219,13 @@ New types: `ResponseMode` (VoiceOnly/Visual/Multimodal/Ambient), `VoicePersona` 
 **Marketplace** aggregate root with `AgentRegistry` (CRUD, search, filter by domain/rating/price), `BillingEngine` (70/30 revenue split, monthly payouts at $50 threshold), `ReviewPipeline` (automated security audit + human review for sensitive permissions), `PublisherPortal`, `FeaturedEngine` (ML-ranked), `MarketplaceAnalytics`. 12 life domains. Agents packaged as RVF containers.
 
 ### MCP Server (`rlmx-mcp`)
-**39 JSON-RPC 2.0 tools** (28 original + 8 marketplace + 3 voice), HTTP :3000, WebSocket :3001 with typed `SwarmEvent` enum (12 variants including VoiceChunk, AgentProgress, MultimodalResponse), auth, heartbeat, backpressure. RBAC: 6 roles, clients cannot self-escalate.
+**39 JSON-RPC 2.0 tools** (28 original + 8 marketplace + 3 voice), HTTP :3000, WebSocket :3001 with typed `SwarmEvent` enum (12 variants including VoiceChunk, AgentProgress, MultimodalResponse), auth, heartbeat, backpressure. RBAC: 6 roles, clients cannot self-escalate. Mesh, federation, and billing operations are CLI-only; MCP tool expansion planned.
 
 ### Swarm (`rlmx-swarm`)
-**5-zone topology** (A-Mobile=Phone/Primary, A-Desktop=Laptop/Secondary, B=Cloud/Burst, C=Edge/Sentinel, D=Browser). `SwarmEvent` expanded to 12 variants with `CardData` and `HapticPattern` types. `BrowserComputePool` with priority queue. `SandboxManager` with `SandboxProfile`, `ResourceEnvelope`, `FleetManifest`.
+**6-zone topology** (A-Mobile=Phone/Primary, A-Desktop=Laptop/Secondary, B=Cloud/Burst, C=Edge/Sentinel, D=Browser, E=HomeHub/PrivacyAnchor). `SwarmEvent` expanded to 12 variants with `CardData` and `HapticPattern` types. `BrowserComputePool` with priority queue. `SandboxManager` with `SandboxProfile`, `ResourceEnvelope`, `FleetManifest`.
 
 ### Agents (`rlmx-agents`)
-**14 typed roles** (12 original + VoiceCoordinator, MarketplaceManager) with **15x14 permission matrix**. All agents get VoiceSynthesize + IntentRoute; only Coordinator/Router/VoiceCoordinator get VoiceTranscribe. `AgentLifecycle` state machine. Auto-research with mutation strategies.
+**17 typed roles** (12 original + VoiceCoordinator, MarketplaceManager, MeshCoordinator, FederationAgent, BillingManager) with **17x17 permission matrix**. All agents get VoiceSynthesize + IntentRoute; only Coordinator/Router/VoiceCoordinator get VoiceTranscribe. MeshCoordinator gets MeshSync; FederationAgent gets FederationContribute. `AgentLifecycle` state machine. Auto-research with mutation strategies.
 
 ### Cognitive (`rlmx-cognitive`)
 SONA (micro-LoRA + EWC++), `VoicePatternBank` (voice-enriched patterns with temporal-weighted search), `FederatedAnonymizer` (PII stripping, emotion bucketing, Laplace noise ε=1.0), `EngagementTracker`, `NotificationFatigueModel`. DagOptimizer, NervousSystem.
@@ -167,6 +235,21 @@ SONA (micro-LoRA + EWC++), `VoicePatternBank` (voice-enriched patterns with temp
 
 ### Mobile App (`mobile/`)
 React Native 0.84.1 + TypeScript for Android. **8 screens**: Home (Life Score, Money Saved, Briefing), Voice (mic button, agent progress, response cards), Agents (collection grid, levels), Insights (domain analytics), Profile (streaks, achievements), Marketplace (12 domains, featured carousel), AgentDetail, AgentCollection. **11 components** with dark theme (cyan/violet/green). Demo mode works offline. APK: `mobile/android/app/build/outputs/apk/debug/app-debug.apk`.
+
+### NAPI Bindings (`rlmx-napi`) — ADR-020
+**NapiKernel** aggregate root exposing 6 NAPI functions via napi-rs: `dispatch`, `sona_query`, `rvf_seal`, `agent_spawn`, `swarm_status`, `route`. Sub-millisecond syscall dispatch from Node.js without HTTP overhead. Built separately (`--features napi`) to avoid pulling napi-rs into default workspace build. Published as `@ruvix/mesh-native` npm package.
+
+### WASM Module (`rlmx-wasm`) — ADR-021
+Browser-side kernel syscall subset via `wasm-bindgen`: VecSearch, VecInsert, GraphQuery, HaltCheck, StateMutate, SONA query. 4-bit quantized vectors (50K in ~25MB). WebGPU for embedding generation, WASM SIMD for vector ops. IndexedDB backing for persistence. Complements `@ruvector/ruvllm-wasm` (inference primitives).
+
+### Personal Mesh (`rlmx-mesh`) — ADR-022, DDD-011
+**PersonalMesh** aggregate root coordinating cross-device personal mesh. mDNS discovery on LAN, WebSocket relay for remote. Privacy anchor pattern: home hub (Zone C) is sole long-term data store. QUIC transport for sub-millisecond LAN sync. Graceful degradation when devices go offline.
+
+### Federated Learning (`rlmx-federation`) — ADR-023, DDD-012
+**FederationCycle** aggregate root managing weekly federated learning cycle. On-device anonymization via `FederatedAnonymizer`, cloud aggregation of 1M+ patterns, bidirectional distribution via RVF containers. Per-user continuous learning with micro-LoRA + EWC++. New user bootstrap from collective intelligence (10K+ patterns on first install).
+
+### Subscription Billing (`rlmx-billing`) — ADR-025, DDD-013
+**Subscription** aggregate root with 6-tier subscription model (Free/Personal/Family/Pro/Enterprise/Developer). Capability-token-enforced limits via Macaroon caveats. Cloud burst metering by inference tokens. Stripe integration for payment processing. 7-day grace period on payment failure.
 
 ### Frontend (`frontend/index.html`)
 **20+ views** (~2900 lines vanilla JS/CSS/HTML, no framework). Works standalone with demo data or connected to MCP server.
@@ -182,19 +265,27 @@ React Native 0.84.1 + TypeScript for Android. **8 screens**: Home (Life Score, M
 - Voice types (`LifeDomain`, `Intent`, `ResponseMode`, `VoicePersona`) defined in `rlmx-kernel`, used by all voice-related crates
 - Aggregate roots own their consistency boundary — cross-context communication via domain events or ACL
 - Mobile app uses demo data by default, switches to live when MCP server detected
+- Feature gates follow ADR-024 phase naming: `ruvnet-phase1` through `ruvnet-phase5`
+- Phase features are additive: phase N may include phase N-1
+- External crate integration always has a stub fallback path for `#[cfg(not(feature = "..."))]`
+- New agent types must be added to: AgentType enum, PermissionRegistry, spawn hierarchy, and CLAUDE.md
+- Mesh types (`MeshId`, `DeviceId`, `DeviceZone`, `MeshDevice`) defined in `rlmx-mesh`, not in kernel
+- Federation types (`FederationCycle`, `Contribution`, `FederationPackage`) defined in `rlmx-federation`
+- Billing types (`SubscriptionTier`, `TierLimits`, `FamilyGroup`) defined in `rlmx-billing`
+- New crate domain events use crate-local event enums (e.g., `MeshDomainEvent`), not kernel `DomainEvent`
 
 ## Strict Rules
 
 1. **Never break the stub build**: `cargo build --workspace` without features MUST compile clean.
 2. **Never add `println!` to library crates**: use `tracing::*`.
 3. **Never bypass RBAC**: Admin/System only via server-side `token_roles`.
-4. **Keep tests passing**: `cargo test --workspace` must pass all 695+ tests.
+4. **Keep tests passing**: `cargo test --workspace` must pass all 930+ tests.
 5. **Zero clippy warnings**: `cargo clippy --workspace -- -D warnings` must be clean.
 6. **Edge tools return `"status": "unavailable"`** when no engine is configured.
 7. **GGUF models require companion tokenizers**: `<model>-tokenizer.json` next to `.gguf`.
 8. **MCP initialization handshake is mandatory**.
 9. **Never duplicate kernel types**: import `SyscallPermission`, `Strategy`, `ProcessId`, `LifeDomain`, `Intent`, `ResponseMode`, `VoicePersona` from `rlmx-kernel`.
-10. **Permission matrix is the source of truth**: const `MATRIX` in `registry.rs` per ADR-005 (now 15x14).
+10. **Permission matrix is the source of truth**: const `MATRIX` in `registry.rs` per ADR-005 (now 17x17).
 11. **Domain events must flow**: dispatch() emits SyscallDispatched, resolve_strategy() emits QueryRouted, voice sessions emit VoiceSessionStarted.
 12. **Frontend fallback pattern**: Action handlers must check if server returned EMPTY data (e.g., `node_count === 0`, `agents.length === 0`), not just catch errors.
 13. **Single-file frontend**: `frontend/index.html` is one file. Do NOT split into separate JS/CSS files.
@@ -204,6 +295,13 @@ React Native 0.84.1 + TypeScript for Android. **8 screens**: Home (Life Score, M
 17. **Marketplace security**: All agents pass automated review (capability analysis, data flow verification). Sensitive permissions escalate to human review. 70/30 revenue split enforced.
 18. **Mobile app must work offline**: Demo mode with realistic data when MCP server unavailable. 5 always-on agents run with zero network.
 19. **Android build requires JDK 21**: Use `JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home` — Java 26 is incompatible with React Native Gradle plugin.
+20. **Phase features must not break stub build**: `cargo build --workspace` without features MUST compile even after adding new phase code.
+21. **Every phase-gated module needs both paths**: `#[cfg(feature = "X")]` and `#[cfg(not(feature = "X"))]` must both exist for any externally-visible API.
+22. **New crates require workspace registration**: Add to `Cargo.toml` members, update CLAUDE.md counts, add Key File Location.
+23. **Agent types require full integration**: New AgentType variants must update registry permissions, spawn hierarchy, CLI agent command, and MCP agent_spawn tool.
+24. **Federation privacy invariants**: Laplace noise epsilon=1.0 on all numeric fields, minimum 1000-user aggregation threshold before publishing any pattern, emotion valence bucketed to 5 discrete levels, no speaker embeddings federated. Enforced in `FederationAnonymizer`.
+25. **Billing tier enforcement**: Free tier allows exactly 5 agents, enforced at spawn time via capability token caveats. Tier limits are the source of truth in `TierLimits`. Never bypass tier checks.
+26. **Mesh privacy anchor**: Home hub (Zone C/E) must be the sole long-term data store for personal data. Phone and laptop sync TO the hub, never to each other for persistence. Max 1 MeshCoordinator per mesh.
 
 ## Hook Scripts
 
@@ -224,13 +322,16 @@ Preconfigured event hooks in `scripts/hooks/` — all executable, accept JSON st
 | `RLMX_EDGE_MODEL` | GGUF model name (without .gguf) | unset |
 | `RLMX_MODEL_DIR` | Directory for GGUF + tokenizer files | `~/.rlmx/models` |
 | `JAVA_HOME` | JDK path for Android builds | system default |
+| `RLMX_MESH_PORT` | Personal mesh discovery port | `5353` |
+| `RLMX_FEDERATION_ENDPOINT` | Federation aggregator URL | unset |
+| `RLMX_BILLING_STRIPE_KEY` | Stripe API key for billing | unset |
 
 ## Key File Locations
 
 | Path | Purpose |
 |------|---------|
 | **Kernel** | |
-| `crates/rlmx-kernel/src/lib.rs` | Kernel types: Syscall (15), SyscallPermission, LifeDomain, Intent, ResponseMode, VoicePersona |
+| `crates/rlmx-kernel/src/lib.rs` | Kernel types: Syscall (17), SyscallPermission, LifeDomain, Intent, ResponseMode, VoicePersona |
 | `crates/rlmx-kernel/src/scheduler.rs` | Strategy enum, GatherStrategy, Scheduler |
 | `crates/rlmx-kernel/src/router.rs` | TinyDancerRouter (FastGRNN 18→32→5, voice-aware) |
 | `crates/rlmx-kernel/src/events.rs` | DomainEvent (8 variants), DomainEventBus |
@@ -261,8 +362,8 @@ Preconfigured event hooks in `scripts/hooks/` — all executable, accept JSON st
 | `crates/rlmx-swarm/src/consensus.rs` | PBFT/Raft/Gossip layers |
 | `crates/rlmx-swarm/src/sandbox.rs` | SandboxManager, SandboxProfile, FleetManifest |
 | **Agents** | |
-| `crates/rlmx-agents/src/registry.rs` | PermissionMatrix (15x14), validate() |
-| `crates/rlmx-agents/src/types.rs` | AgentType (14 variants incl. VoiceCoordinator, MarketplaceManager) |
+| `crates/rlmx-agents/src/registry.rs` | PermissionMatrix (17x17), validate() |
+| `crates/rlmx-agents/src/types.rs` | AgentType (17 variants incl. VoiceCoordinator, MarketplaceManager, MeshCoordinator, FederationAgent, BillingManager) |
 | `crates/rlmx-agents/src/lifecycle.rs` | AgentLifecycle state machine |
 | **Cognitive** | |
 | `crates/rlmx-cognitive/src/sona.rs` | SONA micro-LoRA, PatternBank |
@@ -280,11 +381,34 @@ Preconfigured event hooks in `scripts/hooks/` — all executable, accept JSON st
 | `mobile/src/hooks/useEngagement.ts` | Life Score, savings, streaks hook |
 | `mobile/src/data/agents.ts` | 52 agents (25 marketplace, 7 unlocked, 45 locked) |
 | **Other** | |
-| `crates/rlmx-cli/src/main.rs` | CLI: serve, swarm, agent, research, sandbox, edge, voice, marketplace, engagement, phone |
+| **NAPI & WASM** | |
+| `crates/rlmx-napi/src/lib.rs` | NapiKernel aggregate root, 6 NAPI functions |
+| `crates/rlmx-wasm/src/lib.rs` | WASM kernel subset: VecSearch, VecInsert, GraphQuery, HaltCheck, StateMutate |
+| **Mesh** | |
+| `crates/rlmx-mesh/src/mesh.rs` | PersonalMesh aggregate root, MeshDomainEvent |
+| `crates/rlmx-mesh/src/device.rs` | MeshDevice, DeviceId, DeviceType, Zone |
+| `crates/rlmx-mesh/src/discovery.rs` | DiscoveryService, mDNS + WebSocket relay |
+| `crates/rlmx-mesh/src/sync.rs` | SyncState, SyncPolicy, SyncProtocol |
+| `crates/rlmx-mesh/src/failover.rs` | FailoverPolicy, DegradationLevel |
+| **Federation** | |
+| `crates/rlmx-federation/src/cycle.rs` | FederationCycle aggregate root, CycleStatus |
+| `crates/rlmx-federation/src/anonymizer.rs` | FederationAnonymizer, on-device PII stripping |
+| `crates/rlmx-federation/src/contribution.rs` | Contribution, pseudonymous keys |
+| `crates/rlmx-federation/src/aggregator.rs` | FederatedAggregator, 1000-user threshold |
+| `crates/rlmx-federation/src/distribution.rs` | FederationPackage, PackageDistributor |
+| `crates/rlmx-federation/src/bootstrap.rs` | New user bootstrap from federated patterns |
+| **Billing** | |
+| `crates/rlmx-billing/src/subscription.rs` | Subscription aggregate, SubscriptionEvent |
+| `crates/rlmx-billing/src/tier.rs` | SubscriptionTier (6 tiers), TierLimits, TierFeatures |
+| `crates/rlmx-billing/src/capability_enforcement.rs` | TierCapabilityEnforcer, Macaroon caveats |
+| `crates/rlmx-billing/src/family.rs` | FamilyGroup, FamilyMember, 6-member max |
+| `crates/rlmx-billing/src/developer.rs` | DeveloperAccount, 70/30 revenue share |
+| `crates/rlmx-billing/src/usage.rs` | UsageMetrics, cloud token metering |
+| `crates/rlmx-cli/src/main.rs` | CLI: serve, swarm, agent, research, sandbox, edge, voice, marketplace, engagement, phone, mesh, billing, federation |
 | `frontend/index.html` | Web dashboard (20+ views, demo data, force graph) |
 | `scripts/hooks/` | 5 preconfigured event hooks |
-| `docs/ADR/` | 19 Architecture Decision Records |
-| `docs/DDD/` | 10 Domain-Driven Design documents |
+| `docs/ADR/` | 25 Architecture Decision Records |
+| `docs/DDD/` | 13 Domain-Driven Design documents |
 
 ## Concurrency: 1 MESSAGE = ALL RELATED OPERATIONS
 
@@ -347,7 +471,7 @@ When modifying `frontend/index.html`:
 | Cloud GPU burst | SkyPilot | Planned (ADR-006) |
 | Browser workers | WASM compute pool | Working (ADR-009) |
 
-## DDD Bounded Contexts (10)
+## DDD Bounded Contexts (13)
 
 | # | Context | Crate | Aggregate Root |
 |---|---------|-------|----------------|
@@ -361,6 +485,9 @@ When modifying `frontend/index.html`:
 | 8 | Voice Interaction | `rlmx-voice` | VoiceSession |
 | 9 | Phone Runtime | `rlmx-phone` | PhoneRuntime |
 | 10 | Agent Marketplace | `rlmx-marketplace` | Marketplace |
+| 11 | Personal Mesh | `rlmx-mesh` | PersonalMesh |
+| 12 | Federated Learning | `rlmx-federation` | FederationCycle |
+| 13 | Subscription Billing | `rlmx-billing` | Subscription |
 
 ## ADR Index
 
@@ -385,6 +512,12 @@ When modifying `frontend/index.html`:
 | 017 | Federated Voice Learning | Implemented |
 | 018 | Multimodal Response Protocol | Implemented |
 | 019 | Kernel Expansion | Implemented |
+| 020 | NAPI Native Bindings | Implemented |
+| 021 | WASM Compute Module | Implemented |
+| 022 | Personal Mesh Network | Implemented |
+| 023 | Federated Learning Pipeline | Implemented |
+| 024 | RuVNet Crate Integration | Implemented |
+| 025 | Subscription Billing | Implemented |
 
 ## Support
 

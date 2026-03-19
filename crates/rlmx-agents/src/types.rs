@@ -21,6 +21,12 @@ pub enum AgentType {
     VoiceCoordinator,
     /// Manages marketplace operations: agent installation, updates, discovery.
     MarketplaceManager,
+    /// Coordinates personal mesh network synchronization (from rlmx-mesh).
+    MeshCoordinator,
+    /// Manages federated learning contributions (from rlmx-federation).
+    FederationAgent,
+    /// Handles subscription billing and revenue operations (from rlmx-billing).
+    BillingManager,
 }
 
 impl AgentType {
@@ -40,6 +46,9 @@ impl AgentType {
             AgentType::Analyst,
             AgentType::VoiceCoordinator,
             AgentType::MarketplaceManager,
+            AgentType::MeshCoordinator,
+            AgentType::FederationAgent,
+            AgentType::BillingManager,
         ]
     }
 
@@ -48,7 +57,11 @@ impl AgentType {
     pub fn can_fork(&self) -> bool {
         matches!(
             self,
-            AgentType::Coordinator | AgentType::Researcher | AgentType::VoiceCoordinator
+            AgentType::Coordinator
+                | AgentType::Researcher
+                | AgentType::Experimenter
+                | AgentType::VoiceCoordinator
+                | AgentType::MeshCoordinator
         )
     }
 
@@ -62,6 +75,7 @@ impl AgentType {
                 | AgentType::Experimenter
                 | AgentType::Trainer
                 | AgentType::MarketplaceManager
+                | AgentType::BillingManager
         )
     }
 
@@ -74,7 +88,9 @@ impl AgentType {
             | AgentType::Trainer
             | AgentType::VoiceCoordinator => ModelTier::Medium,
             AgentType::Researcher | AgentType::Reviewer => ModelTier::ClaudeCode,
-            AgentType::MarketplaceManager => ModelTier::Medium,
+            AgentType::MarketplaceManager
+            | AgentType::MeshCoordinator
+            | AgentType::FederationAgent => ModelTier::Medium,
             _ => ModelTier::Small,
         }
     }
@@ -91,7 +107,12 @@ impl AgentType {
             | AgentType::VoiceCoordinator => "A",
             AgentType::Router | AgentType::Replicator => "B",
             AgentType::Monitor | AgentType::Validator => "C",
-            AgentType::Worker | AgentType::Experimenter | AgentType::MarketplaceManager => "Multi",
+            AgentType::MeshCoordinator => "A",
+            AgentType::FederationAgent => "B",
+            AgentType::Worker
+            | AgentType::Experimenter
+            | AgentType::MarketplaceManager
+            | AgentType::BillingManager => "Multi",
         }
     }
 
@@ -101,9 +122,11 @@ impl AgentType {
             AgentType::Coordinator => 1,
             AgentType::Trainer => 1,
             AgentType::Reviewer | AgentType::Analyst => 2,
-            AgentType::Researcher => 3,
             AgentType::VoiceCoordinator => 4,
-            AgentType::MarketplaceManager => 2,
+            AgentType::Researcher | AgentType::FederationAgent => 3,
+            AgentType::MarketplaceManager
+            | AgentType::MeshCoordinator
+            | AgentType::BillingManager => 2,
             AgentType::Experimenter => 8,
             _ => 16,
         }
@@ -134,6 +157,9 @@ impl std::str::FromStr for AgentType {
             "analyst" => Ok(AgentType::Analyst),
             "voicecoordinator" | "voice_coordinator" => Ok(AgentType::VoiceCoordinator),
             "marketplacemanager" | "marketplace_manager" => Ok(AgentType::MarketplaceManager),
+            "meshcoordinator" | "mesh_coordinator" => Ok(AgentType::MeshCoordinator),
+            "federationagent" | "federation_agent" => Ok(AgentType::FederationAgent),
+            "billingmanager" | "billing_manager" => Ok(AgentType::BillingManager),
             _ => Err(format!("Unknown agent type: {s}")),
         }
     }
@@ -264,8 +290,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_all_types_returns_14() {
-        assert_eq!(AgentType::all().len(), 14);
+    fn test_all_types_returns_17() {
+        assert_eq!(AgentType::all().len(), 17);
     }
 
     #[test]
@@ -275,7 +301,7 @@ mod tests {
         assert!(AgentType::Researcher.can_fork());
         assert!(AgentType::VoiceCoordinator.can_fork());
         assert!(!AgentType::Router.can_fork());
-        assert!(!AgentType::Experimenter.can_fork());
+        assert!(AgentType::Experimenter.can_fork());
         assert!(!AgentType::Worker.can_fork());
         assert!(!AgentType::Monitor.can_fork());
         assert!(!AgentType::Reviewer.can_fork());
@@ -285,6 +311,9 @@ mod tests {
         assert!(!AgentType::Embedder.can_fork());
         assert!(!AgentType::Analyst.can_fork());
         assert!(!AgentType::MarketplaceManager.can_fork());
+        assert!(AgentType::MeshCoordinator.can_fork());
+        assert!(!AgentType::FederationAgent.can_fork());
+        assert!(!AgentType::BillingManager.can_fork());
     }
 
     #[test]
@@ -304,6 +333,9 @@ mod tests {
         assert!(!AgentType::Analyst.can_mutate_state());
         assert!(!AgentType::Researcher.can_mutate_state());
         assert!(!AgentType::VoiceCoordinator.can_mutate_state());
+        assert!(!AgentType::MeshCoordinator.can_mutate_state());
+        assert!(!AgentType::FederationAgent.can_mutate_state());
+        assert!(AgentType::BillingManager.can_mutate_state());
     }
 
     #[test]
@@ -313,6 +345,9 @@ mod tests {
         assert_eq!(AgentType::Reviewer.model_tier(), ModelTier::ClaudeCode);
         assert_eq!(AgentType::Worker.model_tier(), ModelTier::Small);
         assert_eq!(AgentType::Router.model_tier(), ModelTier::Small);
+        assert_eq!(AgentType::MeshCoordinator.model_tier(), ModelTier::Medium);
+        assert_eq!(AgentType::FederationAgent.model_tier(), ModelTier::Medium);
+        assert_eq!(AgentType::BillingManager.model_tier(), ModelTier::Small);
     }
 
     #[test]
@@ -322,6 +357,9 @@ mod tests {
         assert_eq!(AgentType::Monitor.preferred_zone(), "C");
         assert_eq!(AgentType::Worker.preferred_zone(), "Multi");
         assert_eq!(AgentType::Experimenter.preferred_zone(), "Multi");
+        assert_eq!(AgentType::MeshCoordinator.preferred_zone(), "A");
+        assert_eq!(AgentType::FederationAgent.preferred_zone(), "B");
+        assert_eq!(AgentType::BillingManager.preferred_zone(), "Multi");
     }
 
     #[test]
@@ -333,6 +371,9 @@ mod tests {
         assert_eq!(AgentType::Researcher.max_instances(), 3);
         assert_eq!(AgentType::Experimenter.max_instances(), 8);
         assert_eq!(AgentType::Worker.max_instances(), 16);
+        assert_eq!(AgentType::MeshCoordinator.max_instances(), 2);
+        assert_eq!(AgentType::FederationAgent.max_instances(), 3);
+        assert_eq!(AgentType::BillingManager.max_instances(), 2);
     }
 
     #[test]

@@ -3,6 +3,7 @@ pub mod chaos;
 pub mod cloud;
 pub mod cluster;
 pub mod consensus;
+pub mod discovery;
 pub mod health;
 pub mod node;
 pub mod orchestrator;

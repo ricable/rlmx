@@ -83,6 +83,8 @@ pub enum SyscallPermission {
     VoiceTranscribe,
     VoiceSynthesize,
     IntentRoute,
+    MeshSync,
+    FederationContribute,
     All,
 }
 

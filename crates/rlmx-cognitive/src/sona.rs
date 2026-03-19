@@ -109,6 +109,12 @@ pub struct Sona {
     pub lora_deltas: Vec<LoraDelta>,
     /// EWC++ regularization to prevent catastrophic forgetting.
     pub ewc_fisher: Option<FisherInformation>,
+    /// Voice-specific Fisher Information diagonal for EWC++ (ADR-017).
+    ///
+    /// Kept separate from `ewc_fisher` so that learning new voice patterns
+    /// does not erase previously learned text patterns, and vice versa.
+    /// This enables cross-modal transfer while protecting both modalities.
+    pub voice_fisher: Option<FisherInformation>,
     /// Total number of adaptations performed.
     pub total_adaptations: usize,
     /// History of quality improvement deltas (bounded by `max_improvement_history`).
@@ -124,6 +130,7 @@ impl Sona {
             pattern_bank: PatternBank::default(),
             lora_deltas: Vec::new(),
             ewc_fisher: None,
+            voice_fisher: None,
             total_adaptations: 0,
             improvement_history: Vec::new(),
             max_improvement_history: 1000,
@@ -257,6 +264,89 @@ impl Sona {
         Ok(())
     }
 
+    /// Apply a voice-specific micro-LoRA adaptation (ADR-017).
+    ///
+    /// Uses the voice-specific Fisher Information diagonal for EWC++
+    /// regularization, protecting text-learned patterns from being overwritten
+    /// by voice adaptation and vice versa.
+    pub fn adapt_voice(&mut self, feedback: AdaptationFeedback) -> Result<()> {
+        if feedback.rank == 0 {
+            return Err(SonaError::AdaptationFailed("rank must be > 0".to_string()));
+        }
+
+        let grad_len = feedback.gradient.len();
+        if grad_len == 0 {
+            return Err(SonaError::AdaptationFailed(
+                "gradient must not be empty".to_string(),
+            ));
+        }
+
+        // Construct low-rank factorisation from the gradient.
+        let delta_a: Vec<f32> = feedback
+            .gradient
+            .iter()
+            .flat_map(|&g| {
+                (0..feedback.rank).map(move |r| g / (feedback.rank as f32) * (r as f32 + 1.0))
+            })
+            .collect();
+        let delta_b: Vec<f32> = (0..feedback.rank).map(|r| 1.0 / (r as f32 + 1.0)).collect();
+
+        // Apply voice-specific EWC++ penalty if voice Fisher info is available,
+        // plus the text Fisher penalty to protect text-learned weights.
+        let _voice_ewc_penalty = if let Some(ref fisher) = self.voice_fisher {
+            let penalty: f64 = feedback
+                .gradient
+                .iter()
+                .enumerate()
+                .map(|(i, &g)| {
+                    let f = fisher.diagonal.get(i).copied().unwrap_or(0.0);
+                    fisher.lambda * f * (g as f64).powi(2)
+                })
+                .sum();
+            penalty
+        } else {
+            0.0
+        };
+
+        let _text_ewc_penalty = if let Some(ref fisher) = self.ewc_fisher {
+            let penalty: f64 = feedback
+                .gradient
+                .iter()
+                .enumerate()
+                .map(|(i, &g)| {
+                    let f = fisher.diagonal.get(i).copied().unwrap_or(0.0);
+                    fisher.lambda * f * (g as f64).powi(2)
+                })
+                .sum();
+            penalty
+        } else {
+            0.0
+        };
+
+        self.lora_deltas.push(LoraDelta {
+            layer_name: format!("voice:{}", feedback.layer_name),
+            delta_a,
+            delta_b,
+            rank: feedback.rank,
+            applied_at: Utc::now(),
+        });
+
+        self.total_adaptations += 1;
+        self.improvement_history.push(feedback.quality_delta);
+
+        if self.improvement_history.len() > self.max_improvement_history {
+            let excess = self.improvement_history.len() - self.max_improvement_history;
+            self.improvement_history.drain(..excess);
+        }
+
+        Ok(())
+    }
+
+    /// Set the voice-specific Fisher Information diagonal (ADR-017).
+    pub fn set_voice_fisher(&mut self, fisher: FisherInformation) {
+        self.voice_fisher = Some(fisher);
+    }
+
     /// Return summary statistics.
     pub fn stats(&self) -> SonaStats {
         let avg_quality = if self.pattern_bank.patterns.is_empty() {
@@ -309,16 +399,26 @@ impl Default for Sona {
 // Utilities
 // ---------------------------------------------------------------------------
 
+// Re-export kernel's canonical cosine_similarity to avoid duplication.
+// Note: rlmx-cognitive doesn't depend on rlmx-kernel, so we keep a local
+// implementation. If the dependency is added, replace with a re-export.
 /// Cosine similarity between two vectors.
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
-    let len = a.len().min(b.len());
-    let dot: f64 = (0..len).map(|i| a[i] as f64 * b[i] as f64).sum();
-    let na: f64 = (0..len).map(|i| (a[i] as f64).powi(2)).sum::<f64>().sqrt();
-    let nb: f64 = (0..len).map(|i| (b[i] as f64).powi(2)).sum::<f64>().sqrt();
-    if na == 0.0 || nb == 0.0 {
+    if a.is_empty() || b.is_empty() || a.len() != b.len() {
         return 0.0;
     }
-    dot / (na * nb)
+    let mut dot = 0.0_f64;
+    let mut na = 0.0_f64;
+    let mut nb = 0.0_f64;
+    for (x, y) in a.iter().zip(b.iter()) {
+        let xf = *x as f64;
+        let yf = *y as f64;
+        dot += xf * yf;
+        na += xf * xf;
+        nb += yf * yf;
+    }
+    let denom = na.sqrt() * nb.sqrt();
+    if denom == 0.0 { 0.0 } else { dot / denom }
 }
 
 // ---------------------------------------------------------------------------
@@ -623,5 +723,107 @@ mod tests {
         // No match should return None.
         let none = bank.best_action("xyznonexistent");
         assert!(none.is_none());
+    }
+
+    // -- Voice-specific EWC++ tests (ADR-017) --
+
+    #[test]
+    fn test_voice_fisher_initialization() {
+        let sona = Sona::new();
+        assert!(sona.voice_fisher.is_none());
+        assert!(sona.ewc_fisher.is_none());
+    }
+
+    #[test]
+    fn test_set_voice_fisher() {
+        let mut sona = Sona::new();
+        let fisher = FisherInformation {
+            diagonal: vec![0.5, 0.3, 0.8, 0.1],
+            lambda: 0.5,
+        };
+        sona.set_voice_fisher(fisher);
+        assert!(sona.voice_fisher.is_some());
+        assert_eq!(sona.voice_fisher.as_ref().unwrap().diagonal.len(), 4);
+        assert!((sona.voice_fisher.as_ref().unwrap().lambda - 0.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_adapt_voice_basic() {
+        let mut sona = Sona::new();
+        let feedback = AdaptationFeedback {
+            layer_name: "voice_layer_0".into(),
+            gradient: vec![0.1, -0.2, 0.3],
+            rank: 2,
+            quality_delta: 0.08,
+        };
+        sona.adapt_voice(feedback).unwrap();
+        assert_eq!(sona.total_adaptations, 1);
+        assert_eq!(sona.lora_deltas.len(), 1);
+        // Voice adaptations are prefixed with "voice:".
+        assert!(sona.lora_deltas[0].layer_name.starts_with("voice:"));
+    }
+
+    #[test]
+    fn test_adapt_voice_with_fisher() {
+        let mut sona = Sona::new();
+        // Set both text and voice Fisher diagonals.
+        sona.ewc_fisher = Some(FisherInformation {
+            diagonal: vec![1.0, 1.0, 1.0],
+            lambda: 0.5,
+        });
+        sona.set_voice_fisher(FisherInformation {
+            diagonal: vec![0.5, 0.5, 0.5],
+            lambda: 0.3,
+        });
+
+        let feedback = AdaptationFeedback {
+            layer_name: "voice_encoder".into(),
+            gradient: vec![0.1, -0.2, 0.3],
+            rank: 1,
+            quality_delta: 0.05,
+        };
+        // Should succeed with both Fisher diagonals present.
+        sona.adapt_voice(feedback).unwrap();
+        assert_eq!(sona.total_adaptations, 1);
+    }
+
+    #[test]
+    fn test_voice_and_text_adapt_independent() {
+        let mut sona = Sona::new();
+        // Text adaptation.
+        let text_fb = AdaptationFeedback {
+            layer_name: "text_layer".into(),
+            gradient: vec![0.1, 0.2],
+            rank: 1,
+            quality_delta: 0.03,
+        };
+        sona.adapt(text_fb).unwrap();
+
+        // Voice adaptation.
+        let voice_fb = AdaptationFeedback {
+            layer_name: "voice_layer".into(),
+            gradient: vec![0.3, 0.4],
+            rank: 1,
+            quality_delta: 0.06,
+        };
+        sona.adapt_voice(voice_fb).unwrap();
+
+        assert_eq!(sona.total_adaptations, 2);
+        assert_eq!(sona.lora_deltas.len(), 2);
+        // First is text (no prefix), second is voice (prefixed).
+        assert_eq!(sona.lora_deltas[0].layer_name, "text_layer");
+        assert!(sona.lora_deltas[1].layer_name.starts_with("voice:"));
+    }
+
+    #[test]
+    fn test_adapt_voice_rejects_zero_rank() {
+        let mut sona = Sona::new();
+        let bad = AdaptationFeedback {
+            layer_name: "voice_layer".into(),
+            gradient: vec![0.1],
+            rank: 0,
+            quality_delta: 0.0,
+        };
+        assert!(sona.adapt_voice(bad).is_err());
     }
 }

@@ -599,6 +599,91 @@ fn parse_rel_spec(spec: &str) -> KernelResult<Option<String>> {
 
 // ---------------------------------------------------------------------------
 // Tests
+
+#[cfg(feature = "ruvnet-phase1")]
+pub mod phase1_graph {
+    use super::*;
+    use ruvector_graph as rvg;
+    use tracing::debug;
+    pub struct EnhancedGraph {
+        pub id: Uuid,
+        inner: rvg::Graph,
+        fallback: Graph,
+        uuid_to_rvg: HashMap<Uuid, String>,
+    }
+    impl EnhancedGraph {
+        pub fn new() -> Self {
+            let id = Uuid::new_v4();
+            debug!(%id, "created EnhancedGraph backed by ruvector-graph");
+            Self {
+                id,
+                inner: rvg::Graph::new(),
+                fallback: Graph::new(),
+                uuid_to_rvg: HashMap::new(),
+            }
+        }
+        pub fn insert_node(&mut self, node_type: impl Into<String>) -> Uuid {
+            let nt = node_type.into();
+            let uuid = self.fallback.insert_node(&nt);
+            let rvg_id = uuid.to_string();
+            self.inner.add_node(rvg_id.clone());
+            self.uuid_to_rvg.insert(uuid, rvg_id);
+            uuid
+        }
+        pub fn insert_edge(
+            &mut self,
+            source: Uuid,
+            target: Uuid,
+            edge_type: impl Into<String>,
+            weight: f64,
+        ) -> KernelResult<()> {
+            let et = edge_type.into();
+            self.fallback.insert_edge(source, target, &et, weight)?;
+            if let (Some(s), Some(t)) =
+                (self.uuid_to_rvg.get(&source), self.uuid_to_rvg.get(&target))
+            {
+                self.inner.add_edge(s.clone(), t.clone(), weight as f32);
+            }
+            Ok(())
+        }
+        pub fn get_node(&self, id: &Uuid) -> Option<&Node> {
+            self.fallback.get_node(id)
+        }
+        pub fn node_count(&self) -> usize {
+            self.fallback.node_count()
+        }
+        pub fn edge_count(&self) -> usize {
+            self.fallback.edge_count()
+        }
+        pub fn neighbors(&self, id: &Uuid) -> Vec<Uuid> {
+            let Some(rvg_id) = self.uuid_to_rvg.get(id) else {
+                return Vec::new();
+            };
+            self.inner
+                .neighbors(rvg_id)
+                .iter()
+                .filter_map(|n| n.parse::<Uuid>().ok())
+                .collect()
+        }
+        pub fn cypher_query(&self, query: &str) -> KernelResult<Vec<serde_json::Value>> {
+            self.fallback.cypher_query(query)
+        }
+        pub fn min_cut(&self, algorithm: &MinCutAlgorithm) -> KernelResult<(f64, Vec<Vec<Uuid>>)> {
+            self.fallback.min_cut(algorithm)
+        }
+        pub fn diffuse(&self, signal: &[f64], steps: usize) -> KernelResult<Vec<f64>> {
+            self.fallback.diffuse(signal, steps)
+        }
+    }
+    impl Default for EnhancedGraph {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+}
+#[cfg(feature = "ruvnet-phase1")]
+pub use phase1_graph::EnhancedGraph;
+
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]

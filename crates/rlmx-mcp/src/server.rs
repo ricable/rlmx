@@ -405,8 +405,15 @@ impl McpServer {
     }
 
     /// Map a tool name to the RBAC operation it requires.
+    ///
+    /// Mappings follow ADR-010 role requirements:
+    /// - Viewer+: read-only / informational tools → Query
+    /// - Operator+: status and monitoring tools → Ingest (Operator threshold)
+    /// - Engineer+: tools that create resources or allocate compute → ParameterModify
+    /// - Admin+: destructive tools (terminate) → ContainerSeal
     fn tool_to_operation(tool_name: &str) -> Operation {
         match tool_name {
+            // Core kernel tools (original 12)
             "rlmx_query" | "rlmx_graph_query" => Operation::Query,
             "rlmx_ingest" => Operation::Ingest,
             "rlmx_plugin_list" | "rlmx_plugin_action" => Operation::PluginManage,
@@ -414,12 +421,37 @@ impl McpServer {
             "rlmx_witness_chain" => Operation::WitnessView,
             "rlmx_rvf_seal" => Operation::ContainerSeal,
             "rlmx_rvf_branch" => Operation::ContainerBranch,
+            "rlmx_memory_stats" | "rlmx_trm_classify" | "rlmx_sona_stats" => Operation::Query,
+            // Swarm tools — Viewer+ (read-only)
+            "rlmx_swarm_status" | "rlmx_swarm_topology" => Operation::Query,
+            // Agent tools — per ADR-010
+            "rlmx_agent_spawn" => Operation::ParameterModify, // Engineer+
+            "rlmx_agent_list" => Operation::Ingest,           // Operator+
+            "rlmx_agent_terminate" => Operation::ContainerSeal, // Admin+
+            // Research tools — per ADR-010
+            "rlmx_research_start" => Operation::ParameterModify, // Engineer+
+            "rlmx_research_status" => Operation::Ingest,         // Operator+
+            "rlmx_experiment_list" | "rlmx_mutation_history" => Operation::Query, // Viewer+
+            "rlmx_forecast" => Operation::Ingest,                // Operator+
+            "rlmx_train" => Operation::ParameterModify,          // Engineer+
             // Sandbox tools (ADR-011)
             "rlmx_sandbox_spawn" | "rlmx_sandbox_terminate" | "rlmx_fleet_deploy" => {
                 Operation::ParameterModify
             }
             "rlmx_sandbox_status" | "rlmx_sandbox_list" => Operation::Query,
-            // Default to Query for informational/stats tools.
+            // Marketplace tools (ADR-014) — write operations need Operator+
+            "rlmx_marketplace_search" | "rlmx_marketplace_featured"
+            | "rlmx_marketplace_categories" | "rlmx_marketplace_list_installed" => {
+                Operation::Query
+            }
+            "rlmx_marketplace_install" | "rlmx_marketplace_uninstall"
+            | "rlmx_marketplace_rate" => Operation::Ingest, // Operator+
+            "rlmx_marketplace_publish" => Operation::ParameterModify, // Engineer+
+            // Voice tools (ADR-018)
+            "rlmx_voice_transcribe" | "rlmx_voice_synthesize" | "rlmx_voice_session" => {
+                Operation::Ingest // Operator+
+            }
+            // Default to Query for any unrecognized informational tools.
             _ => Operation::Query,
         }
     }

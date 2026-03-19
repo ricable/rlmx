@@ -1,6 +1,6 @@
 # ADR-023: Federated Learning Pipeline
 
-Status: Proposed
+Status: Implemented
 
 ## Context
 RuVix Mesh's core value proposition is compound intelligence — agents that learn from individual user interactions AND from anonymized patterns across millions of users. This requires a federated learning pipeline that preserves privacy while enabling collective improvement.

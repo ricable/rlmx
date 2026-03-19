@@ -126,10 +126,7 @@ impl PublisherPortal {
 
     /// List all verified publishers.
     pub fn verified_publishers(&self) -> Vec<&Publisher> {
-        self.publishers
-            .values()
-            .filter(|p| p.verified)
-            .collect()
+        self.publishers.values().filter(|p| p.verified).collect()
     }
 }
 
@@ -141,7 +138,11 @@ mod tests {
     fn register_and_lookup() {
         let mut portal = PublisherPortal::new();
         let id = portal
-            .register("Acme".into(), "dev@acme.com".into(), DeveloperType::Organization)
+            .register(
+                "Acme".into(),
+                "dev@acme.com".into(),
+                DeveloperType::Organization,
+            )
             .unwrap();
 
         let pub_ = portal.get(&id).unwrap();
@@ -164,7 +165,11 @@ mod tests {
     fn verify_publisher() {
         let mut portal = PublisherPortal::new();
         let id = portal
-            .register("Dev".into(), "dev@test.com".into(), DeveloperType::Individual)
+            .register(
+                "Dev".into(),
+                "dev@test.com".into(),
+                DeveloperType::Individual,
+            )
             .unwrap();
 
         portal.verify(&id).unwrap();
@@ -175,7 +180,11 @@ mod tests {
     fn lookup_by_email() {
         let mut portal = PublisherPortal::new();
         portal
-            .register("EmailDev".into(), "find@me.com".into(), DeveloperType::Individual)
+            .register(
+                "EmailDev".into(),
+                "find@me.com".into(),
+                DeveloperType::Individual,
+            )
             .unwrap();
 
         let found = portal.by_email("find@me.com");

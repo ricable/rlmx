@@ -53,6 +53,12 @@ pub enum SegmentType {
     Model,
     /// SONA pattern bank
     Pattern,
+    /// Executable code (WASM bytecode for marketplace agents)
+    Code,
+    /// Prompt templates
+    Prompt,
+    /// Evidence / proof artifacts
+    Evidence,
     /// User-defined custom segment type
     Custom(String),
 }
@@ -81,6 +87,9 @@ impl std::fmt::Display for SegmentType {
             SegmentType::Config => write!(f, "Config"),
             SegmentType::Model => write!(f, "Model"),
             SegmentType::Pattern => write!(f, "Pattern"),
+            SegmentType::Code => write!(f, "Code"),
+            SegmentType::Prompt => write!(f, "Prompt"),
+            SegmentType::Evidence => write!(f, "Evidence"),
             SegmentType::Custom(name) => write!(f, "Custom({})", name),
         }
     }
@@ -172,6 +181,9 @@ mod tests {
             SegmentType::Config,
             SegmentType::Model,
             SegmentType::Pattern,
+            SegmentType::Code,
+            SegmentType::Prompt,
+            SegmentType::Evidence,
             SegmentType::Custom("my_type".to_string()),
         ];
 

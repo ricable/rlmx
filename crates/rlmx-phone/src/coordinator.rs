@@ -161,9 +161,7 @@ impl LightweightCoordinator {
             .filter_map(|ft| {
                 // Skip if already active.
                 let already_running = self.active_agents.iter().any(|a| {
-                    a.agent_type == ft.name()
-                        && a.is_free_tier
-                        && a.status == AgentStatus::Running
+                    a.agent_type == ft.name() && a.is_free_tier && a.status == AgentStatus::Running
                 });
                 if already_running {
                     return None;
@@ -199,7 +197,7 @@ mod tests {
     #[test]
     fn test_free_agents_bypass_limit() {
         let mut coord = LightweightCoordinator::new(0); // zero limit
-        // Free agents should still start.
+                                                        // Free agents should still start.
         let result = coord.start_agent("Email Triage", true);
         assert!(result.is_ok());
     }

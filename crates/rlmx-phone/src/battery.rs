@@ -137,7 +137,11 @@ impl BatteryAwareScheduler {
 
     /// Update capabilities and recompute the battery policy.
     /// Returns the new policy (and whether it changed).
-    pub fn update(&mut self, battery_pct: f32, thermal_state: ThermalState) -> (BatteryPolicy, bool) {
+    pub fn update(
+        &mut self,
+        battery_pct: f32,
+        thermal_state: ThermalState,
+    ) -> (BatteryPolicy, bool) {
         self.capabilities.battery_pct = battery_pct;
         self.capabilities.thermal_state = thermal_state;
         let new_policy = Self::derive_policy(battery_pct, thermal_state);

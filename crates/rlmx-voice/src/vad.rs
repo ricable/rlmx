@@ -149,9 +149,7 @@ impl VoiceActivityDetector {
             return true; // Manual trigger mode, always "detected".
         }
         let lower = transcript.to_lowercase();
-        lower.contains("hey ruvix")
-            || lower.contains("ok ruvix")
-            || lower.contains("ruvix")
+        lower.contains("hey ruvix") || lower.contains("ok ruvix") || lower.contains("ruvix")
     }
 
     /// Adapt the energy threshold based on ambient noise level.

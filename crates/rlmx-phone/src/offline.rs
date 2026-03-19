@@ -166,10 +166,7 @@ mod tests {
 
         assert_eq!(outbox.queue_len(), 2);
         // The first one should have been evicted.
-        assert!(outbox
-            .queued_requests
-            .iter()
-            .any(|r| r.id == id3));
+        assert!(outbox.queued_requests.iter().any(|r| r.id == id3));
     }
 
     #[test]

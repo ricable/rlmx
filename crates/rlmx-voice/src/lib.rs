@@ -17,14 +17,12 @@ pub mod tts;
 pub mod vad;
 
 // Re-export primary types for convenient access.
-pub use intent::{
-    ExtractedEntity, Intent, IntentClassifier, LifeDomain, MultiIntentDecomposer,
-};
+// LifeDomain, Intent, and ResponseMode come from rlmx-kernel (rule #9).
+pub use intent::{ExtractedEntity, IntentClassifier, MultiIntentDecomposer};
 pub use pipeline::{SpeechToText, SttTier, VoicePipeline};
-pub use session::{
-    ConversationTurn, ResponseMode, SessionMemory, TurnDirection, VoiceDomainEvent, VoiceSession,
-};
-pub use tts::{PersonaStyle, TtsEngine, VoicePersona};
+pub use rlmx_kernel::{Intent, LifeDomain, ResponseMode};
+pub use session::{ConversationTurn, SessionMemory, TurnDirection, VoiceDomainEvent, VoiceSession};
+pub use tts::{PersonaConfig, PersonaStyle, TtsEngine};
 pub use vad::VoiceActivityDetector;
 
 /// Errors specific to the voice pipeline.

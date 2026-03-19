@@ -4,11 +4,12 @@
 //! The pipeline is an entity (not a value object) because it has independent
 //! lifecycle and mutable state in its VAD calibration and STT adaptation.
 
-use crate::intent::{Intent, MultiIntentDecomposer};
-use crate::session::{ResponseMode, SessionMemory, VoiceDomainEvent, VoiceSession};
+use crate::intent::MultiIntentDecomposer;
+use crate::session::{SessionMemory, VoiceDomainEvent, VoiceSession};
 use crate::tts::{TtsChunk, TtsEngine};
 use crate::vad::{AudioFrame, VadDecision, VoiceActivityDetector};
 use crate::{VoiceError, VoiceResult};
+use rlmx_kernel::{Intent, LifeDomain, ResponseMode};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -183,8 +184,38 @@ impl VoicePipeline {
     }
 
     /// Process audio frames through VAD.
+    ///
+    /// Returns the VAD decision. When speech is detected (`SpeechStart` or
+    /// `SpeechContinue`), callers should emit a `SpeechDetected` event via
+    /// [`detect_speech_with_event`] if a session is active.
     pub fn detect_speech(&self, frames: &[AudioFrame]) -> VadDecision {
         self.vad.process_buffer(frames)
+    }
+
+    /// Process audio frames through VAD and emit a domain event when speech
+    /// is detected (DDD-008 `SpeechDetected` event).
+    pub fn detect_speech_with_event(
+        &self,
+        session_id: Uuid,
+        frames: &[AudioFrame],
+    ) -> (VadDecision, Option<VoiceDomainEvent>) {
+        let decision = self.vad.process_buffer(frames);
+        let event = match decision {
+            VadDecision::SpeechStart | VadDecision::SpeechContinue => {
+                // Compute a rough confidence from the average energy of the frames.
+                let avg_energy = if frames.is_empty() {
+                    0.0
+                } else {
+                    frames.iter().map(|f| f.energy).sum::<f32>() / frames.len() as f32
+                };
+                Some(VoiceDomainEvent::SpeechDetected {
+                    session_id,
+                    vad_confidence: avg_energy.clamp(0.0, 1.0),
+                })
+            }
+            _ => None,
+        };
+        (decision, event)
     }
 
     /// Process a transcript through intent decomposition.
@@ -238,7 +269,7 @@ impl VoicePipeline {
         &self,
         session: &mut VoiceSession,
         response_text: &str,
-        domain: crate::intent::LifeDomain,
+        domain: LifeDomain,
     ) -> (Vec<TtsChunk>, VoiceDomainEvent) {
         let engine = TtsEngine::for_domain(domain);
         let chunks = engine.synthesize(response_text);
@@ -301,7 +332,6 @@ pub struct PipelineResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::intent::LifeDomain;
     use crate::vad::AudioFrame;
 
     fn speech_frames(count: usize) -> Vec<AudioFrame> {
@@ -383,8 +413,11 @@ mod tests {
     fn test_pipeline_synthesize_response() {
         let pipeline = VoicePipeline::new();
         let (mut session, _) = pipeline.start_session(ResponseMode::Multimodal);
-        let (chunks, event) =
-            pipeline.synthesize_response(&mut session, "Your bill has been paid.", LifeDomain::Finance);
+        let (chunks, event) = pipeline.synthesize_response(
+            &mut session,
+            "Your bill has been paid.",
+            LifeDomain::Finance,
+        );
         assert!(!chunks.is_empty());
         assert!(matches!(event, VoiceDomainEvent::ResponseStreaming { .. }));
         assert_eq!(session.turn_count(), 1);
@@ -474,5 +507,33 @@ mod tests {
     fn test_pipeline_default_trait() {
         let pipeline = VoicePipeline::default();
         assert_eq!(pipeline.stt.tier, SttTier::Small);
+    }
+
+    #[test]
+    fn test_detect_speech_with_event_emits_on_speech() {
+        let pipeline = VoicePipeline::new();
+        let session_id = Uuid::new_v4();
+        let (decision, event) = pipeline.detect_speech_with_event(session_id, &speech_frames(5));
+        assert_eq!(decision, VadDecision::SpeechContinue);
+        assert!(event.is_some());
+        match event.unwrap() {
+            VoiceDomainEvent::SpeechDetected {
+                session_id: sid,
+                vad_confidence,
+            } => {
+                assert_eq!(sid, session_id);
+                assert!(vad_confidence > 0.0);
+            }
+            _ => panic!("expected SpeechDetected event"),
+        }
+    }
+
+    #[test]
+    fn test_detect_speech_with_event_none_on_silence() {
+        let pipeline = VoicePipeline::new();
+        let session_id = Uuid::new_v4();
+        let (decision, event) = pipeline.detect_speech_with_event(session_id, &silence_frames(5));
+        assert_eq!(decision, VadDecision::Silence);
+        assert!(event.is_none());
     }
 }

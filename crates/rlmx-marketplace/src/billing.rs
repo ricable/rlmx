@@ -279,7 +279,12 @@ mod tests {
         engine.ensure_account(pid);
 
         let tx = engine
-            .record_sale(&pid, Uuid::new_v4(), Uuid::new_v4(), &AgentPrice::OneTime(1000))
+            .record_sale(
+                &pid,
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                &AgentPrice::OneTime(1000),
+            )
             .unwrap()
             .unwrap();
 
@@ -312,7 +317,12 @@ mod tests {
 
         // Below threshold: $49 gross -> $34.30 dev share
         engine
-            .record_sale(&pid, Uuid::new_v4(), Uuid::new_v4(), &AgentPrice::OneTime(4900))
+            .record_sale(
+                &pid,
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                &AgentPrice::OneTime(4900),
+            )
             .unwrap();
 
         let payouts = engine.run_payout_cycle();
@@ -320,7 +330,12 @@ mod tests {
 
         // Push above threshold
         engine
-            .record_sale(&pid, Uuid::new_v4(), Uuid::new_v4(), &AgentPrice::OneTime(3000))
+            .record_sale(
+                &pid,
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                &AgentPrice::OneTime(3000),
+            )
             .unwrap();
 
         let payouts = engine.run_payout_cycle();
@@ -336,7 +351,12 @@ mod tests {
 
         // Add enough balance but no payout method
         engine
-            .record_sale(&pid, Uuid::new_v4(), Uuid::new_v4(), &AgentPrice::OneTime(10000))
+            .record_sale(
+                &pid,
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                &AgentPrice::OneTime(10000),
+            )
             .unwrap();
 
         let payouts = engine.run_payout_cycle();

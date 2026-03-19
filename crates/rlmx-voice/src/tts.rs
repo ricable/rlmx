@@ -4,7 +4,7 @@
 //! speech rate, and model. Streaming TTS targets <200ms to first audio
 //! chunk (stub implementation).
 
-use crate::intent::LifeDomain;
+use rlmx_kernel::LifeDomain;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -27,7 +27,7 @@ pub enum PersonaStyle {
 
 /// A voice persona configuration for TTS output.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VoicePersona {
+pub struct PersonaConfig {
     /// Which life domain this persona serves.
     pub domain: LifeDomain,
     /// The persona's vocal style.
@@ -38,32 +38,51 @@ pub struct VoicePersona {
     pub model_id: String,
 }
 
-impl VoicePersona {
+impl PersonaConfig {
     /// Get the default persona for a given life domain.
     ///
     /// Maps domains to styles per ADR-012 persona table:
     /// Finance=Calm, Health=Warm, Legal=Authoritative, Shopping=Upbeat,
-    /// Calendar=Neutral (brief), Emergency=Urgent.
+    /// Education=Neutral (brief, includes calendar), Health=Urgent (for emergencies).
     pub fn for_domain(domain: LifeDomain) -> Self {
         let (style, rate, model) = match domain {
             LifeDomain::Finance => (PersonaStyle::Calm, 1.0, "ruvix-tts-calm-v1"),
             LifeDomain::Health => (PersonaStyle::Warm, 0.95, "ruvix-tts-warm-v1"),
             LifeDomain::Legal => (PersonaStyle::Authoritative, 1.0, "ruvix-tts-auth-v1"),
             LifeDomain::Shopping => (PersonaStyle::Upbeat, 1.1, "ruvix-tts-upbeat-v1"),
-            LifeDomain::Calendar => (PersonaStyle::Neutral, 1.15, "ruvix-tts-neutral-v1"),
-            LifeDomain::Emergency => (PersonaStyle::Urgent, 1.2, "ruvix-tts-urgent-v1"),
+            LifeDomain::Education => (PersonaStyle::Neutral, 1.15, "ruvix-tts-neutral-v1"),
             LifeDomain::Travel => (PersonaStyle::Upbeat, 1.05, "ruvix-tts-upbeat-v1"),
-            LifeDomain::Education => (PersonaStyle::Warm, 0.9, "ruvix-tts-warm-v1"),
-            LifeDomain::Entertainment => (PersonaStyle::Upbeat, 1.1, "ruvix-tts-upbeat-v1"),
-            LifeDomain::HomeAutomation => (PersonaStyle::Neutral, 1.0, "ruvix-tts-neutral-v1"),
-            LifeDomain::Communication => (PersonaStyle::Neutral, 1.0, "ruvix-tts-neutral-v1"),
-            LifeDomain::Productivity => (PersonaStyle::Calm, 1.05, "ruvix-tts-calm-v1"),
+            LifeDomain::Social => (PersonaStyle::Upbeat, 1.1, "ruvix-tts-upbeat-v1"),
+            LifeDomain::Home => (PersonaStyle::Neutral, 1.0, "ruvix-tts-neutral-v1"),
+            LifeDomain::Career => (PersonaStyle::Calm, 1.05, "ruvix-tts-calm-v1"),
+            LifeDomain::Government => (PersonaStyle::Authoritative, 1.0, "ruvix-tts-auth-v1"),
+            LifeDomain::Automotive => (PersonaStyle::Neutral, 1.0, "ruvix-tts-neutral-v1"),
+            LifeDomain::Pet => (PersonaStyle::Warm, 1.0, "ruvix-tts-warm-v1"),
         };
         Self {
             domain,
             style,
             rate,
             model_id: model.to_string(),
+        }
+    }
+}
+
+impl From<rlmx_kernel::VoicePersona> for PersonaConfig {
+    fn from(persona: rlmx_kernel::VoicePersona) -> Self {
+        match persona {
+            rlmx_kernel::VoicePersona::Finance => Self::for_domain(LifeDomain::Finance),
+            rlmx_kernel::VoicePersona::Health => Self::for_domain(LifeDomain::Health),
+            rlmx_kernel::VoicePersona::Legal => Self::for_domain(LifeDomain::Legal),
+            rlmx_kernel::VoicePersona::Shopping => Self::for_domain(LifeDomain::Shopping),
+            rlmx_kernel::VoicePersona::Calendar => Self::for_domain(LifeDomain::Education),
+            rlmx_kernel::VoicePersona::Emergency => {
+                let mut config = Self::for_domain(LifeDomain::Health);
+                config.style = PersonaStyle::Urgent;
+                config.rate = 1.2;
+                config.model_id = "ruvix-tts-urgent-v1".to_string();
+                config
+            }
         }
     }
 }
@@ -85,14 +104,14 @@ pub struct TtsChunk {
 /// (<50 tokens) and cloud streaming for long-form content.
 pub struct TtsEngine {
     /// The active voice persona.
-    persona: VoicePersona,
+    persona: PersonaConfig,
     /// Target chunk duration in milliseconds.
     chunk_duration_ms: u16,
 }
 
 impl TtsEngine {
     /// Create a new TTS engine with the given persona.
-    pub fn new(persona: VoicePersona) -> Self {
+    pub fn new(persona: PersonaConfig) -> Self {
         Self {
             persona,
             chunk_duration_ms: 80,
@@ -101,16 +120,16 @@ impl TtsEngine {
 
     /// Create a TTS engine for a specific life domain using its default persona.
     pub fn for_domain(domain: LifeDomain) -> Self {
-        Self::new(VoicePersona::for_domain(domain))
+        Self::new(PersonaConfig::for_domain(domain))
     }
 
     /// Get the current persona.
-    pub fn persona(&self) -> &VoicePersona {
+    pub fn persona(&self) -> &PersonaConfig {
         &self.persona
     }
 
     /// Set a new persona.
-    pub fn set_persona(&mut self, persona: VoicePersona) {
+    pub fn set_persona(&mut self, persona: PersonaConfig) {
         self.persona = persona;
     }
 
@@ -157,46 +176,60 @@ mod tests {
 
     #[test]
     fn test_persona_finance() {
-        let p = VoicePersona::for_domain(LifeDomain::Finance);
+        let p = PersonaConfig::for_domain(LifeDomain::Finance);
         assert_eq!(p.style, PersonaStyle::Calm);
         assert!((p.rate - 1.0).abs() < f32::EPSILON);
     }
 
     #[test]
-    fn test_persona_emergency() {
-        let p = VoicePersona::for_domain(LifeDomain::Emergency);
+    fn test_persona_health_emergency_via_kernel() {
+        let p: PersonaConfig = rlmx_kernel::VoicePersona::Emergency.into();
         assert_eq!(p.style, PersonaStyle::Urgent);
         assert!(p.rate > 1.0);
     }
 
     #[test]
     fn test_persona_health() {
-        let p = VoicePersona::for_domain(LifeDomain::Health);
+        let p = PersonaConfig::for_domain(LifeDomain::Health);
         assert_eq!(p.style, PersonaStyle::Warm);
     }
 
     #[test]
     fn test_persona_shopping() {
-        let p = VoicePersona::for_domain(LifeDomain::Shopping);
+        let p = PersonaConfig::for_domain(LifeDomain::Shopping);
         assert_eq!(p.style, PersonaStyle::Upbeat);
     }
 
     #[test]
     fn test_persona_legal() {
-        let p = VoicePersona::for_domain(LifeDomain::Legal);
+        let p = PersonaConfig::for_domain(LifeDomain::Legal);
         assert_eq!(p.style, PersonaStyle::Authoritative);
     }
 
     #[test]
-    fn test_persona_calendar() {
-        let p = VoicePersona::for_domain(LifeDomain::Calendar);
+    fn test_persona_education() {
+        let p = PersonaConfig::for_domain(LifeDomain::Education);
         assert_eq!(p.style, PersonaStyle::Neutral);
     }
 
     #[test]
     fn test_all_12_domains_have_personas() {
-        for domain in LifeDomain::all() {
-            let p = VoicePersona::for_domain(*domain);
+        let all_domains = [
+            LifeDomain::Finance,
+            LifeDomain::Health,
+            LifeDomain::Legal,
+            LifeDomain::Career,
+            LifeDomain::Education,
+            LifeDomain::Home,
+            LifeDomain::Shopping,
+            LifeDomain::Travel,
+            LifeDomain::Social,
+            LifeDomain::Government,
+            LifeDomain::Automotive,
+            LifeDomain::Pet,
+        ];
+        for domain in &all_domains {
+            let p = PersonaConfig::for_domain(*domain);
             assert_eq!(p.domain, *domain);
             assert!(p.rate > 0.0);
             assert!(!p.model_id.is_empty());
@@ -221,19 +254,19 @@ mod tests {
 
     #[test]
     fn test_first_chunk_latency_under_200ms() {
-        let engine = TtsEngine::for_domain(LifeDomain::Emergency);
+        let engine = TtsEngine::for_domain(LifeDomain::Health);
         assert!(engine.estimated_first_chunk_latency_ms() < 200);
     }
 
     #[test]
     fn test_faster_rate_fewer_chunks() {
-        let slow = TtsEngine::new(VoicePersona {
+        let slow = TtsEngine::new(PersonaConfig {
             domain: LifeDomain::Finance,
             style: PersonaStyle::Calm,
             rate: 0.5,
             model_id: "test".to_string(),
         });
-        let fast = TtsEngine::new(VoicePersona {
+        let fast = TtsEngine::new(PersonaConfig {
             domain: LifeDomain::Finance,
             style: PersonaStyle::Calm,
             rate: 2.0,
@@ -241,5 +274,19 @@ mod tests {
         });
         let text = "This is a sentence with several words for testing.";
         assert!(slow.synthesize(text).len() > fast.synthesize(text).len());
+    }
+
+    #[test]
+    fn test_kernel_voice_persona_conversion() {
+        let config: PersonaConfig = rlmx_kernel::VoicePersona::Finance.into();
+        assert_eq!(config.domain, LifeDomain::Finance);
+        assert_eq!(config.style, PersonaStyle::Calm);
+
+        let config: PersonaConfig = rlmx_kernel::VoicePersona::Calendar.into();
+        assert_eq!(config.domain, LifeDomain::Education);
+
+        let config: PersonaConfig = rlmx_kernel::VoicePersona::Emergency.into();
+        assert_eq!(config.domain, LifeDomain::Health);
+        assert_eq!(config.style, PersonaStyle::Urgent);
     }
 }
