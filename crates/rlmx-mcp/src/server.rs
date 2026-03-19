@@ -440,12 +440,13 @@ impl McpServer {
             }
             "rlmx_sandbox_status" | "rlmx_sandbox_list" => Operation::Query,
             // Marketplace tools (ADR-014) — write operations need Operator+
-            "rlmx_marketplace_search" | "rlmx_marketplace_featured"
-            | "rlmx_marketplace_categories" | "rlmx_marketplace_list_installed" => {
-                Operation::Query
-            }
-            "rlmx_marketplace_install" | "rlmx_marketplace_uninstall"
-            | "rlmx_marketplace_rate" => Operation::Ingest, // Operator+
+            "rlmx_marketplace_search"
+            | "rlmx_marketplace_featured"
+            | "rlmx_marketplace_categories"
+            | "rlmx_marketplace_list_installed" => Operation::Query,
+            "rlmx_marketplace_install" | "rlmx_marketplace_uninstall" | "rlmx_marketplace_rate" => {
+                Operation::Ingest
+            } // Operator+
             "rlmx_marketplace_publish" => Operation::ParameterModify, // Engineer+
             // Voice tools (ADR-018)
             "rlmx_voice_transcribe" | "rlmx_voice_synthesize" | "rlmx_voice_session" => {

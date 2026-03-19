@@ -253,10 +253,7 @@ impl Marketplace {
 
         tracing::info!(agent_id = %agent_id, user_id = %user_id, "agent uninstalled");
 
-        Ok(MarketplaceDomainEvent::AgentUninstalled {
-            agent_id,
-            user_id,
-        })
+        Ok(MarketplaceDomainEvent::AgentUninstalled { agent_id, user_id })
     }
 
     /// Rate an agent.
@@ -521,9 +518,7 @@ mod tests {
         }
 
         // The 50th rating should trigger the policy
-        let events = mp
-            .rate_agent(agent_id, Uuid::new_v4(), 1.0, None)
-            .unwrap();
+        let events = mp.rate_agent(agent_id, Uuid::new_v4(), 1.0, None).unwrap();
 
         // Should have both the rating event and the suspension event
         assert_eq!(events.len(), 2);

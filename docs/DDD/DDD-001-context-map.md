@@ -10,9 +10,9 @@ relationships.
 
 | # | Context | Type | Crate(s) | Responsibility |
 |---|---------|------|----------|----------------|
-| 1 | **Kernel Syscall** | Core | `rlmx-kernel` | 12-syscall dispatch, capability security, process model, proof chain |
-| 2 | **Agent Lifecycle** | Core | `rlmx-agents` (planned) | 12 agent types, spawn/terminate, permission matrices |
-| 3 | **Swarm Coordination** | Core | `rlmx-swarm` (planned) | 25-node cluster, zones, consensus (PBFT/Raft/Gossip), transport |
+| 1 | **Kernel Syscall** | Core | `rlmx-kernel` | 17-syscall-permission dispatch, capability security, process model, proof chain |
+| 2 | **Agent Lifecycle** | Core | `rlmx-agents` | 17 agent types, spawn/terminate, 17x17 permission matrix |
+| 3 | **Swarm Coordination** | Core | `rlmx-swarm` | 6-zone cluster, consensus (PBFT/Raft/Gossip), transport, discovery |
 | 4 | **Inference Routing** | Core | `rlmx-kernel` (scheduler.rs), `rlmx-ruvllm`, `rlmx-rlm`, `rlmx-trm` | Strategy selection, tiered model dispatch, edge inference |
 | 5 | **Research & Evolution** | Supporting | `rlmx-agents` (researcher, experimenter) | Auto-research pipeline, mutation, cross-pollination |
 | 6 | **Observation & Health** | Supporting | `rlmx-cognitive` | SONA adaptation, DAG optimizer, nervous system, circadian scheduling |
@@ -268,16 +268,17 @@ rlmx-mesh [NEW]            (Personal Mesh context)
   +-- rlmx-kernel
 
 rlmx-federation [NEW]      (Federated Learning context)
-  (standalone — no kernel dependency)
+  +-- rlmx-kernel
+  +-- rlmx-cognitive
 
 rlmx-billing [NEW]         (Subscription Billing context)
-  (standalone — no kernel dependency)
+  +-- rlmx-kernel
 
 rlmx-napi [NEW]            (NAPI-RS binding layer)
   +-- rlmx-kernel
 
 rlmx-wasm [NEW]            (WASM kernel subset)
-  (standalone — feature-gated wasm-bindgen)
+  +-- rlmx-kernel (feature-gated wasm-bindgen)
 ```
 
 ## Integration Mapping

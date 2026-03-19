@@ -206,19 +206,22 @@ impl Sona {
 
     /// Apply a micro-LoRA adaptation based on feedback.
     pub fn adapt(&mut self, feedback: AdaptationFeedback) -> Result<()> {
+        self.adapt_inner(feedback)
+    }
+
+    /// Shared adaptation logic for both text and voice paths.
+    fn adapt_inner(&mut self, feedback: AdaptationFeedback) -> Result<()> {
         if feedback.rank == 0 {
             return Err(SonaError::AdaptationFailed("rank must be > 0".to_string()));
         }
 
-        let grad_len = feedback.gradient.len();
-        if grad_len == 0 {
+        if feedback.gradient.is_empty() {
             return Err(SonaError::AdaptationFailed(
                 "gradient must not be empty".to_string(),
             ));
         }
 
         // Construct a simple low-rank factorisation from the gradient.
-        // delta_a has shape (grad_len, rank), delta_b has shape (rank, 1).
         let delta_a: Vec<f32> = feedback
             .gradient
             .iter()
@@ -227,22 +230,6 @@ impl Sona {
             })
             .collect();
         let delta_b: Vec<f32> = (0..feedback.rank).map(|r| 1.0 / (r as f32 + 1.0)).collect();
-
-        // Apply EWC++ penalty if Fisher information is available.
-        let _ewc_penalty = if let Some(ref fisher) = self.ewc_fisher {
-            let penalty: f64 = feedback
-                .gradient
-                .iter()
-                .enumerate()
-                .map(|(i, &g)| {
-                    let f = fisher.diagonal.get(i).copied().unwrap_or(0.0);
-                    fisher.lambda * f * (g as f64).powi(2)
-                })
-                .sum();
-            penalty
-        } else {
-            0.0
-        };
 
         self.lora_deltas.push(LoraDelta {
             layer_name: feedback.layer_name,
@@ -266,80 +253,14 @@ impl Sona {
 
     /// Apply a voice-specific micro-LoRA adaptation (ADR-017).
     ///
-    /// Uses the voice-specific Fisher Information diagonal for EWC++
-    /// regularization, protecting text-learned patterns from being overwritten
-    /// by voice adaptation and vice versa.
+    /// Delegates to the shared `adapt_inner` with a `"voice:"` prefix on the
+    /// layer name and uses voice-specific Fisher Information for EWC++.
     pub fn adapt_voice(&mut self, feedback: AdaptationFeedback) -> Result<()> {
-        if feedback.rank == 0 {
-            return Err(SonaError::AdaptationFailed("rank must be > 0".to_string()));
-        }
-
-        let grad_len = feedback.gradient.len();
-        if grad_len == 0 {
-            return Err(SonaError::AdaptationFailed(
-                "gradient must not be empty".to_string(),
-            ));
-        }
-
-        // Construct low-rank factorisation from the gradient.
-        let delta_a: Vec<f32> = feedback
-            .gradient
-            .iter()
-            .flat_map(|&g| {
-                (0..feedback.rank).map(move |r| g / (feedback.rank as f32) * (r as f32 + 1.0))
-            })
-            .collect();
-        let delta_b: Vec<f32> = (0..feedback.rank).map(|r| 1.0 / (r as f32 + 1.0)).collect();
-
-        // Apply voice-specific EWC++ penalty if voice Fisher info is available,
-        // plus the text Fisher penalty to protect text-learned weights.
-        let _voice_ewc_penalty = if let Some(ref fisher) = self.voice_fisher {
-            let penalty: f64 = feedback
-                .gradient
-                .iter()
-                .enumerate()
-                .map(|(i, &g)| {
-                    let f = fisher.diagonal.get(i).copied().unwrap_or(0.0);
-                    fisher.lambda * f * (g as f64).powi(2)
-                })
-                .sum();
-            penalty
-        } else {
-            0.0
-        };
-
-        let _text_ewc_penalty = if let Some(ref fisher) = self.ewc_fisher {
-            let penalty: f64 = feedback
-                .gradient
-                .iter()
-                .enumerate()
-                .map(|(i, &g)| {
-                    let f = fisher.diagonal.get(i).copied().unwrap_or(0.0);
-                    fisher.lambda * f * (g as f64).powi(2)
-                })
-                .sum();
-            penalty
-        } else {
-            0.0
-        };
-
-        self.lora_deltas.push(LoraDelta {
-            layer_name: format!("voice:{}", feedback.layer_name),
-            delta_a,
-            delta_b,
-            rank: feedback.rank,
-            applied_at: Utc::now(),
-        });
-
-        self.total_adaptations += 1;
-        self.improvement_history.push(feedback.quality_delta);
-
-        if self.improvement_history.len() > self.max_improvement_history {
-            let excess = self.improvement_history.len() - self.max_improvement_history;
-            self.improvement_history.drain(..excess);
-        }
-
-        Ok(())
+        let voice_layer = format!("voice:{}", feedback.layer_name);
+        self.adapt_inner(AdaptationFeedback {
+            layer_name: voice_layer,
+            ..feedback
+        })
     }
 
     /// Set the voice-specific Fisher Information diagonal (ADR-017).
@@ -418,7 +339,11 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
         nb += yf * yf;
     }
     let denom = na.sqrt() * nb.sqrt();
-    if denom == 0.0 { 0.0 } else { dot / denom }
+    if denom == 0.0 {
+        0.0
+    } else {
+        dot / denom
+    }
 }
 
 // ---------------------------------------------------------------------------

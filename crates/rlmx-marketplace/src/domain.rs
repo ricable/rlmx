@@ -231,7 +231,14 @@ impl AgentPack {
         price: AgentPrice,
         description: String,
     ) -> Self {
-        Self::with_split(name, creator, agents, price, description, RevenueSplit::celebrity())
+        Self::with_split(
+            name,
+            creator,
+            agents,
+            price,
+            description,
+            RevenueSplit::celebrity(),
+        )
     }
 
     /// Create a new agent pack with a custom revenue split.

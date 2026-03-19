@@ -201,7 +201,7 @@ commit messages, and conversations should use these terms consistently.
 |------|------------|
 | **Federation Cycle** | The aggregate root (`FederationCycle`). A weekly cycle that progresses through 4 phases: Collecting → Aggregating → Distributing → Completed. |
 | **Contribution** | An anonymized pattern set (`Contribution`) submitted by a device during the Collecting phase. Uses pseudonymous keys, never linkable to user identity. |
-| **Anonymizer** | The on-device anonymization pipeline (`Anonymizer`). Strips PII, buckets emotions into 5 levels, applies Laplace noise (ε=1.0). All anonymization happens before data leaves the device. |
+| **Federation Anonymizer** | The on-device anonymization pipeline (`FederationAnonymizer`). Strips PII, buckets emotions into 5 levels, applies Laplace noise (ε=1.0). All anonymization happens before data leaves the device. Related to but distinct from `FederatedAnonymizer` in `rlmx-cognitive` (which handles voice-pattern-specific anonymization). |
 | **Aggregator** | The cloud-side aggregation engine (`Aggregator`). Requires minimum 1000-user contributions before publishing any pattern. Prevents re-identification. |
 | **Distribution** | A LoRA update package (`Distribution`) built from aggregated patterns. Distributed to all participating devices after aggregation. |
 | **Bootstrap** | The process of seeding a new user's SONA PatternBank from federated patterns (`Bootstrap`). Gives new users a baseline without waiting for personal data. |
@@ -219,7 +219,7 @@ commit messages, and conversations should use these terms consistently.
 | **Tier Capability Enforcer** | The enforcement engine (`TierCapabilityEnforcer`). Derives capability tokens from tiers and validates feature access. Never hardcode tier checks — always go through the enforcer. |
 | **Usage Metrics** | Per-period tracking (`UsageMetrics`) of API calls, agent spawns, storage, and inference tokens consumed. Used for billing and tier limit enforcement. |
 
-## NAPI & WASM Binding Contexts (ADR-020, ADR-021)
+## NAPI & WASM Bindings (ADR-020, ADR-021)
 
 | Term | Definition |
 |------|------------|

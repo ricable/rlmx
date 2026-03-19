@@ -133,6 +133,26 @@ pub enum LifeDomain {
     Pet,
 }
 
+impl LifeDomain {
+    /// Returns all 12 life domain variants.
+    pub fn all() -> &'static [LifeDomain] {
+        &[
+            LifeDomain::Finance,
+            LifeDomain::Health,
+            LifeDomain::Legal,
+            LifeDomain::Career,
+            LifeDomain::Education,
+            LifeDomain::Home,
+            LifeDomain::Shopping,
+            LifeDomain::Travel,
+            LifeDomain::Social,
+            LifeDomain::Government,
+            LifeDomain::Automotive,
+            LifeDomain::Pet,
+        ]
+    }
+}
+
 /// A single parsed intent extracted from a voice transcript.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Intent {

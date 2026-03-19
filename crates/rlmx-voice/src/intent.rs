@@ -9,20 +9,10 @@ pub use rlmx_kernel::{Intent, LifeDomain};
 use serde::{Deserialize, Serialize};
 
 /// All 12 kernel life domain variants for iteration.
-const ALL_LIFE_DOMAINS: [LifeDomain; 12] = [
-    LifeDomain::Finance,
-    LifeDomain::Health,
-    LifeDomain::Legal,
-    LifeDomain::Career,
-    LifeDomain::Education,
-    LifeDomain::Home,
-    LifeDomain::Shopping,
-    LifeDomain::Travel,
-    LifeDomain::Social,
-    LifeDomain::Government,
-    LifeDomain::Automotive,
-    LifeDomain::Pet,
-];
+/// Delegates to `LifeDomain::all()` from `rlmx-kernel` to avoid stale manual lists.
+fn all_life_domains() -> &'static [LifeDomain] {
+    LifeDomain::all()
+}
 
 /// Returns stub keyword associations for domain classification.
 fn keywords_for_domain(domain: &LifeDomain) -> &'static [&'static str] {
@@ -205,7 +195,7 @@ impl IntentClassifier {
         let lower = transcript.to_lowercase();
         let mut best: Option<(LifeDomain, f32)> = None;
 
-        for domain in &ALL_LIFE_DOMAINS {
+        for domain in all_life_domains() {
             let score = Self::keyword_score(&lower, keywords_for_domain(domain));
             if score > self.confidence_threshold && best.as_ref().is_none_or(|(_, s)| score > *s) {
                 best = Some((*domain, score));
@@ -416,7 +406,7 @@ mod tests {
 
     #[test]
     fn test_all_life_domains_returns_12() {
-        assert_eq!(ALL_LIFE_DOMAINS.len(), 12);
+        assert_eq!(all_life_domains().len(), 12);
     }
 
     #[test]

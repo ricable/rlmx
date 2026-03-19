@@ -1098,6 +1098,9 @@ const VALID_AGENT_TYPES: &[&str] = &[
     "analyst",
     "voice_coordinator",
     "marketplace_manager",
+    "mesh_coordinator",
+    "federation_agent",
+    "billing_manager",
 ];
 
 fn create_rlmx_agent_spawn(state: SharedToolState) -> McpTool {
