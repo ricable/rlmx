@@ -26,7 +26,7 @@
 
 RLMX ("RuVix") is a **voice-first cognition kernel** — an OS-kernel-inspired runtime for LLM agents, activated by voice. It provides capability-secured syscall primitives that agents call instead of accessing arbitrary APIs. Written in Rust (edition 2021), async on Tokio, with a React Native mobile app for Android/iOS.
 
-**19 crates, 47 MCP tools, 17 agent types, 6 swarm zones, 946+ tests, 20+ dashboard views, 11 sandbox profiles, 25 ADRs, 13 DDD bounded contexts.**
+**19 Rust crates + 13 npm packages (@aix), 47 MCP tools, 17 agent types, 6 swarm zones, 946+ Rust tests + 802 TS tests (1,748+ total), 20+ dashboard views, 11 sandbox profiles, 29 ADRs, 16 DDD bounded contexts.**
 
 The system supports six interaction paths:
 - **Voice-First**: On-device STT (Whisper-tiny Q4) -> TinyDancerRouter (18-dim) -> Multi-Intent Decomposition -> Agent Swarm -> Multimodal Response (voice + cards + haptics)
@@ -138,6 +138,16 @@ rustup target add aarch64-unknown-linux-gnu
 cargo build --release --target aarch64-unknown-linux-gnu -p rlmx-cli --features ruvllm
 ```
 
+# === TypeScript (@aix packages) ===
+npm install                          # Install workspace deps
+npm run build:ts                     # Build all TS packages (tsup → CJS+ESM+.d.ts)
+npm run test:ts                      # Run all 802 vitest tests
+npm run test                         # Rust + TypeScript combined
+npx tsc --noEmit -p packages/<pkg>/tsconfig.json  # Typecheck one package
+npx aix --help                       # CLI entry point
+npx aix serve --port 3000           # Start MCP server (TypeScript)
+```
+
 No Makefile, no CI pipeline. Default rustfmt and clippy settings apply.
 
 ## Advanced Commands
@@ -157,6 +167,13 @@ RUST_LOG=debug cargo test -p rlmx-voice           # Tests with trace output
 # rlmx-napi: 29    | rlmx-ruvllm: 24  | rlmx-wasm: 22
 # rlmx-cli: 11     | rlmx-trm: 8      | rlmx-rlm: 5
 # rlmx-plugin: 4
+#
+# === TypeScript Package Test Counts (802 total) ===
+# @aix/agents: 140    | @aix/marketplace: 120 | @aix/mesh: 97
+# @aix/plugin: 74     | @aix/swarm: 72        | @aix/billing: 71
+# @aix/shared: 65     | @aix/federation: 50   | @aix/mcp-server: 46
+# @aix/rlm: 35        | @aix/core: 17         | aix: 15
+# @aix/deploy: 202 (separate — pre-existing)
 
 # === Multi-Crate Targeted Tests ===
 cargo test -p rlmx-voice -p rlmx-phone -p rlmx-kernel  # Voice pipeline + phone + kernel
@@ -227,14 +244,29 @@ rlmx-trm               (standalone — pure numeric NN)
 rlmx-cognitive          (standalone — SONA self-learning, voice patterns)
 ```
 
+TypeScript packages (packages/) — ADR-026/027/028:
+  ├── shared          # @aix/shared — pure TS types, events, errors (zero deps)
+  ├── core            # @aix/core — NAPI loader, 31 function declarations, graceful degradation
+  ├── rlm             # @aix/rlm — vLLM HTTP client (fetch, SSE, retry)
+  ├── plugin          # @aix/plugin — plugin registry, safety engine
+  ├── billing         # @aix/billing — subscription tiers, enforcement, family, developer
+  ├── agents          # @aix/agents — 17x17 permissions, lifecycle, spawning, researcher
+  ├── mesh            # @aix/mesh — PersonalMesh, discovery, sync, failover
+  ├── federation      # @aix/federation — cycles, anonymizer, aggregator, bootstrap
+  ├── marketplace     # @aix/marketplace — registry, reviews, featured, publisher, analytics
+  ├── swarm           # @aix/swarm — cluster, consensus, sandbox, fleet, browser-pool
+  ├── mcp-server      # @aix/mcp-server — 47 MCP tools, RBAC, WebSocket events
+  ├── aix             # aix CLI — commander+chalk+ora, 14 command groups
+  └── deploy          # @aix/deploy — universal agent deployment (ADR-029)
+
 Additional directories:
 - `mobile/` — React Native mobile app (8 screens, 11 components, TypeScript)
 - `frontend/` — Single-page web UI (20+ views) + WASM module
 - `frontend/dashboard/` — Svelte 5 + TailwindCSS v4 dashboard (Vite, :5173)
 - `deploy/` — Systemd service for RPi5
 - `scripts/hooks/` — 5 preconfigured event hooks (voice, savings, streaks, agent levels)
-- `docs/ADR/` — 25 Architecture Decision Records
-- `docs/DDD/` — 13 Domain-Driven Design documents
+- `docs/ADR/` — 29 Architecture Decision Records
+- `docs/DDD/` — 16 Domain-Driven Design documents
 - `.cargo/` — Cross-compilation config
 
 ## Architecture
@@ -308,6 +340,17 @@ React Native 0.84.1 + TypeScript for Android. **8 screens**: Home (Life Score, M
 - Federation types (`FederationCycle`, `Contribution`, `FederationPackage`) defined in `rlmx-federation`
 - Billing types (`SubscriptionTier`, `TierLimits`, `FamilyGroup`) defined in `rlmx-billing`
 - New crate domain events use crate-local event enums (e.g., `MeshDomainEvent`), not kernel `DomainEvent`
+- Deploy manifest types defined in `packages/deploy`, not in kernel or shared — domain-specific
+- Templates are frozen (`Object.freeze`) — consumers must clone if mutation needed
+- `DeployError` extends `AixError` (-36xxx code range) — see ADR-029
+- **TypeScript conventions** (full details in `docs/TYPESCRIPT-MIGRATION.md`):
+  - Build: tsup (CJS+ESM+.d.ts), test: vitest, workspace: npm workspaces
+  - Import types from `@aix/shared` — never re-define kernel enums in TS packages
+  - Use `generateId()` from `@aix/shared` (wraps `crypto.randomUUID()`)
+  - All error base classes must include `Object.setPrototypeOf(this, new.target.prototype)`
+  - All TS packages handle `@aix/core` unavailability — return `{ status: 'unavailable' }`
+  - Domain events use crate-local discriminated unions, not a shared bus
+  - Per-package error class with typed `code` field — do not extend `AixError` (yet)
 
 ## Strict Rules
 
@@ -338,11 +381,14 @@ React Native 0.84.1 + TypeScript for Android. **8 screens**: Home (Life Score, M
 25. **Billing tier enforcement**: Free tier allows exactly 5 agents, enforced at spawn time via capability token caveats. Tier limits are the source of truth in `TierLimits`. Never bypass tier checks.
 26. **Mesh privacy anchor**: Home hub (Zone C/E) must be the sole long-term data store for personal data. Phone and laptop sync TO the hub, never to each other for persistence. Max 1 MeshCoordinator per mesh.
 27. **Use case compliance**: Changes must not break validated use case test suites (UC1: 585 tests, UC2: 279 tests). Run targeted tests before merging.
-28. **Test count tracking**: Total workspace tests must be >= 946. If adding tests, update this count in CLAUDE.md. If tests are removed, document why.
+28. **Test count tracking**: Rust workspace tests >= 946, TypeScript tests >= 802. If adding tests, update counts in CLAUDE.md. If tests are removed, document why.
 29. **SwarmEvent variants must match**: `ws.rs` SwarmEvent enum (12 variants) and `types.rs` must stay in sync. New variants require WebSocket serialization support.
 30. **Cross-device consistency**: Any type used by rlmx-napi AND rlmx-wasm must be defined in rlmx-kernel or a shared crate — never duplicated between binding crates.
 31. **LifeDomain is closed**: The 12 LifeDomain variants are fixed. New agent domains must map to an existing LifeDomain. Do not add new variants without ADR approval.
 32. **Engagement gamification invariants**: AgentCollection levels cap at 10 (50 XP per level). Achievement count capped at 50. LifeScore composite weights must sum to 1.0.
+33. **TypeScript packages must typecheck**: `npx tsc --noEmit -p packages/<pkg>/tsconfig.json` must pass for all 13 packages.
+34. **Never duplicate @aix/shared types in TS packages**: Import `SyscallPermission`, `LifeDomain`, `AgentType`, `SubscriptionTier`, `DomainEvent` from `@aix/shared`.
+35. **@aix/core graceful degradation is mandatory**: Every TS package that calls NAPI functions must handle the `{ status: 'unavailable' }` case.
 
 ## Use Case Validation
 
@@ -467,12 +513,34 @@ Preconfigured event hooks in `scripts/hooks/` — all executable, accept JSON st
 | `mobile/src/hooks/useVoice.ts` | Voice interaction React hook |
 | `mobile/src/hooks/useEngagement.ts` | Life Score, savings, streaks hook |
 | `mobile/src/data/agents.ts` | 52 agents (25 marketplace, 7 unlocked, 45 locked) |
+| **TypeScript Packages** (full inventory in `docs/TYPESCRIPT-MIGRATION.md`) | |
+| `packages/shared/src/enums.ts` | SyscallPermission(17), LifeDomain(12), AgentType(17), SubscriptionTier(6) |
+| `packages/shared/src/events.ts` | DomainEvent discriminated union, DomainEventBus |
+| `packages/shared/src/errors.ts` | AixError, AixErrorCode (JSON-RPC + kernel + agent + billing ranges) |
+| `packages/core/src/loader.ts` | Platform detection (5 triples), NAPI binary loading, degraded proxy |
+| `packages/core/src/types.ts` | All 31 NAPI function type declarations |
+| `packages/agents/src/registry.ts` | PermissionRegistry (17x17 matrix as Map), validate() |
+| `packages/agents/src/lifecycle.ts` | AgentLifecycle state machine (6 states) |
+| `packages/mcp-server/src/tools.ts` | All 47 MCP tool handlers |
+| `packages/mcp-server/src/rbac.ts` | 6-role RBAC, toolToOperation mapping, anti-escalation |
+| `packages/marketplace/src/marketplace.ts` | Marketplace aggregate root |
+| `packages/mesh/src/mesh.ts` | PersonalMesh aggregate root |
+| `packages/billing/src/subscription.ts` | Subscription aggregate with state machine |
+| `packages/federation/src/cycle.ts` | FederationCycle aggregate root |
+| `packages/swarm/src/consensus.ts` | PBFT/Raft/Gossip consensus layers |
+| `packages/aix/src/index.ts` | CLI entry: createProgram(), 14 command groups |
+| **Deploy** | |
+| `packages/deploy/src/manifest.ts` | AgentManifest, AgentOrigin (4 variants), TransportSpec (7 variants) |
+| `packages/deploy/src/templates.ts` | 50 frozen templates, O(1) lookup by id/domain/origin |
+| `packages/deploy/src/registry.ts` | ManifestRegistry (CRUD + single-pass AND search) |
+| `packages/deploy/src/bridge.ts` | DiscoveryBridge — unified mDNS (_cognitum._tcp + _rlmx._tcp) |
+| `packages/deploy/src/seed-bridge.ts` | SeedBridge — Cognitum Seed REST/MCP client (EMBED_DIM=64) |
 | **Other** | |
 | `crates/rlmx-cli/src/main.rs` | CLI: serve, swarm, agent, research, sandbox, edge, voice, marketplace, engagement, phone, mesh, billing, federation |
 | `frontend/index.html` | Web dashboard (20+ views, demo data, force graph) |
 | `scripts/hooks/` | 5 preconfigured event hooks |
-| `docs/ADR/` | 25 Architecture Decision Records |
-| `docs/DDD/` | 13 Domain-Driven Design documents |
+| `docs/ADR/` | 29 Architecture Decision Records |
+| `docs/DDD/` | 16 Domain-Driven Design documents |
 
 ## Concurrency: 1 MESSAGE = ALL RELATED OPERATIONS
 
@@ -535,9 +603,9 @@ When modifying `frontend/index.html`:
 | Cloud GPU burst | SkyPilot | Planned (ADR-006) |
 | Browser workers | WASM compute pool | Working (ADR-009) |
 
-## DDD Bounded Contexts (13)
+## DDD Bounded Contexts (16)
 
-| # | Context | Crate | Aggregate Root |
+| # | Context | Crate/Package | Aggregate Root |
 |---|---------|-------|----------------|
 | 1 | Kernel Syscall | `rlmx-kernel` | KernelContext |
 | 2 | Agent Lifecycle | `rlmx-agents` | AgentRegistry |
@@ -552,6 +620,9 @@ When modifying `frontend/index.html`:
 | 11 | Personal Mesh | `rlmx-mesh` | PersonalMesh |
 | 12 | Federated Learning | `rlmx-federation` | FederationCycle |
 | 13 | Subscription Billing | `rlmx-billing` | Subscription |
+| 14 | NAPI Core Bridge | `rlmx-napi` | NapiKernel |
+| 15 | TypeScript Packages | `packages/*` | (context map) |
+| 16 | Agent Deployment | `packages/deploy` | ManifestRegistry |
 
 ## ADR Index
 
@@ -582,6 +653,10 @@ When modifying `frontend/index.html`:
 | 023 | Federated Learning Pipeline | Implemented |
 | 024 | Ruvnet Crate Integration | Implemented |
 | 025 | Subscription Billing Tiers | Implemented |
+| 026 | TypeScript Migration Strategy | Implemented |
+| 027 | NAPI Bridge Expansion | Implemented |
+| 028 | @aix Package Architecture | Implemented |
+| 029 | Universal Agent Deployment Layer | Implemented |
 
 ## Support
 
