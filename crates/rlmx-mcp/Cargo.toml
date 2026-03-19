@@ -18,3 +18,9 @@ futures-util = "0.3"
 rlmx-kernel = { path = "../rlmx-kernel" }
 rlmx-rvf = { path = "../rlmx-rvf" }
 rlmx-ruvllm = { path = "../rlmx-ruvllm", default-features = false }
+
+[features]
+default = []
+ruvector = ["rlmx-kernel/ruvector"]
+rvf-ext = ["rlmx-rvf/rvf-ext"]
+qudag = []

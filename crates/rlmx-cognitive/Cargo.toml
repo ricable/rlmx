@@ -13,3 +13,10 @@ thiserror = "2"
 chrono = { version = "0.4", features = ["serde"] }
 rand = "0.8"
 ndarray = "0.16"
+
+# Optional: ruvector SONA
+ruvector-sona = { version = "0.1.6", optional = true }
+
+[features]
+default = []
+ruvector-sona = ["dep:ruvector-sona"]

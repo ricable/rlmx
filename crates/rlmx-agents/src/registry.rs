@@ -7,7 +7,7 @@ use crate::types::AgentType;
 // Re-export SyscallPermission from the kernel instead of duplicating it.
 pub use rlmx_kernel::types::SyscallPermission;
 
-/// Returns all 12 concrete syscall permission variants (excludes `All`).
+/// Returns all 15 concrete syscall permission variants (excludes `All`).
 pub fn all_concrete_permissions() -> &'static [SyscallPermission] {
     &[
         SyscallPermission::VecInsert,
@@ -22,6 +22,9 @@ pub fn all_concrete_permissions() -> &'static [SyscallPermission] {
         SyscallPermission::StateMutate,
         SyscallPermission::AttentionSelect,
         SyscallPermission::HaltCheck,
+        SyscallPermission::VoiceTranscribe,
+        SyscallPermission::VoiceSynthesize,
+        SyscallPermission::IntentRoute,
     ]
 }
 
@@ -55,20 +58,20 @@ impl AgentPermissions {
     }
 }
 
-/// The 12x12 permission matrix type (agent_type_index × syscall_permission_index).
-pub type PermissionMatrix = [[bool; 12]; 12];
+/// The 14x15 permission matrix type (agent_type_index x syscall_permission_index).
+pub type PermissionMatrix = [[bool; 15]; 14];
 
 /// Static permission registry mapping each AgentType to allowed syscalls.
 pub struct PermissionRegistry;
 
 impl PermissionRegistry {
-    /// Returns the permissions for a given agent type (the 12x12 matrix).
+    /// Returns the permissions for a given agent type (the 14x15 matrix).
     pub fn permissions_for(agent_type: AgentType) -> AgentPermissions {
         use SyscallPermission::*;
         let perms: Vec<SyscallPermission> = match agent_type {
             // Coordinator: full access (PID 0)
             AgentType::Coordinator => all_concrete_permissions().to_vec(),
-            // Researcher: read vectors, graph queries, fork, messaging, attention
+            // Researcher: read vectors, graph queries, fork, messaging, attention, voice synth, intent
             AgentType::Researcher => vec![
                 VecInsert,
                 VecSearch,
@@ -78,14 +81,19 @@ impl PermissionRegistry {
                 ProcessSend,
                 ProcessRecv,
                 AttentionSelect,
+                VoiceSynthesize,
+                IntentRoute,
             ],
-            // Router: read-only routing, messaging, attention, halt (no fork, no graph per ADR-005)
+            // Router: read-only routing, messaging, attention, halt, voice transcribe/synth, intent
             AgentType::Router => vec![
                 VecSearch,
                 ProcessSend,
                 ProcessRecv,
                 AttentionSelect,
                 HaltCheck,
+                VoiceTranscribe,
+                VoiceSynthesize,
+                IntentRoute,
             ],
             // Experimenter: broad access for experiments, can fork workers
             AgentType::Experimenter => vec![
@@ -99,8 +107,10 @@ impl PermissionRegistry {
                 ProcessRecv,
                 StateMutate,
                 AttentionSelect,
+                VoiceSynthesize,
+                IntentRoute,
             ],
-            // Worker: execute tasks, messaging, state mutation
+            // Worker: execute tasks, messaging, state mutation, voice synth, intent
             AgentType::Worker => vec![
                 VecInsert,
                 VecSearch,
@@ -108,8 +118,10 @@ impl PermissionRegistry {
                 ProcessSend,
                 ProcessRecv,
                 StateMutate,
+                VoiceSynthesize,
+                IntentRoute,
             ],
-            // Monitor: read-only observation, messaging, halt check
+            // Monitor: read-only observation, messaging, halt check, voice synth, intent
             AgentType::Monitor => vec![
                 VecSearch,
                 GraphQuery,
@@ -117,8 +129,10 @@ impl PermissionRegistry {
                 ProcessRecv,
                 AttentionSelect,
                 HaltCheck,
+                VoiceSynthesize,
+                IntentRoute,
             ],
-            // Reviewer: read access, messaging, attention
+            // Reviewer: read access, messaging, attention, voice synth, intent
             AgentType::Reviewer => vec![
                 VecSearch,
                 GraphQuery,
@@ -127,8 +141,10 @@ impl PermissionRegistry {
                 ProcessRecv,
                 AttentionSelect,
                 StateMutate,
+                VoiceSynthesize,
+                IntentRoute,
             ],
-            // Trainer: vector ops, state mutation, messaging
+            // Trainer: vector ops, state mutation, messaging, voice synth, intent
             AgentType::Trainer => vec![
                 VecInsert,
                 VecSearch,
@@ -137,12 +153,20 @@ impl PermissionRegistry {
                 ProcessRecv,
                 StateMutate,
                 AttentionSelect,
+                VoiceSynthesize,
+                IntentRoute,
             ],
-            // Validator: read-only verification, no state mutation
-            AgentType::Validator => {
-                vec![VecSearch, GraphQuery, ProcessSend, ProcessRecv, HaltCheck]
-            }
-            // Replicator: vector ops for sync, messaging
+            // Validator: read-only verification, no state mutation, voice synth, intent
+            AgentType::Validator => vec![
+                VecSearch,
+                GraphQuery,
+                ProcessSend,
+                ProcessRecv,
+                HaltCheck,
+                VoiceSynthesize,
+                IntentRoute,
+            ],
+            // Replicator: vector ops for sync, messaging, voice synth, intent
             AgentType::Replicator => vec![
                 VecInsert,
                 VecSearch,
@@ -150,10 +174,19 @@ impl PermissionRegistry {
                 ProcessSend,
                 ProcessRecv,
                 StateMutate,
+                VoiceSynthesize,
+                IntentRoute,
             ],
-            // Embedder: vector insert/search only, no state mutation
-            AgentType::Embedder => vec![VecInsert, VecSearch, ProcessSend, ProcessRecv],
-            // Analyst: graph operations, vector search, attention
+            // Embedder: vector insert/search only, no state mutation, voice synth, intent
+            AgentType::Embedder => vec![
+                VecInsert,
+                VecSearch,
+                ProcessSend,
+                ProcessRecv,
+                VoiceSynthesize,
+                IntentRoute,
+            ],
+            // Analyst: graph operations, vector search, attention, voice synth, intent
             AgentType::Analyst => vec![
                 VecSearch,
                 GraphQuery,
@@ -163,6 +196,31 @@ impl PermissionRegistry {
                 ProcessRecv,
                 AttentionSelect,
                 StateMutate,
+                VoiceSynthesize,
+                IntentRoute,
+            ],
+            // VoiceCoordinator: full voice access, fork, messaging, attention, intent
+            AgentType::VoiceCoordinator => vec![
+                VecInsert,
+                VecSearch,
+                ProcessFork,
+                ProcessSend,
+                ProcessRecv,
+                AttentionSelect,
+                VoiceTranscribe,
+                VoiceSynthesize,
+                IntentRoute,
+            ],
+            // MarketplaceManager: state mutation, vector ops, messaging, voice synth, intent
+            AgentType::MarketplaceManager => vec![
+                VecInsert,
+                VecSearch,
+                VecDelete,
+                ProcessSend,
+                ProcessRecv,
+                StateMutate,
+                VoiceSynthesize,
+                IntentRoute,
             ],
         };
         AgentPermissions::new(perms)
@@ -196,6 +254,8 @@ impl PermissionRegistry {
                 AgentType::Replicator,
                 AgentType::Embedder,
                 AgentType::Analyst,
+                AgentType::VoiceCoordinator,
+                AgentType::MarketplaceManager,
             ],
         );
 
@@ -215,6 +275,12 @@ impl PermissionRegistry {
         // Experimenter can spawn Workers
         map.insert(AgentType::Experimenter, vec![AgentType::Worker]);
 
+        // VoiceCoordinator can spawn Workers and Embedders for voice processing
+        map.insert(
+            AgentType::VoiceCoordinator,
+            vec![AgentType::Worker, AgentType::Embedder],
+        );
+
         map
     }
 }
@@ -226,7 +292,7 @@ mod tests {
     #[test]
     fn test_coordinator_has_all_permissions() {
         let perms = PermissionRegistry::permissions_for(AgentType::Coordinator);
-        assert_eq!(perms.count(), 12);
+        assert_eq!(perms.count(), 15);
         for p in all_concrete_permissions() {
             assert!(perms.has(*p), "Coordinator missing {:?}", p);
         }
@@ -365,5 +431,76 @@ mod tests {
                 "{agent_type} missing VecSearch"
             );
         }
+    }
+
+    #[test]
+    fn test_all_agent_types_have_voice_synthesize_and_intent_route() {
+        for agent_type in AgentType::all() {
+            let perms = PermissionRegistry::permissions_for(*agent_type);
+            assert!(
+                perms.has(SyscallPermission::VoiceSynthesize),
+                "{agent_type} missing VoiceSynthesize"
+            );
+            assert!(
+                perms.has(SyscallPermission::IntentRoute),
+                "{agent_type} missing IntentRoute"
+            );
+        }
+    }
+
+    #[test]
+    fn test_voice_coordinator_permissions() {
+        let perms = PermissionRegistry::permissions_for(AgentType::VoiceCoordinator);
+        assert!(perms.has(SyscallPermission::VoiceTranscribe));
+        assert!(perms.has(SyscallPermission::VoiceSynthesize));
+        assert!(perms.has(SyscallPermission::IntentRoute));
+        assert!(perms.has(SyscallPermission::ProcessFork));
+        assert!(perms.has(SyscallPermission::AttentionSelect));
+        assert!(!perms.has(SyscallPermission::StateMutate));
+    }
+
+    #[test]
+    fn test_marketplace_manager_permissions() {
+        let perms = PermissionRegistry::permissions_for(AgentType::MarketplaceManager);
+        assert!(perms.has(SyscallPermission::StateMutate));
+        assert!(perms.has(SyscallPermission::VecInsert));
+        assert!(perms.has(SyscallPermission::VecDelete));
+        assert!(perms.has(SyscallPermission::VoiceSynthesize));
+        assert!(perms.has(SyscallPermission::IntentRoute));
+        assert!(!perms.has(SyscallPermission::ProcessFork));
+        assert!(!perms.has(SyscallPermission::VoiceTranscribe));
+    }
+
+    #[test]
+    fn test_voice_transcribe_restricted() {
+        // Only Coordinator, Router, and VoiceCoordinator should have VoiceTranscribe
+        for agent_type in AgentType::all() {
+            let perms = PermissionRegistry::permissions_for(*agent_type);
+            let should_have = matches!(
+                agent_type,
+                AgentType::Coordinator | AgentType::Router | AgentType::VoiceCoordinator
+            );
+            assert_eq!(
+                perms.has(SyscallPermission::VoiceTranscribe),
+                should_have,
+                "{agent_type} VoiceTranscribe mismatch"
+            );
+        }
+    }
+
+    #[test]
+    fn test_spawn_hierarchy_voice_coordinator() {
+        assert!(PermissionRegistry::can_spawn(
+            AgentType::VoiceCoordinator,
+            AgentType::Worker
+        ));
+        assert!(PermissionRegistry::can_spawn(
+            AgentType::VoiceCoordinator,
+            AgentType::Embedder
+        ));
+        assert!(!PermissionRegistry::can_spawn(
+            AgentType::VoiceCoordinator,
+            AgentType::Coordinator
+        ));
     }
 }

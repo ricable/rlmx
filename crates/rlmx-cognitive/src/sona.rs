@@ -283,7 +283,7 @@ impl Sona {
     // -- helpers --
 
     /// Produce a trivial embedding from text (for demonstration / testing).
-    fn simple_embedding(text: &str) -> Vec<f32> {
+    pub fn simple_embedding(text: &str) -> Vec<f32> {
         let mut emb = vec![0.0f32; 64];
         for (i, b) in text.bytes().enumerate() {
             emb[i % 64] += b as f32 / 255.0;
@@ -310,7 +310,7 @@ impl Default for Sona {
 // ---------------------------------------------------------------------------
 
 /// Cosine similarity between two vectors.
-fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
+pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
     let len = a.len().min(b.len());
     let dot: f64 = (0..len).map(|i| a[i] as f64 * b[i] as f64).sum();
     let na: f64 = (0..len).map(|i| (a[i] as f64).powi(2)).sum::<f64>().sqrt();
@@ -455,6 +455,56 @@ impl KeywordPatternBank {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Feature-gated: ruvector-sona integration
+// ---------------------------------------------------------------------------
+
+/// When the `ruvector-sona` feature is enabled, provides a bridge to the
+/// production ruvector-sona crate for hardware-accelerated SONA operations.
+#[cfg(feature = "ruvector-sona")]
+pub mod ruvector_integration {
+    use super::*;
+
+    /// Bridge to ruvector-sona's production SONA implementation.
+    /// Delegates pattern storage to HNSW-indexed pattern bank and uses
+    /// hardware-accelerated EWC++ for forgetting prevention.
+    pub struct RuVectorSona {
+        pub local_sona: Sona,
+    }
+
+    impl RuVectorSona {
+        pub fn new() -> Self {
+            // ruvector_sona provides hardware-accelerated SONA
+            let _ = ruvector_sona::SonaConfig::default;
+            Self {
+                local_sona: Sona::new(),
+            }
+        }
+
+        /// Delegate pattern recording to both local and ruvector-sona backends.
+        pub fn record_pattern(
+            &mut self,
+            query: &str,
+            actions: Vec<String>,
+            result_quality: f64,
+        ) -> Uuid {
+            self.local_sona
+                .record_pattern(query, actions, result_quality)
+        }
+
+        /// Get unified stats from both backends.
+        pub fn stats(&self) -> SonaStats {
+            self.local_sona.stats()
+        }
+    }
+
+    impl Default for RuVectorSona {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

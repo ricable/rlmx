@@ -6,6 +6,11 @@ use crate::types::{
     KernelError, KernelResult, SearchFilters, SearchHit, SegmentMetadata, SegmentTier,
 };
 
+// When the `ruvector` feature is enabled, use ruvector-core's HNSW index
+// for O(log n) approximate nearest neighbor search instead of brute-force.
+#[cfg(feature = "ruvector")]
+use ruvector_core as rvc;
+
 /// A single context segment stored in memory.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextSegment {
@@ -202,6 +207,121 @@ impl MemoryRegion {
             }
         }
         true
+    }
+}
+
+// ---------------------------------------------------------------------------
+// HNSW-backed MemoryRegion (feature = "ruvector")
+// ---------------------------------------------------------------------------
+
+/// When the `ruvector` feature is enabled, `HnswMemoryRegion` provides an
+/// HNSW-indexed backend for O(log n) approximate nearest-neighbor search.
+/// It wraps `ruvector_core::VectorDb` and delegates search to HNSW while
+/// keeping the same public API as the brute-force `MemoryRegion`.
+#[cfg(feature = "ruvector")]
+pub struct HnswMemoryRegion {
+    pub name: String,
+    db: rvc::VectorDb,
+    segments: std::collections::HashMap<Uuid, ContextSegment>,
+}
+
+#[cfg(feature = "ruvector")]
+impl HnswMemoryRegion {
+    /// Create an HNSW-backed region with default parameters (ef=128, M=16).
+    pub fn new(name: impl Into<String>, dim: usize) -> Self {
+        let config = rvc::VectorDbConfig {
+            dimensions: dim,
+            ef_construction: 128,
+            m: 16,
+            ..Default::default()
+        };
+        Self {
+            name: name.into(),
+            db: rvc::VectorDb::new(config),
+            segments: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Insert a segment; returns its id. The embedding is indexed in HNSW.
+    pub fn insert(
+        &mut self,
+        embedding: Vec<f32>,
+        content: String,
+        metadata: SegmentMetadata,
+    ) -> Uuid {
+        let id = Uuid::new_v4();
+        let segment = ContextSegment {
+            id,
+            embedding: embedding.clone(),
+            content,
+            source: metadata.source.clone(),
+            plugin: metadata.plugin.clone(),
+            segment_type: metadata.segment_type.clone(),
+            timestamp: Utc::now(),
+            metadata: serde_json::to_value(&metadata).unwrap_or_default(),
+            tier: SegmentTier::Hot,
+        };
+        // Index the vector in HNSW under the UUID as string key.
+        let _ = self.db.insert(&id.to_string(), &embedding);
+        self.segments.insert(id, segment);
+        id
+    }
+
+    /// Delete a segment by id.
+    pub fn delete(&mut self, segment_id: &Uuid) -> KernelResult<bool> {
+        if self.segments.remove(segment_id).is_some() {
+            let _ = self.db.delete(&segment_id.to_string());
+            Ok(true)
+        } else {
+            Err(KernelError::SegmentNotFound(*segment_id))
+        }
+    }
+
+    /// HNSW-accelerated search with post-hoc filter application.
+    pub fn search(&self, query: &[f32], k: usize, filters: &SearchFilters) -> Vec<SearchHit> {
+        // Over-fetch from HNSW to account for filter rejects, then trim.
+        let fetch_k = k * 4;
+        let results = self.db.search(query, fetch_k);
+        let mut hits = Vec::with_capacity(k);
+        for result in results {
+            if hits.len() >= k {
+                break;
+            }
+            let Ok(id) = result.id.parse::<Uuid>() else {
+                continue;
+            };
+            let Some(seg) = self.segments.get(&id) else {
+                continue;
+            };
+            if !MemoryRegion::matches_filters_static(seg, filters) {
+                continue;
+            }
+            let meta: SegmentMetadata =
+                serde_json::from_value(seg.metadata.clone()).unwrap_or_default();
+            hits.push(SearchHit {
+                segment_id: seg.id,
+                content: seg.content.clone(),
+                score: result.score as f64,
+                metadata: meta,
+            });
+        }
+        hits
+    }
+
+    pub fn len(&self) -> usize {
+        self.segments.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.segments.is_empty()
+    }
+}
+
+impl MemoryRegion {
+    /// Static filter check (usable from both MemoryRegion and HnswMemoryRegion).
+    #[cfg(feature = "ruvector")]
+    pub fn matches_filters_static(seg: &ContextSegment, f: &SearchFilters) -> bool {
+        Self::matches_filters(seg, f)
     }
 }
 

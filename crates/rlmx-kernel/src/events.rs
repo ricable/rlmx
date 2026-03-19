@@ -58,6 +58,21 @@ pub enum DomainEvent {
         success: bool,
         timestamp: DateTime<Utc>,
     },
+    /// Emitted when a voice session begins (ADR-019).
+    /// Consumer: Observation & Health (tracks voice session metrics).
+    VoiceSessionStarted {
+        session_id: Uuid,
+        mode: String,
+        timestamp: DateTime<Utc>,
+    },
+    /// Emitted when a transcript is decomposed into intents (ADR-019).
+    /// Consumer: Agent Lifecycle (routes intents to domain agents).
+    IntentsDecomposed {
+        session_id: Uuid,
+        intent_count: usize,
+        domains: Vec<String>,
+        timestamp: DateTime<Utc>,
+    },
 }
 
 /// Event bus type alias for domain event broadcasting.
@@ -153,6 +168,17 @@ mod tests {
             DomainEvent::StateMutated {
                 witness_id: Uuid::new_v4(),
                 success: false,
+                timestamp: Utc::now(),
+            },
+            DomainEvent::VoiceSessionStarted {
+                session_id: Uuid::new_v4(),
+                mode: "multimodal".into(),
+                timestamp: Utc::now(),
+            },
+            DomainEvent::IntentsDecomposed {
+                session_id: Uuid::new_v4(),
+                intent_count: 3,
+                domains: vec!["Finance".into(), "Health".into()],
                 timestamp: Utc::now(),
             },
         ];

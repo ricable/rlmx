@@ -143,7 +143,10 @@ pub enum SandboxError {
     #[error("profile not found: {0}")]
     ProfileNotFound(String),
     #[error("invalid state transition: {from:?} -> {to:?}")]
-    InvalidTransition { from: SandboxState, to: SandboxState },
+    InvalidTransition {
+        from: SandboxState,
+        to: SandboxState,
+    },
     #[error("duplicate profile: {0}")]
     DuplicateProfile(String),
     #[error("fleet validation error: {0}")]

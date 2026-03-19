@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// The 12 specialized agent types in the RLMX swarm.
+/// The 14 specialized agent types in the RLMX swarm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AgentType {
     Coordinator,
@@ -17,6 +17,10 @@ pub enum AgentType {
     Replicator,
     Embedder,
     Analyst,
+    /// Coordinates voice sessions: transcription, synthesis, intent routing.
+    VoiceCoordinator,
+    /// Manages marketplace operations: agent installation, updates, discovery.
+    MarketplaceManager,
 }
 
 impl AgentType {
@@ -34,13 +38,18 @@ impl AgentType {
             AgentType::Replicator,
             AgentType::Embedder,
             AgentType::Analyst,
+            AgentType::VoiceCoordinator,
+            AgentType::MarketplaceManager,
         ]
     }
 
     /// Whether this agent type can fork child processes (has ProcessFork).
     /// Per ADR-005, only Coordinator and Researcher have ProcessFork.
     pub fn can_fork(&self) -> bool {
-        matches!(self, AgentType::Coordinator | AgentType::Researcher)
+        matches!(
+            self,
+            AgentType::Coordinator | AgentType::Researcher | AgentType::VoiceCoordinator
+        )
     }
 
     /// Whether this agent type can mutate kernel state (has StateMutate).
@@ -52,6 +61,7 @@ impl AgentType {
                 | AgentType::Replicator
                 | AgentType::Experimenter
                 | AgentType::Trainer
+                | AgentType::MarketplaceManager
         )
     }
 
@@ -61,8 +71,10 @@ impl AgentType {
             AgentType::Coordinator
             | AgentType::Experimenter
             | AgentType::Analyst
-            | AgentType::Trainer => ModelTier::Medium,
+            | AgentType::Trainer
+            | AgentType::VoiceCoordinator => ModelTier::Medium,
             AgentType::Researcher | AgentType::Reviewer => ModelTier::ClaudeCode,
+            AgentType::MarketplaceManager => ModelTier::Medium,
             _ => ModelTier::Small,
         }
     }
@@ -75,10 +87,11 @@ impl AgentType {
             | AgentType::Reviewer
             | AgentType::Trainer
             | AgentType::Analyst
-            | AgentType::Embedder => "A",
+            | AgentType::Embedder
+            | AgentType::VoiceCoordinator => "A",
             AgentType::Router | AgentType::Replicator => "B",
             AgentType::Monitor | AgentType::Validator => "C",
-            AgentType::Worker | AgentType::Experimenter => "Multi",
+            AgentType::Worker | AgentType::Experimenter | AgentType::MarketplaceManager => "Multi",
         }
     }
 
@@ -89,6 +102,8 @@ impl AgentType {
             AgentType::Trainer => 1,
             AgentType::Reviewer | AgentType::Analyst => 2,
             AgentType::Researcher => 3,
+            AgentType::VoiceCoordinator => 4,
+            AgentType::MarketplaceManager => 2,
             AgentType::Experimenter => 8,
             _ => 16,
         }
@@ -117,6 +132,8 @@ impl std::str::FromStr for AgentType {
             "replicator" => Ok(AgentType::Replicator),
             "embedder" => Ok(AgentType::Embedder),
             "analyst" => Ok(AgentType::Analyst),
+            "voicecoordinator" | "voice_coordinator" => Ok(AgentType::VoiceCoordinator),
+            "marketplacemanager" | "marketplace_manager" => Ok(AgentType::MarketplaceManager),
             _ => Err(format!("Unknown agent type: {s}")),
         }
     }
@@ -207,6 +224,25 @@ pub enum MessageContent {
     Shutdown,
 }
 
+/// Represents an installed marketplace agent with its metadata.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentInstallation {
+    /// Unique installation identifier.
+    pub installation_id: Uuid,
+    /// The marketplace package name (e.g. "finance-advisor", "health-tracker").
+    pub package_name: String,
+    /// Semantic version of the installed agent package.
+    pub version: String,
+    /// The underlying agent type this installation runs as.
+    pub agent_type: AgentType,
+    /// Whether the agent is currently enabled.
+    pub enabled: bool,
+    /// When this agent was installed.
+    pub installed_at: DateTime<Utc>,
+    /// Optional configuration overrides from the marketplace listing.
+    pub config_overrides: Option<serde_json::Value>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum AgentError {
     #[error("Agent not found: {0}")]
@@ -228,15 +264,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_all_types_returns_12() {
-        assert_eq!(AgentType::all().len(), 12);
+    fn test_all_types_returns_14() {
+        assert_eq!(AgentType::all().len(), 14);
     }
 
     #[test]
     fn test_can_fork() {
-        // Per ADR-005, only Coordinator and Researcher have ProcessFork
+        // Per ADR-005, Coordinator, Researcher, and VoiceCoordinator have ProcessFork
         assert!(AgentType::Coordinator.can_fork());
         assert!(AgentType::Researcher.can_fork());
+        assert!(AgentType::VoiceCoordinator.can_fork());
         assert!(!AgentType::Router.can_fork());
         assert!(!AgentType::Experimenter.can_fork());
         assert!(!AgentType::Worker.can_fork());
@@ -247,15 +284,17 @@ mod tests {
         assert!(!AgentType::Replicator.can_fork());
         assert!(!AgentType::Embedder.can_fork());
         assert!(!AgentType::Analyst.can_fork());
+        assert!(!AgentType::MarketplaceManager.can_fork());
     }
 
     #[test]
     fn test_can_mutate_state() {
-        // Per ADR-005: Coordinator, Replicator, Experimenter, Trainer
+        // Per ADR-005: Coordinator, Replicator, Experimenter, Trainer, MarketplaceManager
         assert!(AgentType::Coordinator.can_mutate_state());
         assert!(AgentType::Replicator.can_mutate_state());
         assert!(AgentType::Experimenter.can_mutate_state());
         assert!(AgentType::Trainer.can_mutate_state());
+        assert!(AgentType::MarketplaceManager.can_mutate_state());
         assert!(!AgentType::Router.can_mutate_state());
         assert!(!AgentType::Worker.can_mutate_state());
         assert!(!AgentType::Monitor.can_mutate_state());
@@ -264,6 +303,7 @@ mod tests {
         assert!(!AgentType::Embedder.can_mutate_state());
         assert!(!AgentType::Analyst.can_mutate_state());
         assert!(!AgentType::Researcher.can_mutate_state());
+        assert!(!AgentType::VoiceCoordinator.can_mutate_state());
     }
 
     #[test]

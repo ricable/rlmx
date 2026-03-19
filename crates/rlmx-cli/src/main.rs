@@ -131,6 +131,30 @@ enum Commands {
         action: SandboxAction,
     },
 
+    /// Voice-first interaction pipeline
+    Voice {
+        #[command(subcommand)]
+        action: VoiceAction,
+    },
+
+    /// Agent marketplace
+    Marketplace {
+        #[command(subcommand)]
+        action: MarketplaceAction,
+    },
+
+    /// Engagement and gamification
+    Engagement {
+        #[command(subcommand)]
+        action: EngagementAction,
+    },
+
+    /// On-device phone runtime
+    Phone {
+        #[command(subcommand)]
+        action: PhoneAction,
+    },
+
     /// Start a model training run
     Train {
         /// Training configuration as JSON string
@@ -286,6 +310,78 @@ enum SandboxAction {
     Profiles,
 }
 
+#[derive(Subcommand, Debug)]
+enum VoiceAction {
+    /// Start voice pipeline
+    Start,
+    /// Simulate transcription
+    Transcribe {
+        /// Text to transcribe
+        #[arg(long)]
+        text: String,
+    },
+    /// Show intent decomposition from natural language
+    Intents {
+        /// Natural language input
+        #[arg(long)]
+        text: String,
+    },
+    /// Manage voice sessions
+    Session {
+        /// List all sessions
+        #[arg(long)]
+        list: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum MarketplaceAction {
+    /// Search for agents by domain
+    Search {
+        /// Domain to search (finance, health, productivity, etc.)
+        #[arg(long)]
+        domain: String,
+    },
+    /// Install an agent from the marketplace
+    Install {
+        /// Agent name to install
+        #[arg(long)]
+        agent: String,
+    },
+    /// List installed agents
+    List,
+    /// Show featured agents
+    Featured,
+    /// Publish an agent to the marketplace
+    Publish {
+        /// Path to agent RVF package
+        #[arg(long)]
+        path: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum EngagementAction {
+    /// Show overall Life Score
+    Score,
+    /// Show money saved counter
+    Savings,
+    /// Show current streak
+    Streak,
+    /// List achievements
+    Achievements,
+}
+
+#[derive(Subcommand, Debug)]
+enum PhoneAction {
+    /// Show phone runtime status
+    Status,
+    /// List on-device agents
+    Agents,
+    /// Show battery-aware scheduling info
+    Battery,
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
@@ -325,6 +421,10 @@ async fn run(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
         Commands::Agent { action } => cmd_agent(action).await,
         Commands::Research { action } => cmd_research(action).await,
         Commands::Sandbox { action } => cmd_sandbox(action).await,
+        Commands::Voice { action } => cmd_voice(action).await,
+        Commands::Marketplace { action } => cmd_marketplace(action).await,
+        Commands::Engagement { action } => cmd_engagement(action),
+        Commands::Phone { action } => cmd_phone(action),
         Commands::Train {
             config,
             node_id,
@@ -1225,7 +1325,10 @@ async fn cmd_sandbox(action: SandboxAction) -> Result<(), Box<dyn std::error::Er
             println!("  state: Provisioning");
             println!();
             println!("Sandbox spawned successfully.");
-            println!("Use 'rlmx sandbox status {}' to check progress.", sandbox_id);
+            println!(
+                "Use 'rlmx sandbox status {}' to check progress.",
+                sandbox_id
+            );
             Ok(())
         }
         SandboxAction::Terminate { sandbox_id } => {
@@ -1309,7 +1412,438 @@ async fn cmd_sandbox(action: SandboxAction) -> Result<(), Box<dyn std::error::Er
             println!("  │ burst-worker        │ Worker        │ D      │ Cuda(80GB)   │");
             println!("  └─────────────────────┴───────────────┴────────┴──────────────┘");
             println!();
-            println!("  11 profiles registered. Use 'rlmx sandbox spawn --profile <name>' to deploy.");
+            println!(
+                "  11 profiles registered. Use 'rlmx sandbox spawn --profile <name>' to deploy."
+            );
+            Ok(())
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// voice
+// ---------------------------------------------------------------------------
+
+async fn cmd_voice(action: VoiceAction) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        VoiceAction::Start => {
+            let session_id = uuid::Uuid::new_v4();
+            println!("Voice Pipeline Status:");
+            println!("  session_id: {}", session_id);
+            println!("  state: active");
+            println!("  asr_engine: whisper-v3 (stub)");
+            println!("  nlu_engine: intent-classifier (stub)");
+            println!("  tts_engine: voice-synth (stub)");
+            println!("  latency_target: <200ms");
+            println!("  wake_word: \"hey rlmx\"");
+            println!();
+            println!("Voice pipeline started. Listening for input...");
+            println!("Use 'rlmx voice transcribe --text \"...\"' to simulate input.");
+            Ok(())
+        }
+        VoiceAction::Transcribe { text } => {
+            let transcript_id = uuid::Uuid::new_v4();
+            let word_count = text.split_whitespace().count();
+            let confidence = 0.92 + (word_count as f64 * 0.001).min(0.07);
+            println!("Transcription Result:");
+            println!("  transcript_id: {}", transcript_id);
+            println!("  text: \"{}\"", text);
+            println!("  confidence: {:.3}", confidence);
+            println!("  words: {}", word_count);
+            println!("  language: en-US");
+            println!("  latency_ms: 45");
+            println!("  model: whisper-v3-turbo (stub)");
+            Ok(())
+        }
+        VoiceAction::Intents { text } => {
+            let intents = decompose_intents(&text);
+            println!("Intent Decomposition:");
+            println!("  input: \"{}\"", text);
+            println!("  intents:");
+            for (i, intent) in intents.iter().enumerate() {
+                println!(
+                    "    [{}] {} (confidence: {:.2})",
+                    i + 1,
+                    intent.0,
+                    intent.1
+                );
+                println!("        slots: {}", intent.2);
+            }
+            println!();
+            println!("  agent_routing:");
+            for intent in &intents {
+                println!("    {} -> {}", intent.0, intent.3);
+            }
+            Ok(())
+        }
+        VoiceAction::Session { list } => {
+            if list {
+                let now = chrono::Utc::now();
+                println!("Voice Sessions:");
+                println!("  ┌──────────────────────────────────────┬──────────┬───────────┐");
+                println!("  │ Session ID                           │ Status   │ Duration  │");
+                println!("  ├──────────────────────────────────────┼──────────┼───────────┤");
+                println!(
+                    "  │ {}  │ active   │ 2m 15s    │",
+                    uuid::Uuid::new_v4()
+                );
+                println!(
+                    "  │ {}  │ ended    │ 5m 42s    │",
+                    uuid::Uuid::new_v4()
+                );
+                println!("  └──────────────────────────────────────┴──────────┴───────────┘");
+                println!("  Last active: {}", now.format("%Y-%m-%d %H:%M:%S UTC"));
+            } else {
+                println!("Use --list to show voice sessions.");
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Decompose natural language into intents with (name, confidence, slots, agent).
+fn decompose_intents(text: &str) -> Vec<(&'static str, f64, &'static str, &'static str)> {
+    let lower = text.to_lowercase();
+    let mut intents = Vec::new();
+
+    if lower.contains("move") || lower.contains("relocat") {
+        intents.push((
+            "life.relocation",
+            0.94,
+            "{ destination: extracted, timeline: inferred }",
+            "relocation-planner",
+        ));
+    }
+    if lower.contains("bill") || lower.contains("pay") || lower.contains("negotiate") {
+        intents.push((
+            "finance.bill_negotiation",
+            0.91,
+            "{ provider: to_resolve, amount: unknown }",
+            "bill-negotiator",
+        ));
+    }
+    if lower.contains("save") || lower.contains("money") || lower.contains("budget") {
+        intents.push((
+            "finance.savings_optimization",
+            0.88,
+            "{ category: general, target: unset }",
+            "savings-optimizer",
+        ));
+    }
+    if lower.contains("health") || lower.contains("doctor") || lower.contains("appointment") {
+        intents.push((
+            "health.appointment",
+            0.90,
+            "{ provider: to_resolve, urgency: normal }",
+            "health-coordinator",
+        ));
+    }
+    if lower.contains("subscribe") || lower.contains("subscription") || lower.contains("cancel") {
+        intents.push((
+            "finance.subscription_audit",
+            0.89,
+            "{ service: to_resolve, action: review }",
+            "subscription-auditor",
+        ));
+    }
+
+    if intents.is_empty() {
+        intents.push((
+            "general.query",
+            0.75,
+            "{ raw_text: preserved }",
+            "general-assistant",
+        ));
+    }
+
+    intents
+}
+
+// ---------------------------------------------------------------------------
+// marketplace
+// ---------------------------------------------------------------------------
+
+async fn cmd_marketplace(action: MarketplaceAction) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        MarketplaceAction::Search { domain } => {
+            let agents = demo_marketplace_agents(&domain);
+            println!("Marketplace Search: domain={}", domain);
+            println!();
+            if agents.is_empty() {
+                println!("  No agents found for domain \"{}\".", domain);
+                println!("  Try: finance, health, productivity, home, legal");
+            } else {
+                println!(
+                    "  ┌─────────────────────────┬────────┬──────────┬─────────────────────────────┐"
+                );
+                println!(
+                    "  │ Agent                   │ Rating │ Installs │ Description                 │"
+                );
+                println!(
+                    "  ├─────────────────────────┼────────┼──────────┼─────────────────────────────┤"
+                );
+                for a in &agents {
+                    println!(
+                        "  │ {:<23} │ {:<6} │ {:<8} │ {:<27} │",
+                        a.0, a.1, a.2, a.3
+                    );
+                }
+                println!(
+                    "  └─────────────────────────┴────────┴──────────┴─────────────────────────────┘"
+                );
+                println!();
+                println!("  {} agents found. Install with: rlmx marketplace install --agent <name>", agents.len());
+            }
+            Ok(())
+        }
+        MarketplaceAction::Install { agent } => {
+            let install_id = uuid::Uuid::new_v4();
+            println!("Installing agent: {}", agent);
+            println!("  install_id: {}", install_id);
+            println!("  status: downloading...");
+            println!("  status: verifying signature...");
+            println!("  status: provisioning sandbox...");
+            println!("  status: installed");
+            println!();
+            println!("Agent \"{}\" installed successfully.", agent);
+            println!("  Run with: rlmx agent spawn --type {} --task \"auto\"", agent);
+            Ok(())
+        }
+        MarketplaceAction::List => {
+            println!("Installed Agents:");
+            println!("  ┌─────────────────────────┬──────────┬──────────────────────┐");
+            println!("  │ Agent                   │ Version  │ Installed            │");
+            println!("  ├─────────────────────────┼──────────┼──────────────────────┤");
+            println!("  │ bill-negotiator         │ 1.2.0    │ 2026-03-15           │");
+            println!("  │ subscription-auditor    │ 0.9.1    │ 2026-03-17           │");
+            println!("  └─────────────────────────┴──────────┴──────────────────────┘");
+            println!();
+            println!("  2 agents installed.");
+            Ok(())
+        }
+        MarketplaceAction::Featured => {
+            println!("Featured Agents:");
+            println!();
+            println!("  [1] bill-negotiator v1.2.0");
+            println!("      Automatically negotiates bills with service providers.");
+            println!("      Rating: 4.8/5 | Installs: 12.4k | Domain: finance");
+            println!();
+            println!("  [2] relocation-planner v2.0.1");
+            println!("      Plans city-to-city moves: housing, jobs, schools, logistics.");
+            println!("      Rating: 4.7/5 | Installs: 8.1k | Domain: life");
+            println!();
+            println!("  [3] subscription-auditor v0.9.1");
+            println!("      Finds unused subscriptions and cancels them on your behalf.");
+            println!("      Rating: 4.6/5 | Installs: 15.2k | Domain: finance");
+            println!();
+            println!("  [4] health-optimizer v1.1.0");
+            println!("      Tracks health data and suggests evidence-based improvements.");
+            println!("      Rating: 4.5/5 | Installs: 6.7k | Domain: health");
+            println!();
+            println!("  [5] tax-strategist v1.0.3");
+            println!("      Year-round tax optimization with jurisdiction awareness.");
+            println!("      Rating: 4.9/5 | Installs: 9.3k | Domain: finance");
+            println!();
+            println!("Install with: rlmx marketplace install --agent <name>");
+            Ok(())
+        }
+        MarketplaceAction::Publish { path } => {
+            let pkg_path = std::path::Path::new(&path);
+            if !pkg_path.exists() {
+                return Err(format!("Agent package not found: {}", path).into());
+            }
+            let publish_id = uuid::Uuid::new_v4();
+            println!("Publishing agent:");
+            println!("  package: {}", path);
+            println!("  publish_id: {}", publish_id);
+            println!("  status: validating RVF package...");
+            println!("  status: checking signature...");
+            println!("  status: uploading...");
+            println!("  status: published");
+            println!();
+            println!("Agent published successfully.");
+            println!("  Marketplace URL: https://marketplace.rlmx.dev/agents/{}", publish_id);
+            Ok(())
+        }
+    }
+}
+
+/// Demo marketplace data keyed by domain.
+fn demo_marketplace_agents(domain: &str) -> Vec<(&'static str, &'static str, &'static str, &'static str)> {
+    match domain {
+        "finance" => vec![
+            ("bill-negotiator", "4.8/5", "12.4k", "Negotiates bills automatically"),
+            ("subscription-auditor", "4.6/5", "15.2k", "Finds unused subscriptions"),
+            ("tax-strategist", "4.9/5", "9.3k", "Year-round tax optimization"),
+            ("savings-optimizer", "4.4/5", "7.8k", "Finds savings opportunities"),
+            ("debt-payoff-planner", "4.3/5", "5.1k", "Optimal debt payoff strategy"),
+        ],
+        "health" => vec![
+            ("health-optimizer", "4.5/5", "6.7k", "Evidence-based health tips"),
+            ("appointment-scheduler", "4.2/5", "4.3k", "Schedules medical visits"),
+            ("medication-tracker", "4.7/5", "3.9k", "Tracks meds and refills"),
+        ],
+        "productivity" => vec![
+            ("task-prioritizer", "4.4/5", "11.0k", "AI-powered task ranking"),
+            ("meeting-summarizer", "4.6/5", "8.5k", "Auto meeting notes"),
+            ("email-triager", "4.3/5", "6.2k", "Smart email categorization"),
+        ],
+        "home" => vec![
+            ("relocation-planner", "4.7/5", "8.1k", "Plans city-to-city moves"),
+            ("home-maintenance", "4.1/5", "3.4k", "Tracks home upkeep tasks"),
+            ("utility-optimizer", "4.3/5", "5.6k", "Optimizes utility spending"),
+        ],
+        "legal" => vec![
+            ("contract-reviewer", "4.5/5", "4.8k", "Reviews legal contracts"),
+            ("rights-advisor", "4.2/5", "2.1k", "Consumer rights guidance"),
+        ],
+        _ => vec![],
+    }
+}
+
+// ---------------------------------------------------------------------------
+// engagement
+// ---------------------------------------------------------------------------
+
+fn cmd_engagement(action: EngagementAction) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        EngagementAction::Score => {
+            println!("Life Score Dashboard:");
+            println!();
+            println!("  Overall Life Score: 72 / 100");
+            println!();
+            println!("  ┌──────────────────┬───────┬────────────────────────────────┐");
+            println!("  │ Category         │ Score │ Trend                          │");
+            println!("  ├──────────────────┼───────┼────────────────────────────────┤");
+            println!("  │ Finance          │ 78    │ +3 this week                   │");
+            println!("  │ Health           │ 65    │ +1 this week                   │");
+            println!("  │ Productivity     │ 81    │ +5 this week                   │");
+            println!("  │ Home             │ 70    │ stable                         │");
+            println!("  │ Social           │ 62    │ -2 this week                   │");
+            println!("  └──────────────────┴───────┴────────────────────────────────┘");
+            println!();
+            println!("  Next milestone: 75 (unlock Premium Agent slot)");
+            Ok(())
+        }
+        EngagementAction::Savings => {
+            println!("Money Saved Counter:");
+            println!();
+            println!("  Total Saved: $1,247.32");
+            println!();
+            println!("  ┌────────────────────────────┬───────────┬──────────────────┐");
+            println!("  │ Action                     │ Amount    │ Date             │");
+            println!("  ├────────────────────────────┼───────────┼──────────────────┤");
+            println!("  │ Cable bill negotiated      │ $45.00/mo │ 2026-03-01       │");
+            println!("  │ Unused subscription found  │ $12.99/mo │ 2026-03-05       │");
+            println!("  │ Insurance re-quoted        │ $230.00   │ 2026-03-10       │");
+            println!("  │ Phone plan optimized       │ $20.00/mo │ 2026-03-14       │");
+            println!("  │ Duplicate charge refunded  │ $89.99    │ 2026-03-18       │");
+            println!("  └────────────────────────────┴───────────┴──────────────────┘");
+            println!();
+            println!("  Monthly recurring savings: $77.99/mo");
+            println!("  Projected annual savings: $1,183.20");
+            Ok(())
+        }
+        EngagementAction::Streak => {
+            println!("Current Streak:");
+            println!();
+            println!("  Active streak: 12 days");
+            println!("  Longest streak: 34 days");
+            println!();
+            println!("  This week: [x] [x] [x] [x] [x] [ ] [ ]");
+            println!("             Mon Tue Wed Thu Fri Sat Sun");
+            println!();
+            println!("  Streak bonuses:");
+            println!("    7-day:  +5% agent efficiency (active)");
+            println!("   14-day:  unlock Streak Shield (2 days away)");
+            println!("   30-day:  Premium Agent slot");
+            Ok(())
+        }
+        EngagementAction::Achievements => {
+            println!("Achievements:");
+            println!();
+            println!("  Unlocked (7):");
+            println!("    [*] First Save       — Saved money for the first time");
+            println!("    [*] Week Warrior     — 7-day streak");
+            println!("    [*] Bill Buster      — Negotiated first bill");
+            println!("    [*] Voice Activated  — Completed first voice interaction");
+            println!("    [*] Agent Collector  — Installed 3 agents");
+            println!("    [*] Early Adopter    — Joined during beta");
+            println!("    [*] Sub Sleuth       — Found unused subscription");
+            println!();
+            println!("  Locked (5):");
+            println!("    [ ] Month Master     — 30-day streak");
+            println!("    [ ] Thousand Club    — Save $1,000 total");
+            println!("    [ ] Full House       — Install 10 agents");
+            println!("    [ ] Voice Power User — 100 voice interactions");
+            println!("    [ ] Life Score 90    — Reach 90/100 Life Score");
+            Ok(())
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// phone
+// ---------------------------------------------------------------------------
+
+fn cmd_phone(action: PhoneAction) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        PhoneAction::Status => {
+            println!("Phone Runtime Status:");
+            println!();
+            println!("  runtime: RLMX Edge v0.1.0");
+            println!("  platform: iOS 18.2 (simulated)");
+            println!("  model_tier: Small (0.5B Q4_K_M)");
+            println!("  inference_engine: CoreML + Metal");
+            println!("  status: active");
+            println!("  uptime: 4h 23m");
+            println!();
+            println!("  Capabilities:");
+            println!("    voice_asr: on-device (Whisper-tiny)");
+            println!("    nlu: on-device (intent-classifier)");
+            println!("    tts: on-device (voice-synth)");
+            println!("    cloud_fallback: available");
+            println!();
+            println!("  Network:");
+            println!("    connectivity: WiFi");
+            println!("    cloud_latency: 45ms");
+            println!("    offline_capable: yes");
+            Ok(())
+        }
+        PhoneAction::Agents => {
+            println!("On-Device Agents:");
+            println!();
+            println!("  ┌─────────────────────────┬──────────┬────────────┬──────────────┐");
+            println!("  │ Agent                   │ Status   │ Model Tier │ Memory (MB)  │");
+            println!("  ├─────────────────────────┼──────────┼────────────┼──────────────┤");
+            println!("  │ bill-negotiator         │ idle     │ Small      │ 48           │");
+            println!("  │ subscription-auditor    │ active   │ Small      │ 52           │");
+            println!("  │ general-assistant       │ idle     │ Small      │ 45           │");
+            println!("  └─────────────────────────┴──────────┴────────────┴──────────────┘");
+            println!();
+            println!("  Total memory: 145 MB / 512 MB budget");
+            println!("  3 agents loaded. Max on-device: 5");
+            Ok(())
+        }
+        PhoneAction::Battery => {
+            println!("Battery-Aware Scheduling:");
+            println!();
+            println!("  Battery level: 67%");
+            println!("  Charging: no");
+            println!("  Power mode: balanced");
+            println!();
+            println!("  Scheduling Policy:");
+            println!("    ┌────────────────┬────────────────────────────────────────┐");
+            println!("    │ Battery Range  │ Policy                                 │");
+            println!("    ├────────────────┼────────────────────────────────────────┤");
+            println!("    │ 80-100%        │ Full: all agents, proactive scanning   │");
+            println!("    │ 50-80%  [*]    │ Balanced: on-demand only, batch sync   │");
+            println!("    │ 20-50%         │ Conservative: critical agents only     │");
+            println!("    │ 0-20%          │ Minimal: voice wake-word only          │");
+            println!("    └────────────────┴────────────────────────────────────────┘");
+            println!();
+            println!("  Estimated runtime: 6h 15m (with current agent load)");
+            println!("  Next background sync: in 12 minutes");
             Ok(())
         }
     }

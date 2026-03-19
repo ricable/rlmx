@@ -3,7 +3,7 @@
 ## Overview
 
 RLMX is a cognition kernel with 9 existing crates and 2 planned crates,
-organized into 8 bounded contexts. This document maps those contexts, their
+organized into 11 bounded contexts. This document maps those contexts, their
 responsibilities, and integration relationships.
 
 ## Bounded Contexts
@@ -18,6 +18,9 @@ responsibilities, and integration relationships.
 | 6 | **Observation & Health** | Supporting | `rlmx-cognitive` | SONA adaptation, DAG optimizer, nervous system, circadian scheduling |
 | 7 | **Container & Storage** | Generic | `rlmx-rvf` | Sealed containers, COW branching, witness chains, Ed25519 signing |
 | 8 | **Plugin & Domain** | Generic | `rlmx-plugin` | `DomainPlugin` trait, safety engine, ingest adapters |
+| 9 | **Voice Interaction** | Core | `rlmx-voice` (DDD-008) | Voice pipeline: VAD, STT, intent decomposition, TTS, session memory |
+| 10 | **Phone Runtime** | Core | `rlmx-phone` (DDD-009) | Mobile command center: background scheduling, notifications, widgets, engagement (Life Score, streaks, gamification) |
+| 11 | **Agent Marketplace** | Supporting | `rlmx-marketplace` (DDD-010) | Agent ecosystem: publishing, discovery, installation, billing, security review, developer SDK |
 
 ## Context Map Diagram
 
@@ -74,6 +77,51 @@ responsibilities, and integration relationships.
  │  │  AccessControl      │                  │                        │     │
  │  └─────────────────────┘                  └───────────────────────┘      │
  │                                                                          │
+ │  ═══════════════════════ Voice-First Contexts ═══════════════════════    │
+ │                                                                          │
+ │  ┌──────────────────────┐  Partnership   ┌──────────────────────┐       │
+ │  │ VOICE INTERACTION     │◄═════════════►│  PHONE RUNTIME        │       │
+ │  │ (rlmx-voice)          │               │  (rlmx-phone)         │       │
+ │  │ DDD-008               │               │  DDD-009              │       │
+ │  │                       │               │                       │       │
+ │  │  VoicePipeline        │  voice runs   │  BackgroundScheduler  │       │
+ │  │  VadDetector          │  within phone  │  NotificationManager  │       │
+ │  │  SttTranscriber       │               │  WidgetEngine         │       │
+ │  │  IntentDecomposer     │               │  LifeScoreTracker     │       │
+ │  │  TtsSynthesizer       │               │  StreakEngine         │       │
+ │  │  SessionMemory        │               │  GamificationModule   │       │
+ │  └──────┬──────┬─────────┘               └──────┬──────┬─────────┘       │
+ │         │      │                                │      │                 │
+ │ Upstream│      │ Upstream              Upstream │      │ Downstream      │
+ │ (dispatches    │ (18-dim voice     (starts/stops│      │ (installs       │
+ │  VoiceTranscr  │  features)         agents)     │      │  agents)        │
+ │  VoiceSynth    │                                │      │                 │
+ │  IntentRoute)  │                                │      │                 │
+ │         │      │                                │      │                 │
+ │         ▼      ▼                                ▼      │                 │
+ │  ┌──────────────────┐  ┌────────────────┐  ┌───────────┴───────────┐    │
+ │  │  KERNEL SYSCALL   │  │ INFERENCE      │  │  AGENT LIFECYCLE      │    │
+ │  │  (rlmx-kernel)    │  │ ROUTING        │  │  (rlmx-agents)        │    │
+ │  │                    │  │ (scheduler.rs) │  │                       │    │
+ │  └──────────────────┘  └────────────────┘  └───────────────────────┘    │
+ │                                                        ▲                 │
+ │         ┌──────────────────────┐  Partnership          │                 │
+ │         │ AGENT MARKETPLACE     │◄════════════════════►│                 │
+ │         │ (rlmx-marketplace)    │  publishes agents                      │
+ │         │ DDD-010               │  that lifecycle manages                │
+ │         │                       │                                        │
+ │         │  AgentPublisher       │  Upstream to                           │
+ │         │  DiscoveryIndex       │  Phone Runtime                         │
+ │         │  InstallManager       │─────────────────────►PHONE RUNTIME     │
+ │         │  BillingEngine        │  (phone installs                       │
+ │         │  SecurityReviewer     │   marketplace agents)                  │
+ │         │  DeveloperSdk         │                                        │
+ │         └──────────────────────┘                                         │
+ │                                                                          │
+ │  Additional Swarm relationship:                                          │
+ │    PHONE RUNTIME ──(upstream)──► SWARM COORDINATION                      │
+ │    Phone joins as Zone A-Mobile node                                     │
+ │                                                                          │
  └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -84,6 +132,8 @@ responsibilities, and integration relationships.
 | Pair | Nature |
 |------|--------|
 | Kernel Syscall <-> Agent Lifecycle | Agents are spawned via `ProcessFork` syscall with scoped `CapabilityToken`. Kernel enforces agent permissions; agents define which permissions they need. |
+| Voice Interaction <-> Phone Runtime | Voice pipeline runs within the phone runtime. Phone provides audio capture and playback; Voice provides transcription and synthesis. Shared session context. |
+| Agent Marketplace <-> Agent Lifecycle | Marketplace publishes agent packages that Agent Lifecycle instantiates. Lifecycle reports agent health back to Marketplace for quality scoring. |
 
 ### Upstream / Downstream
 
@@ -91,6 +141,11 @@ responsibilities, and integration relationships.
 |----------|------------|-------------|
 | Swarm Coordination | Inference Routing | Swarm decides which node handles a query; Routing resolves the strategy on that node. |
 | Research & Evolution | Observation & Health | Research stores successful mutations as `Pattern` entries in SONA's `PatternBank`. |
+| Voice Interaction | Kernel Syscall | Voice dispatches `VoiceTranscribe`, `VoiceSynthesize`, and `IntentRoute` syscalls to the kernel for capability-secured execution. |
+| Voice Interaction | Inference Routing | Voice feeds 18-dimensional feature vectors (14 base + 4 voice: pitch, cadence, urgency, ambient noise) to `TinyDancerRouter` for strategy selection. |
+| Phone Runtime | Agent Lifecycle | Phone starts/stops agents via `AgentSpawner`, managing background agent scheduling and foreground activation based on user context. |
+| Phone Runtime | Swarm Coordination | Phone joins the swarm as a Zone A-Mobile node, participating in consensus and receiving scatter-gather work units. |
+| Agent Marketplace | Phone Runtime | Phone Runtime is downstream of Marketplace; it discovers and installs agent packages from the marketplace catalog. |
 
 ### Customer / Supplier
 
@@ -141,6 +196,13 @@ will be serialized via `serde_json` over the swarm transport layer.
 | `ExperimentCompleted` | Research & Evolution | Observation & Health (records fitness) |
 | `NodeJoined` / `NodeLeft` | Swarm Coordination | Agent Lifecycle (rebalances agents) |
 | `StateMutated` | Kernel Syscall | Container & Storage (appends to witness chain) |
+| `VoiceTranscribed` | Voice Interaction | Kernel Syscall (intent decomposition), Observation & Health (session logging) |
+| `IntentRouted` | Voice Interaction | Inference Routing (strategy selection with voice features) |
+| `VoiceSynthesized` | Voice Interaction | Phone Runtime (audio playback) |
+| `AgentInstalled` | Agent Marketplace | Agent Lifecycle (registers new agent type), Phone Runtime (UI update) |
+| `AgentPublished` | Agent Marketplace | Agent Marketplace (discovery index update) |
+| `PhoneSessionStarted` | Phone Runtime | Voice Interaction (activates pipeline), Swarm Coordination (zone join) |
+| `LifeScoreUpdated` | Phone Runtime | Observation & Health (engagement metrics) |
 
 ### Shared Kernel (compiled dependency)
 
@@ -176,4 +238,113 @@ rlmx-cli (binary entry point)
 rlmx-rlm                 (Inference Routing - cloud, standalone)
 rlmx-trm                 (Inference Routing - tiny NN, standalone)
 rlmx-cognitive            (Observation & Health context, standalone)
+
+rlmx-voice [NEW]          (Voice Interaction context)
+  +-- rlmx-kernel
+  +-- rlmx-ruvllm          (TinyDancerRouter 18-dim voice features)
+  +-- rlmx-cognitive        (session memory via SONA)
+
+rlmx-phone [NEW]          (Phone Runtime context)
+  +-- rlmx-kernel
+  +-- rlmx-voice
+  +-- rlmx-agents
+  +-- rlmx-swarm
+
+rlmx-marketplace [NEW]    (Agent Marketplace context)
+  +-- rlmx-kernel
+  +-- rlmx-agents
+  +-- rlmx-rvf              (signed agent packages)
 ```
+
+## Integration Mapping
+
+This section maps the concrete integration points between contexts: which
+kernel syscalls each context uses, which domain events flow between contexts,
+and which capability tokens are required.
+
+### Syscall Usage by Context
+
+Each context dispatches a specific subset of the 12 kernel syscalls. Contexts
+must not invoke syscalls outside their declared set. Capability tokens are
+scoped accordingly.
+
+| Context | Syscalls Used | Purpose |
+|---------|--------------|---------|
+| **Kernel Syscall** | All 12 | Core dispatch; owns all syscall definitions |
+| **Agent Lifecycle** | `ProcessFork`, `ProcessSend`, `ProcessRecv`, `HaltCheck` | Agent spawning, inter-agent messaging, graceful shutdown |
+| **Swarm Coordination** | `ProcessFork`, `ProcessSend`, `ProcessRecv`, `StateMutate` | Node-level agent management, state replication across zones |
+| **Inference Routing** | `VecSearch`, `AttentionSelect` | Router feature lookup, attention mechanism selection |
+| **Research & Evolution** | `VecInsert`, `VecSearch`, `GraphQuery`, `GraphDiffuse`, `StateMutate` | Hypothesis storage, knowledge graph exploration, genome mutation |
+| **Observation & Health** | `VecInsert`, `VecSearch`, `StateMutate` | Pattern storage in SONA, DAG optimizer state updates |
+| **Container & Storage** | `StateMutate` | Witness chain append, container seal/branch operations |
+| **Plugin & Domain** | `VecInsert`, `GraphQuery` | Domain data ingestion, domain-specific graph queries |
+| **Voice Interaction** | `VecSearch`, `AttentionSelect`, `ProcessSend` | Intent routing, attention-based response selection, fan-out dispatch |
+| **Phone Runtime** | `ProcessFork`, `ProcessSend`, `ProcessRecv`, `HaltCheck`, `StateMutate` | Agent lifecycle on device, engagement state persistence, offline queue flush |
+| **Agent Marketplace** | `VecSearch`, `StateMutate` | Agent discovery index search, listing state transitions |
+
+### Domain Event Flow Matrix
+
+Events are the primary mechanism for cross-context communication. Each row is
+a domain event, each column indicates whether a context produces (P) or
+consumes (C) that event.
+
+| Event | Kernel | Agent | Swarm | Inference | Research | Cognitive | RVF | Plugin | Voice | Phone | Marketplace |
+|-------|--------|-------|-------|-----------|----------|-----------|-----|--------|-------|-------|-------------|
+| `SyscallDispatched` | P | | | | | C | | | | | |
+| `AgentSpawned` | | P | C | | | | | | | C | |
+| `QueryRouted` | | | | P | | C | | | | | |
+| `ExperimentCompleted` | | | | | P | C | | | | | |
+| `NodeJoined` | | C | P | | | | | | | | |
+| `NodeLeft` | | C | P | | | | | | | | |
+| `StateMutated` | P | | | | | | C | | | | |
+| `VoiceTranscribed` | C | | | | | C | | | P | | |
+| `IntentRouted` | | | | C | | | | | P | | |
+| `VoiceSynthesized` | | | | | | | | | P | C | |
+| `AgentInstalled` | | C | | | | | | | | C | P |
+| `AgentPublished` | | | | | | | | | | | P |
+| `PhoneSessionStarted` | | | C | | | | | | C | P | |
+| `LifeScoreUpdated` | | | | | | C | | | | P | |
+| `AgentSubmitted` | | | | | | | | | | | P |
+| `ReviewCompleted` | | | | | | | | | | | P |
+| `SavingsRecorded` | | | | | | | | | | P | |
+| `SessionStarted` | | | | | | | | | P | C | |
+| `SessionEnded` | | | | | | C | | | P | C | |
+| `BatteryPolicyChanged` | | | | | | | | | C | P | |
+| `NotificationSent` | | | | | | | | | | P | |
+| `AgentSuspended` | | C | | | | | | | | P | P |
+
+### Capability Token Scoping by Context
+
+Each context receives capability tokens scoped to its declared syscall subset.
+Tokens are derived from a parent token via `derive_child()` with permission
+narrowing. No context can self-escalate beyond its declared scope.
+
+| Context | Token Scope | Derived From | Additional Constraints |
+|---------|------------|-------------|----------------------|
+| **Kernel Syscall** | `SyscallPermission::All` | Root token | System-level only; never exposed to external consumers |
+| **Agent Lifecycle** | `ProcessFork`, `ProcessSend`, `ProcessRecv`, `HaltCheck` | Kernel root | Per-agent tokens further narrowed by `PermissionMatrix` row |
+| **Swarm Coordination** | `ProcessFork`, `ProcessSend`, `ProcessRecv`, `StateMutate` | Kernel root | Zone-scoped: tokens carry zone assignment, cannot cross zones without coordinator approval |
+| **Inference Routing** | `VecSearch`, `AttentionSelect` | Kernel root | Read-only data access; no mutation permissions |
+| **Research & Evolution** | `VecInsert`, `VecSearch`, `GraphQuery`, `GraphDiffuse`, `StateMutate` | Agent Lifecycle (Researcher token) | COW-branched mutations only; cannot mutate main state without Reviewer approval |
+| **Observation & Health** | `VecInsert`, `VecSearch`, `StateMutate` | Kernel root | Pattern storage scoped to SONA subsystem; no graph or process permissions |
+| **Container & Storage** | `StateMutate` | Kernel root | Scoped to witness chain and RVF container operations only |
+| **Plugin & Domain** | `VecInsert`, `GraphQuery` | Agent Lifecycle | Narrowed per-plugin based on `DomainPlugin::safety_constraints()` |
+| **Voice Interaction** | `VecSearch`, `AttentionSelect`, `ProcessSend` | Phone Runtime coordinator token | Cannot fork new processes; dispatches intents through existing agents only |
+| **Phone Runtime** | `ProcessFork`, `ProcessSend`, `ProcessRecv`, `HaltCheck`, `StateMutate` | Kernel root (device-scoped) | Concurrency-limited by `LightweightCoordinator::max_concurrent` (3-8 based on battery) |
+| **Agent Marketplace** | `VecSearch`, `StateMutate` | Kernel root | Discovery index only; no agent execution permissions. `StateMutate` scoped to listing state transitions |
+
+### Cross-Context ACL Summary
+
+| Boundary | ACL Mechanism | What Crosses | What Is Blocked |
+|----------|--------------|-------------|-----------------|
+| Voice -> Kernel | Intent translation | `Intent` structs as syscall params | Raw audio, speaker embeddings |
+| Voice -> Inference | Feature normalization | 18-dim float vector (14 base + 4 voice) | Raw audio features, unnormalized values |
+| Voice -> Phone | Event bridge | `VoiceSynthesized` event with `OpusChunk` refs | TTS model internals, SSML markup |
+| Voice -> Cognitive | SONA PatternBank API | `(query_embedding, actions, quality)` triples | Session details, turn-level data, speaker identity |
+| Phone -> Kernel | Syscall dispatch | Capability-scoped syscalls | Device-specific OS handles, raw battery readings |
+| Phone -> Swarm | Zone join protocol | `DeviceCapabilities` summary, `NodeId` | OS-level process handles, notification state |
+| Phone -> Agents | AgentSpawner API | `AgentType`, scoped `CapabilityToken` | Battery policy internals, widget state |
+| Marketplace -> RVF | Container API | Signed RVF containers, content hashes | Billing data, publisher credentials |
+| Marketplace -> Agents | Published agent packages | `AgentType` definition, permission declarations | Runtime state, execution context |
+| Marketplace -> Phone | Install event | `AgentInstalled` event with agent metadata | Pricing details, publisher identity, review status |
+| Cognitive -> RVF | WitnessChain conformist | Audit entries in `WitnessChain` format | SONA internals, Fisher information matrices |

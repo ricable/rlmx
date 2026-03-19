@@ -80,7 +80,70 @@ pub enum SyscallPermission {
     StateMutate,
     AttentionSelect,
     HaltCheck,
+    VoiceTranscribe,
+    VoiceSynthesize,
+    IntentRoute,
     All,
+}
+
+// ---------------------------------------------------------------------------
+// Voice-first architecture types (ADR-019)
+// ---------------------------------------------------------------------------
+
+/// How the kernel should respond to a voice-originated request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ResponseMode {
+    /// Audio-only reply (no visual output).
+    VoiceOnly,
+    /// Visual-only reply (screen/text, no audio).
+    Visual,
+    /// Combined audio + visual reply.
+    Multimodal,
+    /// Background/ambient notification (low-priority).
+    Ambient,
+}
+
+/// Persona profile used for voice synthesis style selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VoicePersona {
+    Finance,
+    Health,
+    Legal,
+    Shopping,
+    Calendar,
+    Emergency,
+}
+
+/// Life domain categories for intent decomposition and routing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum LifeDomain {
+    Finance,
+    Health,
+    Legal,
+    Career,
+    Education,
+    Home,
+    Shopping,
+    Travel,
+    Social,
+    Government,
+    Automotive,
+    Pet,
+}
+
+/// A single parsed intent extracted from a voice transcript.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Intent {
+    /// The life domain this intent belongs to.
+    pub domain: LifeDomain,
+    /// Action verb or short description (e.g. "schedule", "pay", "lookup").
+    pub action: String,
+    /// Named entities extracted from the transcript.
+    pub entities: Vec<String>,
+    /// Urgency score in \[0.0, 1.0\] — higher means more time-sensitive.
+    pub urgency: f64,
+    /// Confidence that this intent was correctly parsed, in \[0.0, 1.0\].
+    pub confidence: f64,
 }
 
 /// A capability granted to a process, restricting which syscalls it may invoke.
@@ -180,6 +243,19 @@ pub enum SyscallResult {
     HaltDecision {
         should_halt: bool,
         reason: String,
+    },
+    VoiceTranscribed {
+        transcript: String,
+        language: String,
+        confidence: f64,
+    },
+    VoiceSynthesized {
+        audio_len: usize,
+        persona: String,
+        streaming: bool,
+    },
+    IntentsRouted {
+        intents: Vec<Intent>,
     },
 }
 

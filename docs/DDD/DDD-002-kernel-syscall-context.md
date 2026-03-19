@@ -3,7 +3,7 @@
 ## Overview
 
 The Kernel Syscall context is the **core domain** of RLMX. It provides the
-12-syscall dispatch interface, capability-secured process model, vector memory,
+15-syscall dispatch interface, capability-secured process model, vector memory,
 property graph, and proof-gated state mutation. All other contexts interact
 with the kernel through this boundary.
 
@@ -30,7 +30,7 @@ through the context, and all access is serialized via `Arc<Mutex<T>>`.
 
 ## Entities
 
-### Syscall (12 variants)
+### Syscall (15 variants)
 
 Defined in `crates/rlmx-kernel/src/syscall.rs` as `enum Syscall`:
 
@@ -96,7 +96,7 @@ Defined in `crates/rlmx-kernel/src/proof.rs`:
 
 | Value Object | Location | Description |
 |-------------|----------|-------------|
-| `SyscallPermission` | `types.rs` | Enum with 12 variants + `All`. Compared by value, no identity. |
+| `SyscallPermission` | `types.rs` | Enum with 15 variants + `All`. Compared by value, no identity. |
 | `ProcessId` | `types.rs` | Type alias for `Uuid`. Identifies a process. |
 | `Capability` | `types.rs` | `{ name, permissions: Vec<SyscallPermission> }` |
 | `SegmentMetadata` | `types.rs` | `{ source, plugin, segment_type, extra }` |

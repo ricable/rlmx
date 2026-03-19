@@ -9,6 +9,7 @@ pub mod graph;
 pub mod memory;
 pub mod process;
 pub mod proof;
+pub mod router;
 pub mod scheduler;
 pub mod syscall;
 pub mod types;
@@ -17,9 +18,16 @@ pub mod types;
 pub use capability::{CapabilityManager, CapabilityToken};
 pub use events::{create_event_bus, DomainEvent, DomainEventBus};
 pub use graph::Graph;
+#[cfg(feature = "ruvector")]
+pub use memory::HnswMemoryRegion;
 pub use memory::{cosine_similarity, text_to_embedding, ContextSegment, MemoryRegion, EMBED_DIM};
 pub use process::{Process, ProcessManager, ProcessStatus};
 pub use proof::{Proof, ProofEngine, Witness, WitnessChain};
-pub use scheduler::{Scheduler, SchedulerConfig, Strategy};
+pub use router::{RouterInput, RouterOutput, TinyDancerRouter};
+pub use scheduler::{GatherStrategy, Scheduler, SchedulerConfig, Strategy};
 pub use syscall::{dispatch, KernelContext, Syscall};
-pub use types::*;
+pub use types::{
+    Capability, Intent, KernelError, KernelMessage, KernelResult, LifeDomain, MinCutAlgorithm,
+    ProcessId, ProofRequest, ResponseMode, SearchFilters, SearchHit, SegmentMetadata, SegmentTier,
+    SyscallPermission, SyscallResult, VoicePersona,
+};

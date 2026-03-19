@@ -15,3 +15,22 @@ sha2 = "0.10"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand = "0.8"
 hex = "0.4"
+
+# Optional: RVF format crates from crates.io
+rvf-types = { version = "0.2.0", optional = true }
+rvf-runtime = { version = "0.2.0", optional = true }
+rvf-wire = { version = "0.1.0", optional = true }
+rvf-index = { version = "0.1.0", optional = true }
+rvf-quant = { version = "0.1.0", optional = true }
+rvf-crypto = { version = "0.2.0", optional = true }
+
+[features]
+default = []
+rvf-ext = [
+    "dep:rvf-types",
+    "dep:rvf-runtime",
+    "dep:rvf-wire",
+    "dep:rvf-index",
+    "dep:rvf-quant",
+    "dep:rvf-crypto",
+]

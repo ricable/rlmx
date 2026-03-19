@@ -10,6 +10,7 @@ pub mod attention;
 pub mod dag;
 pub mod nervous;
 pub mod sona;
+pub mod voice_patterns;
 
 // Re-export primary types for convenience.
 pub use attention::{AttentionCategory, AttentionMechanism, AttentionSelector};
@@ -25,4 +26,8 @@ pub use nervous::{
 pub use sona::{
     AdaptationFeedback, FisherInformation, KeywordPatternBank, LoraDelta, Pattern, PatternBank,
     PatternBankStats, PatternEntry, Sona, SonaStats,
+};
+pub use voice_patterns::{
+    AnonymizedPattern, EmotionBucket, EngagementEvent, EngagementTracker, FederatedAnonymizer,
+    Modality, NotificationFatigueModel, VoiceEnrichedPattern, VoicePatternBank,
 };

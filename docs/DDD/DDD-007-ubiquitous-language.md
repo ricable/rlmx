@@ -132,6 +132,55 @@ commit messages, and conversations should use these terms consistently.
 | **Safety Engine** | Enforces `ParameterBound` and `RateLimit` constraints from a plugin's `safety_constraints()`. |
 | **Ingest Adapter** | A plugin-provided component that transforms domain data into kernel-compatible segments for `VecInsert`. |
 
+## Voice Pipeline Context
+
+| Term | Definition |
+|------|------------|
+| **Conversation Turn** | A single user-system exchange within a `VoiceSession`, identified by a unique ID. Contains transcript, audio duration, extracted intents, and optional multimodal response. Turns are entities (not value objects) because downstream consumers reference them by ID for follow-up resolution. |
+| **Emotion Bucket** | One of 5 discrete quantization levels (`VeryNegative`, `Negative`, `Neutral`, `Positive`, `VeryPositive`) applied to continuous `f32` emotion valence before any data leaves the device. Prevents fingerprinting through high-precision emotion tracking. Enforced at the ACL boundary. |
+| **Fan-Out** | The scatter-gather pattern used when a single utterance decomposes into multiple intents across different life domains. The voice context requests `Strategy::Swarm { scatter_zones, gather_strategy, timeout_ms }` to resolve intents in parallel across zones, then assembles results into a single `MultimodalResponse`. |
+| **Federated Pattern** | A learned `(query_embedding, actions_taken, result_quality)` pattern from SONA's `PatternBank` that has been cleared for cross-device sharing. Speaker embeddings and raw audio are stripped; only text-derived features and scalar metrics are federated. |
+| **Anonymized Pattern** | A federated pattern with additional PII removal: user IDs replaced with ephemeral hashes, timestamps coarsened to day granularity, and entity values generalized (e.g., specific dollar amounts become ranges). Used for population-level learning without individual traceability. |
+| **Intent** | A structured action extracted from a transcript, containing: `LifeDomain`, action verb, extracted entities with character-span offsets, urgency score (0-1), and decomposition confidence (0-1). Intents below 0.3 confidence are discarded; ambiguous intents (0.3-0.6) trigger a clarification turn. |
+| **Multi-Intent Decomposition** | Parsing a single utterance into multiple `Intent` structs targeting different life domains. E.g., "Cancel my dentist appointment and order more dog food" yields two intents in Health and Shopping domains. |
+| **Response Mode** | How the system responds — `VoiceOnly`, `Visual`, `Multimodal`, or `Ambient` — auto-detected from device sensors (accelerometer, proximity, screen state, audio output route). Mode changes take effect on the next turn, not mid-response. |
+| **Speaker Context** | Metadata about the speaker (confidence, emotion valence, urgency, noise level) passed to router. The embedding vector stays on-device; only scalar features cross context boundaries. |
+| **VAD (Voice Activity Detection)** | 500K parameter CNN that detects human speech in ambient audio, triggering STT activation. Operates on a 3-second rolling ring buffer with adaptive silence threshold. |
+| **Voice Persona** | Domain-specific TTS personality (e.g., warm for health, authoritative for legal). Each of the 12 life domains has a default persona; users can override per domain. Defined by `PersonaStyle` (Warm, Authoritative, Upbeat, Calm, Neutral), speech rate multiplier, and TTS model identifier. |
+| **Voice Session** | The aggregate root of the Voice Interaction context. A bounded interaction from wake word through response delivery, owning the consistency boundary for conversation turns, intent state, emotion trajectory, and resource allocation (audio buffer, STT context, TTS stream). Auto-closes after 5 minutes of inactivity. |
+| **Wake Word** | User-configurable keyword (default "Hey RuVix") processed on-device to activate the voice pipeline. Wake word detection is a prerequisite for STT activation (invariant: no continuous transcription without explicit trigger). |
+
+## Phone & Engagement Context
+
+| Term | Definition |
+|------|------------|
+| **Achievement** | A named milestone unlocked by user or agent activity (e.g., "First Savings", "10-Day Streak", "All Domains Covered"). Tracked in `UserEngagement::achievements` with an `unlocked_at` timestamp. Achievements are write-once: once unlocked, they are never revoked. |
+| **Agent Collection** | The set of all agents a user has installed or can install, visualized in the Collection Grid. Each agent in the collection has a level (1-10), install status, and domain assignment. Collecting agents across all 12 life domains is a gamification goal. |
+| **Agent Level** | 1-10 capability level per agent, reflecting real SONA learning depth. Leveling is driven by actual pattern quality improvements in the `PatternBank`, not arbitrary XP. Higher levels unlock expanded capability tokens. |
+| **Background Scheduler** | The OS-constrained background execution manager within `PhoneRuntime`. Abstracts `BGTaskScheduler` (iOS) and `WorkManager` (Android) behind a unified `ScheduledTask` interface. Prioritizes agent work within the OS-granted time budget via a `BinaryHeap<PrioritizedTask>`. |
+| **Collection Grid** | Visual grid of all available agents (installed shown in color, uninstalled greyed). Dimensions are `rows x cols` slots; each slot maps to an `AgentListing` from the marketplace. |
+| **Life Score** | Daily 0-100 composite score across Finance, Health, Time, Safety domains. Floor-clamped to 30 for active users to prevent discouragement. History retained for trend visualization in lock screen widgets. |
+| **Lightweight Coordinator** | A stripped-down `Coordinator` agent that runs within mobile OS background execution limits. Unlike the full `Coordinator` (DDD-003), it caps agent concurrency (3-8) based on real-time battery and thermal readings. Always assigned to `ZoneAMobile`. |
+| **Money Saved** | Real-time cumulative savings counter, ProofSeal-verified, displayed on lock screen widget. Every savings claim requires a valid `ProofSeal` from the kernel proof subsystem; unverified claims are rejected at the aggregate boundary. |
+| **Notification Fatigue Prevention** | ML model that auto-downgrades notification priority based on user response patterns. If 5+ consecutive `Actionable` notifications are ignored, future `Actionable` notifications are downgraded to `Informational` until re-engagement. |
+| **Notification Tier** | Three-level priority classification for phone notifications: `Critical` (strong vibration + alert for security/fraud), `Actionable` (gentle vibration + chime for savings/price drops), `Informational` (silent, batched into daily briefing). Fatigue model can auto-downgrade tiers. |
+| **Offline Outbox** | Transactional outbox queue (max 100 entries, FIFO eviction) for requests generated while the device is offline. Requests are durably queued and flushed in order when connectivity resumes, with configurable `RetryPolicy` (max retries, base delay, backoff factor). |
+| **Streak** | Consecutive daily engagement counter with progressive reward tiers (7-day through 90-day). One freeze per 30 days preserves the streak on a missed day. `longest` is never decremented; cumulative total is always preserved. |
+| **Zone A-Mobile** | The phone as primary command interface, promoted from Zone D in the original architecture. The phone joins the swarm as a Zone A-Mobile node, participating in consensus and receiving scatter-gather work units. |
+
+## Marketplace Context
+
+| Term | Definition |
+|------|------------|
+| **Agent Listing** | A published agent in the marketplace with metadata, rating, price, RVF container hash, required permissions, supported devices, and minimum model tier. Status lifecycle: `Draft` -> `InReview` -> `Published` (or `Suspended`). |
+| **Agent Pack** | Curated agent configuration bundle, often celebrity/influencer branded. Revenue split is 50/30/20 (creator/platform/base-developer). Each pack contains agent IDs with custom configurations. |
+| **Life Domain** | One of 12 categories: Finance, Health, Legal, Career, Education, Home, Shopping, Travel, Social, Government, Automotive, Pet. Shared with the kernel context (`LifeDomain` enum defined in `rlmx-kernel`, re-exported by consuming crates). |
+| **Marketplace Listing** | Synonym for Agent Listing. The canonical aggregate entity in the marketplace context representing a single distributable agent with its metadata, review status, and pricing. |
+| **Publisher** | A registered developer or organization (`Individual`, `Organization`, or `Celebrity`) with verified identity, reputation score, and `EarningsAccount`. Able to submit agents to the marketplace for review and distribution. |
+| **Review Pipeline** | The sequential security audit process for agent submissions. Consists of 5 automated checks (capability minimality, data flow verification, fuzz testing, network policy compliance, malware signature scan). Agents requesting health, finance, or legal permissions are escalated to mandatory human review. No bypasses or fast-tracks exist. |
+| **Revenue Split** | 70/30 developer/platform for standard agents; 50/30/20 creator/platform/base-dev for agent packs. Platform always receives exactly 30%. Enforced at the `BillingEngine` level. |
+| **Security Review Pipeline** | See **Review Pipeline**. |
+
 ---
 
 ## Anti-Patterns (terms to avoid)

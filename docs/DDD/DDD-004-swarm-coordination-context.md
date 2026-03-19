@@ -125,6 +125,9 @@ pub struct SwarmTransport {
 | `ZoneFailover` | Zone loses all healthy nodes | `{ failed_zone, target_zone, migrated_agents }` |
 | `HeartbeatMissed` | Node fails to respond within interval | `{ node_id, consecutive_misses }` |
 | `AgentMigrated` | Agent moved between nodes | `{ agent_id, from_node, to_node, reason }` |
+| `VoiceChunk` | Voice audio chunk routed through swarm | `{ session_id, chunk_index, zone }` |
+| `AgentProgress` | Agent reports task progress | `{ agent_id, task_id, progress_pct }` |
+| `MultimodalResponse` | Multimodal response assembled from scatter-gather | `{ session_id, domains, chunk_count }` |
 
 ## Repositories
 

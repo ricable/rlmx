@@ -24,3 +24,15 @@ serde_json = { workspace = true }
 rand = { workspace = true }
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 uuid = { workspace = true }
+
+[features]
+default = []
+ruvllm = ["rlmx-ruvllm/ruvllm"]
+metal = ["rlmx-ruvllm/metal"]
+ruvector = ["rlmx-kernel/ruvector", "rlmx-mcp/ruvector"]
+rvf-ext = ["rlmx-rvf/rvf-ext", "rlmx-mcp/rvf-ext"]
+qudag = ["rlmx-swarm/qudag"]
+ruv-swarm = ["rlmx-swarm/ruv-swarm"]
+neural = ["rlmx-ruvllm/neural"]
+cognitum = ["rlmx-swarm/cognitum"]
+midstreamer = ["rlmx-kernel/midstreamer", "rlmx-swarm/midstreamer"]

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Agent Lifecycle context manages the 12 specialized agent types that compose
+The Agent Lifecycle context manages the 14 specialized agent types that compose
 the RLMX distributed swarm. It handles agent creation (via kernel `ProcessFork`),
 termination, capability scoping, and the permission matrix governing which
 agents can communicate with which.
@@ -44,6 +44,8 @@ Each agent is a kernel `Process` with additional domain semantics:
 | 10 | `Replicator` | State replication across nodes | `VecInsert`, `VecSearch`, `ProcessSend`, `ProcessRecv` | 3 |
 | 11 | `Embedder` | Generates and indexes embeddings | `VecInsert`, `VecDelete`, `ProcessRecv` | 4 |
 | 12 | `Analyst` | Synthesizes results, generates reports | `VecSearch`, `GraphQuery`, `GraphDiffuse` | 3 |
+| 13 | `VoiceCoordinator` | Manages voice pipeline and session lifecycle | `VecSearch`, `ProcessSend`, `ProcessRecv`, `AttentionSelect` | 2 |
+| 14 | `MarketplaceManager` | Handles agent publishing, review, and billing | `VecSearch`, `GraphQuery`, `ProcessSend` | 2 |
 
 ```rust
 pub struct Agent {
@@ -89,14 +91,14 @@ pub struct ProcessGroup {
 
 | Value Object | Definition |
 |-------------|------------|
-| `AgentType` | Enum with 12 variants: `Coordinator`, `Researcher`, `Router`, `Experimenter`, `Worker`, `Monitor`, `Reviewer`, `Trainer`, `Validator`, `Replicator`, `Embedder`, `Analyst` |
+| `AgentType` | Enum with 14 variants: `Coordinator`, `Researcher`, `Router`, `Experimenter`, `Worker`, `Monitor`, `Reviewer`, `Trainer`, `Validator`, `Replicator`, `Embedder`, `Analyst`, `VoiceCoordinator`, `MarketplaceManager` |
 | `AgentId` | Newtype wrapping `Uuid`. Distinguished from `ProcessId`. |
 | `AgentStatus` | Enum: `Spawning`, `Ready`, `Busy`, `Paused`, `Terminating`, `Terminated` |
-| `PermissionMatrix` | 12x12 boolean matrix. `matrix[sender_type][receiver_type]` = can send. |
+| `PermissionMatrix` | 15x14 boolean matrix. `matrix[sender_type][receiver_type]` = can send. |
 | `ZoneAssignment` | Enum: `ZoneA`, `ZoneB`, `ZoneC`, `Cloud`, `Browser` |
 | `ModelTier` | Enum: `Small` (Haiku-class), `Medium` (Sonnet-class), `Large` (Opus-class), `Edge` (local GGUF), `Custom(String)` |
 
-### Permission Matrix (12x12)
+### Permission Matrix (15x14)
 
 ```
            Coord Resrch Router Exper Worker Monit Review Train Valid Repli Embed Analys
@@ -201,7 +203,7 @@ target type.
    of the root system token. No agent can escalate beyond its Coordinator.
 
 5. **Permission matrix enforcement**: All `ProcessSend` operations between
-   agents are validated against the 12x12 matrix before dispatch.
+   agents are validated against the 15x14 matrix before dispatch.
 
 ## Agent Spawn Tree (PID hierarchy)
 

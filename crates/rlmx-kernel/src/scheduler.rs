@@ -7,6 +7,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::events::{self, DomainEvent, DomainEventBus};
 
+/// How to aggregate results from multi-zone scatter queries.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum GatherStrategy {
+    /// Return the first successful result.
+    First,
+    /// Wait for all zones, merge results.
+    All,
+    /// Wait for a quorum (majority).
+    Quorum,
+    /// Custom merge function name.
+    Custom(String),
+}
+
 /// Scheduling strategy selection.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub enum Strategy {
@@ -19,6 +32,30 @@ pub enum Strategy {
     Auto,
     /// Hybrid: use a triage model to classify, then dispatch.
     Hybrid { triage: String, threshold: f32 },
+    /// Edge-local inference on the device.
+    Edge,
+    /// Cross-zone scatter-gather via swarm.
+    Swarm {
+        scatter_zones: Vec<String>,
+        gather_strategy: GatherStrategy,
+        timeout_ms: u64,
+    },
+}
+
+impl Strategy {
+    /// Create a default Swarm strategy targeting all zones.
+    pub fn swarm_default() -> Self {
+        Strategy::Swarm {
+            scatter_zones: vec![
+                "zone-a".into(),
+                "zone-b".into(),
+                "zone-c".into(),
+                "zone-d".into(),
+            ],
+            gather_strategy: GatherStrategy::First,
+            timeout_ms: 10_000,
+        }
+    }
 }
 
 /// Configuration for the kernel scheduler.

@@ -12,8 +12,8 @@ use crate::memory::MemoryRegion;
 use crate::process::ProcessManager;
 use crate::proof::ProofEngine;
 use crate::types::{
-    Capability, KernelMessage, KernelResult, MinCutAlgorithm, ProcessId, ProofRequest,
-    SearchFilters, SegmentMetadata, SyscallResult,
+    Capability, Intent, KernelMessage, KernelResult, LifeDomain, MinCutAlgorithm, ProcessId,
+    ProofRequest, SearchFilters, SegmentMetadata, SyscallResult,
 };
 
 /// The 12 RuVix kernel syscalls.
@@ -70,6 +70,21 @@ pub enum Syscall {
         iteration: usize,
         max_iterations: usize,
     },
+    VoiceTranscribe {
+        audio_len: usize,
+        language_hint: Option<String>,
+        tier_override: Option<String>,
+    },
+    VoiceSynthesize {
+        text: String,
+        persona: String,
+        streaming: bool,
+    },
+    IntentRoute {
+        transcript: String,
+        decompose: bool,
+        max_intents: Option<usize>,
+    },
 }
 
 impl Syscall {
@@ -88,6 +103,9 @@ impl Syscall {
             Syscall::StateMutate { .. } => "StateMutate",
             Syscall::AttentionSelect { .. } => "AttentionSelect",
             Syscall::HaltCheck { .. } => "HaltCheck",
+            Syscall::VoiceTranscribe { .. } => "VoiceTranscribe",
+            Syscall::VoiceSynthesize { .. } => "VoiceSynthesize",
+            Syscall::IntentRoute { .. } => "IntentRoute",
         }
     }
 }
@@ -299,6 +317,58 @@ async fn dispatch_inner(syscall: &Syscall, ctx: &KernelContext) -> KernelResult<
                 should_halt,
                 reason,
             })
+        }
+        Syscall::VoiceTranscribe {
+            audio_len,
+            language_hint,
+            ..
+        } => {
+            // Stub: real implementation would delegate to an ASR engine.
+            // Return a placeholder transcript proportional to audio length.
+            let language = language_hint.clone().unwrap_or_else(|| "en".to_string());
+            let confidence = if *audio_len > 0 { 0.85 } else { 0.0 };
+            Ok(SyscallResult::VoiceTranscribed {
+                transcript: String::new(),
+                language,
+                confidence,
+            })
+        }
+        Syscall::VoiceSynthesize {
+            text,
+            persona,
+            streaming,
+        } => {
+            // Stub: real implementation would invoke a TTS engine.
+            // Estimate audio length from text length (~150 bytes per word at 16kHz).
+            let estimated_audio_len = text.len() * 150;
+            Ok(SyscallResult::VoiceSynthesized {
+                audio_len: estimated_audio_len,
+                persona: persona.clone(),
+                streaming: *streaming,
+            })
+        }
+        Syscall::IntentRoute {
+            transcript,
+            decompose,
+            max_intents,
+        } => {
+            // Stub: real implementation would use an NLU model to parse intents.
+            // Return a single generic intent when decomposition is disabled.
+            let intents = if *decompose && !transcript.is_empty() {
+                let limit = max_intents.unwrap_or(5);
+                // Produce a single intent (real NLU would produce more).
+                let intent = Intent {
+                    domain: LifeDomain::Home,
+                    action: "query".to_string(),
+                    entities: vec![],
+                    urgency: 0.5,
+                    confidence: 0.7,
+                };
+                vec![intent].into_iter().take(limit).collect()
+            } else {
+                vec![]
+            };
+            Ok(SyscallResult::IntentsRouted { intents })
         }
     }
 }

@@ -73,6 +73,53 @@ pub enum SwarmEvent {
         sandbox_id: Uuid,
         reason: String,
     },
+    /// Real-time voice transcription chunk (ADR-018).
+    VoiceChunk {
+        session_id: Uuid,
+        transcript: String,
+        confidence: f32,
+        is_final: bool,
+    },
+    /// Per-agent progress update for multi-intent fan-out (ADR-015/018).
+    AgentProgress {
+        task_id: Uuid,
+        agent_type: String,
+        domain: String,
+        progress_pct: f32,
+        status_text: String,
+        eta_ms: Option<u64>,
+    },
+    /// Multimodal response combining voice, visual, and haptic channels (ADR-018).
+    MultimodalResponse {
+        session_id: Uuid,
+        voice_text: Option<String>,
+        visual_card: Option<serde_json::Value>,
+        haptic_pattern: Option<String>,
+        is_final: bool,
+    },
+}
+
+/// Structured visual card data for multimodal responses (ADR-018).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CardData {
+    pub card_type: String,
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub body: Option<String>,
+    pub data: Option<serde_json::Value>,
+    pub actions: Vec<String>,
+    pub domain: String,
+}
+
+/// Haptic feedback pattern for multimodal responses (ADR-018).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum HapticPattern {
+    Gentle,
+    DoubleTap,
+    LongBuzz,
+    Alert,
+    Success,
+    Warning,
 }
 
 impl SwarmEvent {
@@ -88,6 +135,9 @@ impl SwarmEvent {
             SwarmEvent::MutationFound { .. } => "MutationFound",
             SwarmEvent::SandboxSpawned { .. } => "SandboxSpawned",
             SwarmEvent::SandboxTerminated { .. } => "SandboxTerminated",
+            SwarmEvent::VoiceChunk { .. } => "VoiceChunk",
+            SwarmEvent::AgentProgress { .. } => "AgentProgress",
+            SwarmEvent::MultimodalResponse { .. } => "MultimodalResponse",
         }
     }
 
@@ -199,6 +249,9 @@ impl Default for ClientState {
                 "MutationFound".into(),
                 "SandboxSpawned".into(),
                 "SandboxTerminated".into(),
+                "VoiceChunk".into(),
+                "AgentProgress".into(),
+                "MultimodalResponse".into(),
             ],
             filters: WsFilters::default(),
         }

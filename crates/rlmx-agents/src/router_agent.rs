@@ -129,7 +129,8 @@ mod tests {
     #[test]
     fn test_router_allowed_permissions() {
         let perms = RouterAgent::allowed_permissions();
-        // Router: VecSearch, ProcessSend, ProcessRecv, AttentionSelect, HaltCheck
-        assert_eq!(perms.len(), 5);
+        // Router: VecSearch, ProcessSend, ProcessRecv, AttentionSelect, HaltCheck,
+        //         VoiceTranscribe, VoiceSynthesize, IntentRoute
+        assert_eq!(perms.len(), 8);
     }
 }
