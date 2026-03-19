@@ -1,0 +1,56 @@
+[package]
+name = "rlmx-ruvllm"
+version = "0.1.0"
+edition = "2021"
+description = "Local LLM inference engine for RLMX edge deployment"
+
+[features]
+default = []
+ruvllm = ["dep:ruvllm"]
+metal = ["ruvllm", "ruvllm/inference-metal"]
+neural = [
+    "dep:ruv-neural-core",
+    "dep:ruv-neural-signal",
+    "dep:ruv-neural-graph",
+    "dep:ruv-neural-embed",
+    "dep:ruv-neural-memory",
+    "dep:ruvector-cognitive-container",
+    "dep:ruvector-memopt",
+    "dep:cognitum-rs",
+]
+ruvnet-phase4 = ["ruvnet-phase3", "neural"]
+ruvnet-phase3 = [
+    "neural",
+    "dep:ruvector-attention",
+    "dep:ruvector-attn-mincut",
+    "dep:cognitum-gate-tilezero",
+    "dep:cognitum-gate-kernel",
+]
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+
+# Optional: actual ruvllm engine (requires RuVector)
+# TODO: migrate to crates.io ruvllm once published
+ruvllm = { git = "https://github.com/ruvnet/RuVector.git", optional = true }
+
+# Optional: neural research crates
+ruv-neural-core = { version = "0.1.0", optional = true }
+ruv-neural-signal = { version = "0.1.0", optional = true }
+ruv-neural-graph = { version = "0.1.0", optional = true }
+ruv-neural-embed = { version = "0.1.0", optional = true }
+ruv-neural-memory = { version = "0.1.0", optional = true }
+ruvector-cognitive-container = { version = "2.0.4", optional = true }
+ruvector-memopt = { version = "0.5.0", optional = true }
+cognitum-rs = { version = "0.1.0", optional = true }
+
+# Optional: Phase 3 attention & gate crates
+ruvector-attention = { version = "2.0.4", optional = true }
+ruvector-attn-mincut = { version = "2.0.4", optional = true }
+cognitum-gate-tilezero = { version = "0.1.1", optional = true }
+cognitum-gate-kernel = { version = "0.1.1", optional = true }
