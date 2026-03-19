@@ -3,16 +3,13 @@
 //! Implements an MCP-protocol-compatible server that can operate over
 //! stdio or HTTP transports.
 
-use std::collections::HashMap;
 use serde_json::json;
+use std::collections::HashMap;
 use tracing::{info, warn};
 
 use rlmx_rvf::rbac::{AccessControl, Operation, Role};
 
-use crate::protocol::{
-    McpError, McpRequest, McpResponse, McpTool,
-    METHOD_NOT_FOUND,
-};
+use crate::protocol::{McpError, McpRequest, McpResponse, McpTool, METHOD_NOT_FOUND};
 
 /// Error code for "server not initialized" per MCP protocol.
 const SERVER_NOT_INITIALIZED: i32 = -32002;
@@ -51,6 +48,8 @@ pub struct McpConfig {
     /// mapping — clients cannot self-escalate to these roles through
     /// request parameters.
     pub token_roles: HashMap<String, Role>,
+    /// WebSocket event server port (default: 3001).
+    pub ws_port: u16,
 }
 
 impl McpConfig {
@@ -70,6 +69,7 @@ impl Default for McpConfig {
             auth_token: None,
             rate_limit_per_minute: 0,
             token_roles: HashMap::new(),
+            ws_port: 3001,
         }
     }
 }
@@ -129,6 +129,11 @@ impl McpServer {
         self.config.auth_enabled
     }
 
+    /// Returns a reference to the server configuration.
+    pub fn config(&self) -> &McpConfig {
+        &self.config
+    }
+
     /// Returns the configured auth token, if any.
     pub fn auth_token(&self) -> Option<&str> {
         self.config.auth_token.as_deref()
@@ -139,13 +144,32 @@ impl McpServer {
         info!("Starting MCP server");
 
         match &self.transport {
-            Transport::Stdio => {
-                crate::stdio::run_stdio_loop(&mut self).await
-            }
+            Transport::Stdio => crate::stdio::run_stdio_loop(&mut self).await,
             Transport::StreamableHttp { host, port } => {
                 let host = host.clone();
                 let port = *port;
                 crate::http::run_http_server(self, &host, port).await
+            }
+        }
+    }
+
+    /// Start the server with a shared tool state for event bus wiring.
+    ///
+    /// The WebSocket event bus will be stored in the `ToolState` so that
+    /// research tools and the CLI research loop can broadcast events to
+    /// connected dashboard clients.
+    pub async fn start_with_state(
+        mut self,
+        state: crate::tools::SharedToolState,
+    ) -> Result<(), McpError> {
+        info!("Starting MCP server with shared state");
+
+        match &self.transport {
+            Transport::Stdio => crate::stdio::run_stdio_loop(&mut self).await,
+            Transport::StreamableHttp { host, port } => {
+                let host = host.clone();
+                let port = *port;
+                crate::http::run_http_server_with_state(self, &host, port, Some(state)).await
             }
         }
     }
@@ -201,35 +225,46 @@ impl McpServer {
         self.initialized = true;
         info!("MCP server initialized");
 
-        McpResponse::success(request.id.clone(), json!({
-            "protocolVersion": "2024-11-05",
-            "capabilities": {
-                "tools": {
-                    "listChanged": false
+        McpResponse::success(
+            request.id.clone(),
+            json!({
+                "protocolVersion": "2024-11-05",
+                "capabilities": {
+                    "tools": {
+                        "listChanged": false
+                    }
+                },
+                "serverInfo": {
+                    "name": "rlmx-mcp",
+                    "version": "0.1.0"
                 }
-            },
-            "serverInfo": {
-                "name": "rlmx-mcp",
-                "version": "0.1.0"
-            }
-        }))
+            }),
+        )
     }
 
     /// Handle the `tools/list` method.
     fn handle_tools_list(&self, request: &McpRequest) -> McpResponse {
-        let tools: Vec<serde_json::Value> = self.tools.iter().map(|tool| {
-            json!({
-                "name": tool.name,
-                "description": tool.description,
-                "inputSchema": tool.input_schema
+        let tools: Vec<serde_json::Value> = self
+            .tools
+            .iter()
+            .map(|tool| {
+                json!({
+                    "name": tool.name,
+                    "description": tool.description,
+                    "inputSchema": tool.input_schema
+                })
             })
-        }).collect();
+            .collect();
 
         McpResponse::success(request.id.clone(), json!({ "tools": tools }))
     }
 
     /// Handle the `tools/call` method.
-    async fn handle_tools_call(&self, request: &McpRequest, caller_token: Option<&str>) -> McpResponse {
+    async fn handle_tools_call(
+        &self,
+        request: &McpRequest,
+        caller_token: Option<&str>,
+    ) -> McpResponse {
         let params = match &request.params {
             Some(p) => p,
             None => {
@@ -250,9 +285,7 @@ impl McpServer {
             }
         };
 
-        let arguments = params.get("arguments")
-            .cloned()
-            .unwrap_or(json!({}));
+        let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
 
         // Find the tool
         let tool = match self.tools.iter().find(|t| t.name == tool_name) {
@@ -300,8 +333,8 @@ impl McpServer {
         let caller_role = if self.config.auth_enabled {
             // When auth is enabled, check if the caller's token has a
             // server-side role mapping (which may include Admin/System).
-            let token_role = caller_token
-                .and_then(|token| self.config.role_for_token(token).cloned());
+            let token_role =
+                caller_token.and_then(|token| self.config.role_for_token(token).cloned());
 
             if let Some(role) = token_role {
                 role
@@ -340,12 +373,15 @@ impl McpServer {
 
         // Execute the tool handler
         match tool.handler.handle(arguments).await {
-            Ok(result) => McpResponse::success(request.id.clone(), json!({
-                "content": [{
-                    "type": "text",
-                    "text": serde_json::to_string_pretty(&result).unwrap_or_default()
-                }]
-            })),
+            Ok(result) => McpResponse::success(
+                request.id.clone(),
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": serde_json::to_string_pretty(&result).unwrap_or_default()
+                    }]
+                }),
+            ),
             Err(e) => McpResponse::error(request.id.clone(), e),
         }
     }
@@ -369,8 +405,15 @@ impl McpServer {
     }
 
     /// Map a tool name to the RBAC operation it requires.
+    ///
+    /// Mappings follow ADR-010 role requirements:
+    /// - Viewer+: read-only / informational tools → Query
+    /// - Operator+: status and monitoring tools → Ingest (Operator threshold)
+    /// - Engineer+: tools that create resources or allocate compute → ParameterModify
+    /// - Admin+: destructive tools (terminate) → ContainerSeal
     fn tool_to_operation(tool_name: &str) -> Operation {
         match tool_name {
+            // Core kernel tools (original 12)
             "rlmx_query" | "rlmx_graph_query" => Operation::Query,
             "rlmx_ingest" => Operation::Ingest,
             "rlmx_plugin_list" | "rlmx_plugin_action" => Operation::PluginManage,
@@ -378,7 +421,41 @@ impl McpServer {
             "rlmx_witness_chain" => Operation::WitnessView,
             "rlmx_rvf_seal" => Operation::ContainerSeal,
             "rlmx_rvf_branch" => Operation::ContainerBranch,
-            // Default to Query for informational/stats tools.
+            "rlmx_memory_stats" | "rlmx_trm_classify" | "rlmx_sona_stats" => Operation::Query,
+            // Swarm tools — Viewer+ (read-only)
+            "rlmx_swarm_status" | "rlmx_swarm_topology" => Operation::Query,
+            // Agent tools — per ADR-010
+            "rlmx_agent_spawn" => Operation::ParameterModify, // Engineer+
+            "rlmx_agent_list" => Operation::Ingest,           // Operator+
+            "rlmx_agent_terminate" => Operation::ContainerSeal, // Admin+
+            // Research tools — per ADR-010
+            "rlmx_research_start" => Operation::ParameterModify, // Engineer+
+            "rlmx_research_status" => Operation::Ingest,         // Operator+
+            "rlmx_experiment_list" | "rlmx_mutation_history" => Operation::Query, // Viewer+
+            "rlmx_forecast" => Operation::Ingest,                // Operator+
+            "rlmx_train" => Operation::ParameterModify,          // Engineer+
+            // Sandbox tools (ADR-011)
+            "rlmx_sandbox_spawn" | "rlmx_sandbox_terminate" | "rlmx_fleet_deploy" => {
+                Operation::ParameterModify
+            }
+            "rlmx_sandbox_status" | "rlmx_sandbox_list" => Operation::Query,
+            // Marketplace tools (ADR-014) — write operations need Operator+
+            "rlmx_marketplace_search"
+            | "rlmx_marketplace_featured"
+            | "rlmx_marketplace_categories"
+            | "rlmx_marketplace_list_installed" => Operation::Query,
+            "rlmx_marketplace_install" | "rlmx_marketplace_uninstall" | "rlmx_marketplace_rate" => {
+                Operation::Ingest
+            } // Operator+
+            "rlmx_marketplace_publish" => Operation::ParameterModify, // Engineer+
+            // Voice tools (ADR-018)
+            "rlmx_voice_transcribe" | "rlmx_voice_synthesize" | "rlmx_voice_session" => {
+                Operation::Ingest // Operator+
+            }
+            // Approval tools (ADR-037)
+            "rlmx_approval_list" => Operation::Ingest,         // Operator+
+            "rlmx_approval_decide" => Operation::ParameterModify, // Engineer+
+            // Default to Query for any unrecognized informational tools.
             _ => Operation::Query,
         }
     }
@@ -400,7 +477,7 @@ mod tests {
     #[test]
     fn test_tool_registration() {
         let server = make_server();
-        assert_eq!(server.tool_count(), 12);
+        assert_eq!(server.tool_count(), 49);
     }
 
     #[test]
@@ -434,7 +511,7 @@ mod tests {
         assert!(resp.error.is_none());
         let result = resp.result.unwrap();
         let tools = result["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 12);
+        assert_eq!(tools.len(), 49);
     }
 
     #[tokio::test]
@@ -444,10 +521,14 @@ mod tests {
         let init_req = McpRequest::new(json!(0), "initialize", Some(json!({})));
         server.handle_request(&init_req, None).await;
 
-        let req = McpRequest::new(json!(3), "tools/call", Some(json!({
-            "name": "rlmx_memory_stats",
-            "arguments": {}
-        })));
+        let req = McpRequest::new(
+            json!(3),
+            "tools/call",
+            Some(json!({
+                "name": "rlmx_memory_stats",
+                "arguments": {}
+            })),
+        );
         let resp = server.handle_request(&req, None).await;
         assert!(resp.error.is_none());
     }
@@ -467,11 +548,15 @@ mod tests {
         let init_req = McpRequest::new(json!(0), "initialize", Some(json!({})));
         server.handle_request(&init_req, None).await;
 
-        let req = McpRequest::new(json!(5), "tools/call", Some(json!({
-            "name": "rlmx_ingest",
-            "arguments": {"data": "test"},
-            "_role": "viewer"
-        })));
+        let req = McpRequest::new(
+            json!(5),
+            "tools/call",
+            Some(json!({
+                "name": "rlmx_ingest",
+                "arguments": {"data": "test"},
+                "_role": "viewer"
+            })),
+        );
         let resp = server.handle_request(&req, None).await;
         assert!(resp.error.is_some());
         assert_eq!(resp.error.unwrap().code, ACCESS_DENIED);
@@ -492,16 +577,25 @@ mod tests {
         let init_req = McpRequest::new(json!(0), "initialize", Some(json!({})));
         server.handle_request(&init_req, None).await;
 
-        let req = McpRequest::new(json!(6), "tools/call", Some(json!({
-            "name": "rlmx_query",
-            "arguments": {"query": "test"},
-            "_role": "admin"
-        })));
+        let req = McpRequest::new(
+            json!(6),
+            "tools/call",
+            Some(json!({
+                "name": "rlmx_query",
+                "arguments": {"query": "test"},
+                "_role": "admin"
+            })),
+        );
         let resp = server.handle_request(&req, None).await;
-        assert!(resp.error.is_some(), "Client should not be able to self-assign Admin role");
+        assert!(
+            resp.error.is_some(),
+            "Client should not be able to self-assign Admin role"
+        );
         let err = resp.error.unwrap();
         assert_eq!(err.code, ACCESS_DENIED);
-        assert!(err.message.contains("privileged roles must be configured server-side"));
+        assert!(err
+            .message
+            .contains("privileged roles must be configured server-side"));
     }
 
     #[tokio::test]
@@ -510,16 +604,25 @@ mod tests {
         let init_req = McpRequest::new(json!(0), "initialize", Some(json!({})));
         server.handle_request(&init_req, None).await;
 
-        let req = McpRequest::new(json!(7), "tools/call", Some(json!({
-            "name": "rlmx_query",
-            "arguments": {"query": "test"},
-            "_role": "system"
-        })));
+        let req = McpRequest::new(
+            json!(7),
+            "tools/call",
+            Some(json!({
+                "name": "rlmx_query",
+                "arguments": {"query": "test"},
+                "_role": "system"
+            })),
+        );
         let resp = server.handle_request(&req, None).await;
-        assert!(resp.error.is_some(), "Client should not be able to self-assign System role");
+        assert!(
+            resp.error.is_some(),
+            "Client should not be able to self-assign System role"
+        );
         let err = resp.error.unwrap();
         assert_eq!(err.code, ACCESS_DENIED);
-        assert!(err.message.contains("privileged roles must be configured server-side"));
+        assert!(err
+            .message
+            .contains("privileged roles must be configured server-side"));
     }
 
     #[tokio::test]
@@ -539,13 +642,20 @@ mod tests {
         let init_req = McpRequest::new(json!(0), "initialize", Some(json!({})));
         server.handle_request(&init_req, None).await;
 
-        let req = McpRequest::new(json!(8), "tools/call", Some(json!({
-            "name": "rlmx_query",
-            "arguments": {"query": "test"}
-        })));
+        let req = McpRequest::new(
+            json!(8),
+            "tools/call",
+            Some(json!({
+                "name": "rlmx_query",
+                "arguments": {"query": "test"}
+            })),
+        );
         // Pass the caller's token so RBAC resolves the Admin role.
         let resp = server.handle_request(&req, Some("admin-token-123")).await;
-        assert!(resp.error.is_none(), "Server-side Admin token should be authorized");
+        assert!(
+            resp.error.is_none(),
+            "Server-side Admin token should be authorized"
+        );
     }
 
     #[tokio::test]
@@ -554,13 +664,20 @@ mod tests {
         let init_req = McpRequest::new(json!(0), "initialize", Some(json!({})));
         server.handle_request(&init_req, None).await;
 
-        let req = McpRequest::new(json!(9), "tools/call", Some(json!({
-            "name": "rlmx_query",
-            "arguments": {"query": "test"},
-            "_role": "operator"
-        })));
+        let req = McpRequest::new(
+            json!(9),
+            "tools/call",
+            Some(json!({
+                "name": "rlmx_query",
+                "arguments": {"query": "test"},
+                "_role": "operator"
+            })),
+        );
         let resp = server.handle_request(&req, None).await;
-        assert!(resp.error.is_none(), "Operator role should be allowed via _role param");
+        assert!(
+            resp.error.is_none(),
+            "Operator role should be allowed via _role param"
+        );
     }
 
     #[test]

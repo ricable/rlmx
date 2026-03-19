@@ -1,0 +1,23 @@
+[package]
+name = "rlmx-marketplace"
+version = "0.1.0"
+edition = "2021"
+description = "Agent marketplace: publishing, discovery, billing, review, and analytics"
+
+[dependencies]
+rlmx-kernel = { path = "../rlmx-kernel" }
+rlmx-rvf = { path = "../rlmx-rvf" }
+
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+semver = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

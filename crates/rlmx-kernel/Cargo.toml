@@ -18,5 +18,38 @@ sha2 = { workspace = true }
 hmac = { workspace = true }
 hex = { workspace = true }
 
+# Optional: ruvnet ecosystem (feature-gated)
+ruvector-core = { version = "2.0.6", optional = true }
+ruvector-tiny-dancer-core = { version = "2.0.4", optional = true }
+ruvector-attention = { version = "2.0.4", optional = true }
+ruvector-attn-mincut = { version = "2.0.4", optional = true }
+ruvector-solver = { version = "2.0.4", optional = true }
+ruvector-gnn = { version = "2.0.5", optional = true }
+ruvector-graph = { version = "2.0.4", optional = true }
+ruvector-filter = { version = "2.0.4", optional = true }
+ruvector-collections = { version = "2.0.4", optional = true }
+ruvector-verified = { version = "0.1.1", optional = true }
+midstreamer-scheduler = { version = "0.1.0", optional = true }
+
+# Optional: Phase 5 — capability-secured kernel
+ruvix-cap = { version = "0.1.0", optional = true }
+ruvix-types = { version = "0.1.0", optional = true }
+ruvix-region = { version = "0.1.0", optional = true }
+
+[features]
+default = []
+ruvector = [
+    "dep:ruvector-core",
+    "dep:ruvector-tiny-dancer-core",
+    "dep:ruvector-attention",
+    "dep:ruvector-attn-mincut",
+    "dep:ruvector-solver",
+    "dep:ruvector-gnn",
+]
+ruvnet-phase1 = ["ruvector", "dep:ruvector-graph", "dep:ruvector-filter", "dep:ruvector-collections"]
+ruvnet-phase5 = ["verified", "dep:ruvix-cap", "dep:ruvix-types", "dep:ruvix-region"]
+midstreamer = ["dep:midstreamer-scheduler"]
+verified = ["dep:ruvector-verified"]
+
 [dev-dependencies]
 tokio = { workspace = true }

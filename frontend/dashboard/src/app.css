@@ -1,0 +1,177 @@
+@import "tailwindcss";
+
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap');
+
+@theme {
+  --font-display: 'Syne', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Fira Code', monospace;
+
+  --color-void: #000000;
+  --color-obsidian: #080808;
+  --color-forge: #0f0f0f;
+  --color-iron: #181818;
+  --color-steel: #222222;
+  --color-gunmetal: #2e2e2e;
+  --color-ember: #f59e0b;
+  --color-molten: #ef4444;
+  --color-copper: #d97706;
+  --color-flame: #f97316;
+  --color-frost: #38bdf8;
+  --color-ice: #22d3ee;
+  --color-mint: #10b981;
+  --color-acid: #84cc16;
+  --color-violet: #a78bfa;
+  --color-pink: #ec4899;
+  --color-ash: #737373;
+  --color-smoke: #525252;
+  --color-soot: #404040;
+  --color-bone: #e5e5e5;
+  --color-chalk: #9a9a9a;
+}
+
+html {
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-mono);
+  background: var(--color-void);
+  color: var(--color-bone);
+  overflow: hidden;
+  margin: 0;
+}
+
+::selection {
+  background: rgba(245, 158, 11, 0.3);
+  color: #fff;
+}
+
+/* ── Scrollbar ────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2e2e2e; border-radius: 0; }
+::-webkit-scrollbar-thumb:hover { background: #404040; }
+
+/* ── Animations ───────────────────────────────────── */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulse-ember {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.35); }
+  50% { box-shadow: 0 0 0 5px rgba(245, 158, 11, 0); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.9; }
+}
+
+@keyframes ember-breathe {
+  0%, 100% { opacity: 0.015; }
+  50% { opacity: 0.04; }
+}
+
+@keyframes grid-drift {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(24px); }
+}
+
+@keyframes node-pulse {
+  0%, 100% { r: 3; opacity: 0.8; }
+  50% { r: 4.5; opacity: 1; }
+}
+
+@keyframes data-flow {
+  0% { stroke-dashoffset: 20; }
+  100% { stroke-dashoffset: 0; }
+}
+
+@keyframes scan-line {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+/* ── Utility Classes ──────────────────────────────── */
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out both;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.25s ease-out both;
+}
+
+/* Staggered entrance — apply delay-1 through delay-6 */
+.delay-1 { animation-delay: 30ms; }
+.delay-2 { animation-delay: 60ms; }
+.delay-3 { animation-delay: 90ms; }
+.delay-4 { animation-delay: 120ms; }
+.delay-5 { animation-delay: 150ms; }
+.delay-6 { animation-delay: 180ms; }
+
+/* ── Forge Card Effect ────────────────────────────── */
+.forge-card {
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.25s ease, box-shadow 0.35s ease;
+}
+
+.forge-card::before {
+  content: '';
+  position: absolute;
+  top: -1px; left: -1px;
+  width: 50%; height: 2px;
+  background: linear-gradient(90deg, var(--color-ember), transparent);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.forge-card:hover::before {
+  opacity: 1;
+}
+
+.forge-card:hover {
+  border-color: rgba(245, 158, 11, 0.2);
+  box-shadow:
+    0 0 30px -10px rgba(245, 158, 11, 0.08),
+    inset 0 1px 0 rgba(245, 158, 11, 0.05);
+}
+
+/* ── Focus styles ─────────────────────────────────── */
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--color-ember) !important;
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.15);
+}
+
+/* ── Button base ──────────────────────────────────── */
+button {
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* ── View transition wrapper ──────────────────────── */
+.view-enter {
+  animation: slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}

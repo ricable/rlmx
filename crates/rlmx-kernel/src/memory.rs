@@ -6,6 +6,11 @@ use crate::types::{
     KernelError, KernelResult, SearchFilters, SearchHit, SegmentMetadata, SegmentTier,
 };
 
+// When the `ruvector` feature is enabled, use ruvector-core's HNSW index
+// for O(log n) approximate nearest neighbor search instead of brute-force.
+#[cfg(feature = "ruvector")]
+use ruvector_core as rvc;
+
 /// A single context segment stored in memory.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextSegment {
@@ -98,12 +103,23 @@ impl MemoryRegion {
     }
 
     /// Insert a new context segment and return its id.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `embedding.len() != EMBED_DIM`.
     pub fn insert(
         &mut self,
         embedding: Vec<f32>,
         content: String,
         metadata: SegmentMetadata,
     ) -> Uuid {
+        assert_eq!(
+            embedding.len(),
+            EMBED_DIM,
+            "embedding dimension mismatch: expected {}, got {}",
+            EMBED_DIM,
+            embedding.len()
+        );
         let id = Uuid::new_v4();
         let segment = ContextSegment {
             id,
@@ -133,12 +149,7 @@ impl MemoryRegion {
 
     /// Search for the top-k most similar segments to the query embedding,
     /// applying optional filters.
-    pub fn search(
-        &self,
-        query: &[f32],
-        k: usize,
-        filters: &SearchFilters,
-    ) -> Vec<SearchHit> {
+    pub fn search(&self, query: &[f32], k: usize, filters: &SearchFilters) -> Vec<SearchHit> {
         let mut scored: Vec<(f64, &ContextSegment)> = self
             .segments
             .iter()
@@ -211,7 +222,251 @@ impl MemoryRegion {
 }
 
 // ---------------------------------------------------------------------------
+// HNSW-backed MemoryRegion (feature = "ruvector")
+// ---------------------------------------------------------------------------
+
+/// When the `ruvector` feature is enabled, `HnswMemoryRegion` provides an
+/// HNSW-indexed backend for O(log n) approximate nearest-neighbor search.
+/// It wraps `ruvector_core::VectorDb` and delegates search to HNSW while
+/// keeping the same public API as the brute-force `MemoryRegion`.
+#[cfg(feature = "ruvector")]
+pub struct HnswMemoryRegion {
+    pub name: String,
+    db: rvc::VectorDb,
+    segments: std::collections::HashMap<Uuid, ContextSegment>,
+}
+
+#[cfg(feature = "ruvector")]
+impl HnswMemoryRegion {
+    /// Create an HNSW-backed region with default parameters (ef=128, M=16).
+    pub fn new(name: impl Into<String>, dim: usize) -> Self {
+        let config = rvc::VectorDbConfig {
+            dimensions: dim,
+            ef_construction: 128,
+            m: 16,
+            ..Default::default()
+        };
+        Self {
+            name: name.into(),
+            db: rvc::VectorDb::new(config),
+            segments: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Insert a segment; returns its id. The embedding is indexed in HNSW.
+    pub fn insert(
+        &mut self,
+        embedding: Vec<f32>,
+        content: String,
+        metadata: SegmentMetadata,
+    ) -> Uuid {
+        let id = Uuid::new_v4();
+        let segment = ContextSegment {
+            id,
+            embedding: embedding.clone(),
+            content,
+            source: metadata.source.clone(),
+            plugin: metadata.plugin.clone(),
+            segment_type: metadata.segment_type.clone(),
+            timestamp: Utc::now(),
+            metadata: serde_json::to_value(&metadata).unwrap_or_default(),
+            tier: SegmentTier::Hot,
+        };
+        // Index the vector in HNSW under the UUID as string key.
+        let _ = self.db.insert(&id.to_string(), &embedding);
+        self.segments.insert(id, segment);
+        id
+    }
+
+    /// Delete a segment by id.
+    pub fn delete(&mut self, segment_id: &Uuid) -> KernelResult<bool> {
+        if self.segments.remove(segment_id).is_some() {
+            let _ = self.db.delete(&segment_id.to_string());
+            Ok(true)
+        } else {
+            Err(KernelError::SegmentNotFound(*segment_id))
+        }
+    }
+
+    /// HNSW-accelerated search with post-hoc filter application.
+    pub fn search(&self, query: &[f32], k: usize, filters: &SearchFilters) -> Vec<SearchHit> {
+        // Over-fetch from HNSW to account for filter rejects, then trim.
+        let fetch_k = k * 4;
+        let results = self.db.search(query, fetch_k);
+        let mut hits = Vec::with_capacity(k);
+        for result in results {
+            if hits.len() >= k {
+                break;
+            }
+            let Ok(id) = result.id.parse::<Uuid>() else {
+                continue;
+            };
+            let Some(seg) = self.segments.get(&id) else {
+                continue;
+            };
+            if !MemoryRegion::matches_filters_static(seg, filters) {
+                continue;
+            }
+            let meta: SegmentMetadata =
+                serde_json::from_value(seg.metadata.clone()).unwrap_or_default();
+            hits.push(SearchHit {
+                segment_id: seg.id,
+                content: seg.content.clone(),
+                score: result.score as f64,
+                metadata: meta,
+            });
+        }
+        hits
+    }
+
+    pub fn len(&self) -> usize {
+        self.segments.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.segments.is_empty()
+    }
+}
+
+impl MemoryRegion {
+    /// Static filter check (usable from both MemoryRegion and HnswMemoryRegion).
+    #[cfg(feature = "ruvector")]
+    pub fn matches_filters_static(seg: &ContextSegment, f: &SearchFilters) -> bool {
+        Self::matches_filters(seg, f)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
+
+#[cfg(feature = "ruvnet-phase1")]
+pub mod phase1_integration {
+    use super::*;
+    use ruvector_collections as rvc_col;
+    use ruvector_filter as rvf;
+    use tracing::debug;
+    const BUCKET_COUNT: u32 = 16;
+    fn embedding_to_bucket_key(embedding: &[f32]) -> String {
+        let dims = embedding.len().min(8);
+        let mut key = String::with_capacity(dims * 3);
+        for (i, &v) in embedding.iter().take(dims).enumerate() {
+            let clamped = v.clamp(-1.0, 1.0);
+            let bucket = ((clamped + 1.0) / 2.0 * (BUCKET_COUNT - 1) as f32).round() as u32;
+            if i > 0 {
+                key.push(':');
+            }
+            key.push_str(&bucket.to_string());
+        }
+        key
+    }
+    pub struct BloomScreenedRegion {
+        pub name: String,
+        inner: HnswMemoryRegion,
+        filter: rvf::BloomFilter,
+    }
+    impl BloomScreenedRegion {
+        pub fn new(
+            name: impl Into<String>,
+            dim: usize,
+            expected_items: usize,
+            fp_rate: f64,
+        ) -> Self {
+            let name = name.into();
+            let filter = rvf::BloomFilter::new(expected_items, fp_rate);
+            debug!(region = %name, dim, expected_items, fp_rate, "created BloomScreenedRegion");
+            Self {
+                name: name.clone(),
+                inner: HnswMemoryRegion::new(name, dim),
+                filter,
+            }
+        }
+        pub fn insert(
+            &mut self,
+            embedding: Vec<f32>,
+            content: String,
+            metadata: SegmentMetadata,
+        ) -> Uuid {
+            let key = embedding_to_bucket_key(&embedding);
+            self.filter.insert(&key);
+            self.inner.insert(embedding, content, metadata)
+        }
+        pub fn delete(&mut self, segment_id: &Uuid) -> KernelResult<bool> {
+            self.inner.delete(segment_id)
+        }
+        pub fn search(&self, query: &[f32], k: usize, filters: &SearchFilters) -> Vec<SearchHit> {
+            let key = embedding_to_bucket_key(query);
+            if !self.filter.contains(&key) {
+                debug!(region = %self.name, "bloom filter rejected query");
+                return Vec::new();
+            }
+            self.inner.search(query, k, filters)
+        }
+        pub fn len(&self) -> usize {
+            self.inner.len()
+        }
+        pub fn is_empty(&self) -> bool {
+            self.inner.is_empty()
+        }
+        pub fn bloom_fp_estimate(&self) -> f64 {
+            self.filter.estimated_fpp()
+        }
+    }
+    pub struct NamespacedMemoryStore {
+        namespaces: rvc_col::TypedCollection<HnswMemoryRegion>,
+        dim: usize,
+    }
+    impl NamespacedMemoryStore {
+        pub fn new(dim: usize) -> Self {
+            Self {
+                namespaces: rvc_col::TypedCollection::new(),
+                dim,
+            }
+        }
+        pub fn get_or_create(&mut self, namespace: &str) -> &mut HnswMemoryRegion {
+            if !self.namespaces.contains(namespace) {
+                let region = HnswMemoryRegion::new(namespace, self.dim);
+                self.namespaces.insert(namespace.to_string(), region);
+                debug!(namespace, dim = self.dim, "created new memory namespace");
+            }
+            self.namespaces
+                .get_mut(namespace)
+                .expect("namespace just inserted")
+        }
+        pub fn insert(
+            &mut self,
+            namespace: &str,
+            embedding: Vec<f32>,
+            content: String,
+            metadata: SegmentMetadata,
+        ) -> Uuid {
+            self.get_or_create(namespace)
+                .insert(embedding, content, metadata)
+        }
+        pub fn search(
+            &mut self,
+            namespace: &str,
+            query: &[f32],
+            k: usize,
+            filters: &SearchFilters,
+        ) -> Vec<SearchHit> {
+            self.get_or_create(namespace).search(query, k, filters)
+        }
+        pub fn namespaces(&self) -> Vec<String> {
+            self.namespaces.keys()
+        }
+        pub fn total_segments(&self) -> usize {
+            self.namespaces
+                .keys()
+                .iter()
+                .filter_map(|k| self.namespaces.get(k))
+                .map(|r| r.len())
+                .sum()
+        }
+    }
+}
+#[cfg(feature = "ruvnet-phase1")]
+pub use phase1_integration::{BloomScreenedRegion, NamespacedMemoryStore};
+
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -227,10 +482,19 @@ mod tests {
         }
     }
 
+    /// Create an EMBED_DIM-length vector with the given leading values, zero-padded.
+    fn padded(values: &[f32]) -> Vec<f32> {
+        let mut v = vec![0.0_f32; EMBED_DIM];
+        for (i, &val) in values.iter().enumerate() {
+            v[i] = val;
+        }
+        v
+    }
+
     #[test]
     fn test_insert_and_len() {
         let mut region = MemoryRegion::new("test");
-        let id = region.insert(vec![1.0, 0.0, 0.0], "hello".into(), make_meta());
+        let id = region.insert(padded(&[1.0, 0.0, 0.0]), "hello".into(), make_meta());
         assert_eq!(region.len(), 1);
         assert!(!id.is_nil());
     }
@@ -238,11 +502,11 @@ mod tests {
     #[test]
     fn test_search_returns_best_match() {
         let mut region = MemoryRegion::new("test");
-        region.insert(vec![1.0, 0.0, 0.0], "east".into(), make_meta());
-        region.insert(vec![0.0, 1.0, 0.0], "north".into(), make_meta());
-        region.insert(vec![0.7, 0.7, 0.0], "northeast".into(), make_meta());
+        region.insert(padded(&[1.0, 0.0, 0.0]), "east".into(), make_meta());
+        region.insert(padded(&[0.0, 1.0, 0.0]), "north".into(), make_meta());
+        region.insert(padded(&[0.7, 0.7, 0.0]), "northeast".into(), make_meta());
 
-        let results = region.search(&[1.0, 0.0, 0.0], 2, &SearchFilters::default());
+        let results = region.search(&padded(&[1.0, 0.0, 0.0]), 2, &SearchFilters::default());
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].content, "east");
         assert!((results[0].score - 1.0).abs() < 1e-6);
@@ -251,8 +515,8 @@ mod tests {
     #[test]
     fn test_delete_segment() {
         let mut region = MemoryRegion::new("test");
-        let id = region.insert(vec![1.0, 0.0], "a".into(), make_meta());
-        region.insert(vec![0.0, 1.0], "b".into(), make_meta());
+        let id = region.insert(padded(&[1.0, 0.0]), "a".into(), make_meta());
+        region.insert(padded(&[0.0, 1.0]), "b".into(), make_meta());
         assert_eq!(region.len(), 2);
 
         let deleted = region.delete(&id).unwrap();
@@ -261,6 +525,13 @@ mod tests {
 
         // Deleting again should error.
         assert!(region.delete(&id).is_err());
+    }
+
+    #[test]
+    #[should_panic(expected = "embedding dimension mismatch")]
+    fn test_insert_rejects_wrong_dimension() {
+        let mut region = MemoryRegion::new("test");
+        region.insert(vec![1.0, 0.0, 0.0], "bad".into(), make_meta());
     }
 
     #[test]

@@ -53,6 +53,12 @@ pub enum SegmentType {
     Model,
     /// SONA pattern bank
     Pattern,
+    /// Executable code (WASM bytecode for marketplace agents)
+    Code,
+    /// Prompt templates
+    Prompt,
+    /// Evidence / proof artifacts
+    Evidence,
     /// User-defined custom segment type
     Custom(String),
 }
@@ -81,6 +87,9 @@ impl std::fmt::Display for SegmentType {
             SegmentType::Config => write!(f, "Config"),
             SegmentType::Model => write!(f, "Model"),
             SegmentType::Pattern => write!(f, "Pattern"),
+            SegmentType::Code => write!(f, "Code"),
+            SegmentType::Prompt => write!(f, "Prompt"),
+            SegmentType::Evidence => write!(f, "Evidence"),
             SegmentType::Custom(name) => write!(f, "Custom({})", name),
         }
     }
@@ -106,11 +115,7 @@ pub struct RvfSegment {
 
 impl RvfSegment {
     /// Create a new segment, automatically computing the SHA-256 hash of the data.
-    pub fn new(
-        segment_type: SegmentType,
-        data: Vec<u8>,
-        metadata: serde_json::Value,
-    ) -> Self {
+    pub fn new(segment_type: SegmentType, data: Vec<u8>, metadata: serde_json::Value) -> Self {
         let hash = crate::crypto::hash_sha256(&data);
         Self {
             id: Uuid::new_v4(),
@@ -127,7 +132,6 @@ impl RvfSegment {
         computed == self.hash
     }
 }
-
 
 /// Represents a difference between two segments (used by branch diffing).
 #[derive(Debug, Clone)]
@@ -177,6 +181,9 @@ mod tests {
             SegmentType::Config,
             SegmentType::Model,
             SegmentType::Pattern,
+            SegmentType::Code,
+            SegmentType::Prompt,
+            SegmentType::Evidence,
             SegmentType::Custom("my_type".to_string()),
         ];
 

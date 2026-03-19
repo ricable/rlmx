@@ -4,14 +4,33 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tokio = { version = "1", features = ["full"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-uuid = { version = "1", features = ["v4", "serde"] }
-tracing = "0.1"
-thiserror = "2"
-chrono = { version = "0.4", features = ["serde"] }
-sha2 = "0.10"
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
 ed25519-dalek = { version = "2", features = ["rand_core"] }
-rand = "0.8"
-hex = "0.4"
+rand = { workspace = true }
+hex = { workspace = true }
+
+# Optional: RVF format crates from crates.io
+rvf-types = { workspace = true, optional = true }
+rvf-runtime = { workspace = true, optional = true }
+rvf-wire = { workspace = true, optional = true }
+rvf-index = { workspace = true, optional = true }
+rvf-quant = { workspace = true, optional = true }
+rvf-crypto = { workspace = true, optional = true }
+
+[features]
+default = []
+rvf-ext = [
+    "dep:rvf-types",
+    "dep:rvf-runtime",
+    "dep:rvf-wire",
+    "dep:rvf-index",
+    "dep:rvf-quant",
+    "dep:rvf-crypto",
+]
