@@ -2,7 +2,7 @@
 
 ## Overview
 
-RLMX is a cognition kernel with 19 crates organized into 13 bounded contexts.
+RLMX is a cognition kernel with 19 crates organized into 14 bounded contexts.
 This document maps those contexts, their responsibilities, and integration
 relationships.
 
@@ -21,6 +21,9 @@ relationships.
 | 9 | **Voice Interaction** | Core | `rlmx-voice` (DDD-008) | Voice pipeline: VAD, STT, intent decomposition, TTS, session memory |
 | 10 | **Phone Runtime** | Core | `rlmx-phone` (DDD-009) | Mobile command center: background scheduling, notifications, widgets, engagement (Life Score, streaks, gamification) |
 | 11 | **Agent Marketplace** | Supporting | `rlmx-marketplace` (DDD-010) | Agent ecosystem: publishing, discovery, installation, billing, security review, developer SDK |
+| 12 | **Personal Mesh** | Core | `rlmx-mesh` (DDD-011) | Multi-device fleet: device registry, state sync, discovery (mDNS/BLE), failover & degradation |
+| 13 | **Federated Learning** | Supporting | `rlmx-federation` (DDD-012) | Privacy-preserving learning: weekly cycles, on-device anonymization, cloud aggregation, LoRA distribution |
+| 14 | **Subscription Billing** | Supporting | `rlmx-billing` (DDD-013) | 6-tier subscriptions, family plans, developer rev share, usage tracking, capability enforcement |
 
 ## Context Map Diagram
 
@@ -134,6 +137,8 @@ relationships.
 | Kernel Syscall <-> Agent Lifecycle | Agents are spawned via `ProcessFork` syscall with scoped `CapabilityToken`. Kernel enforces agent permissions; agents define which permissions they need. |
 | Voice Interaction <-> Phone Runtime | Voice pipeline runs within the phone runtime. Phone provides audio capture and playback; Voice provides transcription and synthesis. Shared session context. |
 | Agent Marketplace <-> Agent Lifecycle | Marketplace publishes agent packages that Agent Lifecycle instantiates. Lifecycle reports agent health back to Marketplace for quality scoring. |
+| Personal Mesh <-> Swarm Coordination | Mesh manages device fleet; Swarm manages agent coordination across those devices. Mesh provides device capabilities; Swarm assigns work units. |
+| Subscription Billing <-> Agent Marketplace | Billing enforces tier limits on marketplace operations (publishing requires Developer tier). Marketplace reports revenue for developer payouts. |
 
 ### Upstream / Downstream
 
@@ -146,6 +151,10 @@ relationships.
 | Phone Runtime | Agent Lifecycle | Phone starts/stops agents via `AgentSpawner`, managing background agent scheduling and foreground activation based on user context. |
 | Phone Runtime | Swarm Coordination | Phone joins the swarm as a Zone A-Mobile node, participating in consensus and receiving scatter-gather work units. |
 | Agent Marketplace | Phone Runtime | Phone Runtime is downstream of Marketplace; it discovers and installs agent packages from the marketplace catalog. |
+| Personal Mesh | Phone Runtime | Mesh registers the phone as a device; Phone Runtime provides device capabilities and battery state for mesh scheduling. |
+| Federated Learning | Observation & Health | Federation collects anonymized patterns from SONA's PatternBank; distributes aggregated LoRA updates back to cognitive layer. |
+| Subscription Billing | Agent Lifecycle | Billing tier determines agent concurrency limits; Agent Lifecycle enforces these via TierCapabilityToken caveats. |
+| Subscription Billing | Federated Learning | Free tier cannot participate in federation. Tier enforcement gates contribution and distribution. |
 
 ### Customer / Supplier
 
@@ -254,6 +263,21 @@ rlmx-marketplace [NEW]    (Agent Marketplace context)
   +-- rlmx-kernel
   +-- rlmx-agents
   +-- rlmx-rvf              (signed agent packages)
+
+rlmx-mesh [NEW]            (Personal Mesh context)
+  +-- rlmx-kernel
+
+rlmx-federation [NEW]      (Federated Learning context)
+  (standalone — no kernel dependency)
+
+rlmx-billing [NEW]         (Subscription Billing context)
+  (standalone — no kernel dependency)
+
+rlmx-napi [NEW]            (NAPI-RS binding layer)
+  +-- rlmx-kernel
+
+rlmx-wasm [NEW]            (WASM kernel subset)
+  (standalone — feature-gated wasm-bindgen)
 ```
 
 ## Integration Mapping
@@ -312,6 +336,13 @@ consumes (C) that event.
 | `BatteryPolicyChanged` | | | | | | | | | C | P | |
 | `NotificationSent` | | | | | | | | | | P | |
 | `AgentSuspended` | | C | | | | | | | | P | P |
+| `MeshDeviceJoined` | | | C | | | | | | | C | |
+| `MeshDeviceLeft` | | | C | | | | | | | C | |
+| `MeshSyncCompleted` | | | | | | C | | | | C | |
+| `FederationCycleStarted` | | | | | | C | | | | | |
+| `FederationCycleCompleted` | | | | | | C | | | | | |
+| `SubscriptionChanged` | | | | | | | | | | C | C |
+| `TierUpgraded` | | C | | | | | | | | C | C |
 
 ### Capability Token Scoping by Context
 

@@ -60,9 +60,6 @@ impl AgentPermissions {
     }
 }
 
-/// The 17x17 permission matrix type (agent_type_index x syscall_permission_index).
-pub type PermissionMatrix = [[bool; 17]; 17];
-
 /// Static permission registry mapping each AgentType to allowed syscalls.
 pub struct PermissionRegistry;
 

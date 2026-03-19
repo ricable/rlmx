@@ -183,6 +183,51 @@ commit messages, and conversations should use these terms consistently.
 
 ---
 
+## Personal Mesh Context (DDD-011)
+
+| Term | Definition |
+|------|------------|
+| **Personal Mesh** | The aggregate root (`PersonalMesh`) managing a single user's fleet of devices. Identified by `MeshId`. Max 10 devices. |
+| **Mesh Device** | A device registered in the mesh (`MeshDevice`). Has a `DeviceType` (Phone/Tablet/Desktop/Laptop/Watch/Speaker/TV/Hub), zone assignment, and capability profile. |
+| **Device Zone** | The swarm zone a mesh device is assigned to: A-Mobile, A-Desktop, B-Cloud, C-Edge, D-Browser, E-Mesh. Determines what work the device receives. |
+| **Sync Protocol** | The state synchronization mechanism (`SyncProtocol`) for keeping mesh devices in sync. Uses state vectors and conflict-free merging. |
+| **Discovery Service** | The mechanism for finding new devices (`DiscoveryService`). Supports mDNS, BLE, and manual registration. |
+| **Failover Policy** | Rules (`FailoverPolicy`) governing automatic degradation when devices disconnect. Levels: Normal → Degraded → Critical → Emergency. |
+| **Mesh Degradation** | The state of reduced capability when devices are offline (`MeshDegradation`). Evaluated automatically based on fleet health. |
+
+## Federated Learning Context (DDD-012)
+
+| Term | Definition |
+|------|------------|
+| **Federation Cycle** | The aggregate root (`FederationCycle`). A weekly cycle that progresses through 4 phases: Collecting → Aggregating → Distributing → Completed. |
+| **Contribution** | An anonymized pattern set (`Contribution`) submitted by a device during the Collecting phase. Uses pseudonymous keys, never linkable to user identity. |
+| **Anonymizer** | The on-device anonymization pipeline (`Anonymizer`). Strips PII, buckets emotions into 5 levels, applies Laplace noise (ε=1.0). All anonymization happens before data leaves the device. |
+| **Aggregator** | The cloud-side aggregation engine (`Aggregator`). Requires minimum 1000-user contributions before publishing any pattern. Prevents re-identification. |
+| **Distribution** | A LoRA update package (`Distribution`) built from aggregated patterns. Distributed to all participating devices after aggregation. |
+| **Bootstrap** | The process of seeding a new user's SONA PatternBank from federated patterns (`Bootstrap`). Gives new users a baseline without waiting for personal data. |
+| **Aggregation Threshold** | The minimum number of unique user contributions (1000) required before patterns can be aggregated and distributed. A privacy invariant. |
+
+## Subscription Billing Context (DDD-013)
+
+| Term | Definition |
+|------|------------|
+| **Subscription** | The aggregate root (`Subscription`). Represents a user's billing relationship. Has a tier, status, and billing period. |
+| **Subscription Tier** | One of 6 tiers (`SubscriptionTier`): Free, Personal ($9.99), Pro ($19.99), Family ($29.99), Developer ($49.99), Enterprise (custom). Each tier has specific `TierLimits` and `TierFeatures`. |
+| **Family Group** | A shared subscription (`FamilyGroup`) for the Family tier. Max 6 members. Each member has a `FamilyRole` (Owner/Adult/Child) and `PrivacyBoundary`. |
+| **Developer Account** | A publisher account (`DeveloperAccount`) for the Developer tier. Earns 70/30 revenue split on marketplace agent sales. Payouts at $50 threshold. |
+| **Tier Capability Token** | A token (`TierCapabilityToken`) derived from the subscription tier. Contains `TierCaveat` entries that enforce tier-specific limits (agent count, cloud burst, federation access). |
+| **Tier Capability Enforcer** | The enforcement engine (`TierCapabilityEnforcer`). Derives capability tokens from tiers and validates feature access. Never hardcode tier checks — always go through the enforcer. |
+| **Usage Metrics** | Per-period tracking (`UsageMetrics`) of API calls, agent spawns, storage, and inference tokens consumed. Used for billing and tier limit enforcement. |
+
+## NAPI & WASM Binding Contexts (ADR-020, ADR-021)
+
+| Term | Definition |
+|------|------------|
+| **NAPI Kernel** | The Node.js binding facade (`NapiKernel`). Exposes full kernel syscall surface as a native addon. Feature-gated behind `napi`. |
+| **WASM Kernel** | The browser/WebView binding (`rlmx-wasm`). Exposes a reduced syscall subset suitable for Zone D browser agents. Feature-gated behind `wasm`. |
+
+---
+
 ## Anti-Patterns (terms to avoid)
 
 | Avoid | Use Instead | Reason |
@@ -197,3 +242,7 @@ commit messages, and conversations should use these terms consistently.
 | "router" (ambiguous) | "TinyDancer router", "Router agent", or "HTTP router" | "TinyDancer" = FastGRNN neural router. "Router agent" = `AgentType::Router`. "HTTP router" = MCP server's request dispatcher. |
 | "plugin" (as verb) | "extend" or "register" | Use "register a domain plugin" or "extend via `DomainPlugin` trait". |
 | "run" (vague) | "dispatch", "execute", "spawn", or "generate" | Be specific: "dispatch a syscall", "execute an experiment", "spawn an agent", "generate text". |
+| "device" (ambiguous) | "mesh device" or "swarm node" | "Mesh device" = physical hardware in the user's fleet. "Swarm node" = logical participant in consensus. A mesh device runs one or more swarm nodes. |
+| "tier" (ambiguous) | "subscription tier" or "model tier" | "Subscription tier" = billing plan (Free/Personal/Pro/etc). "Model tier" = inference capability (Small/Medium/Remote). |
+| "cycle" (ambiguous) | "federation cycle" or "circadian cycle" | "Federation cycle" = weekly learning aggregation. "Circadian cycle" = daily scheduling pattern in NervousSystem. |
+| "family" (ambiguous) | "family group" or "agent family" | "Family group" = billing Family tier sharing. "Agent family" = related agent types (never used formally). |

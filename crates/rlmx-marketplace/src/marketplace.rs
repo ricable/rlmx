@@ -283,11 +283,14 @@ impl Marketplace {
             review,
         }];
 
-        // Enforce rating policy: auto-suspend if rating < 2.0 after 50+ ratings.
-        let suspended = self.registry.enforce_rating_policy();
-        for id in suspended {
+        // Enforce rating policy on the just-rated agent only (not full scan).
+        if listing.rating_count >= 50
+            && listing.rating < 2.0
+            && listing.status == ListingStatus::Published
+        {
+            listing.status = ListingStatus::Suspended;
             events.push(MarketplaceDomainEvent::AgentSuspended {
-                agent_id: id,
+                agent_id,
                 reason: "Auto-suspended: rating below 2.0 after 50+ ratings".into(),
             });
         }

@@ -229,6 +229,10 @@ impl GossipLayer {
         self.members.get(node_id)
     }
     pub fn push_metrics(&mut self, update: MetricsUpdate) {
+        // Cap buffer to prevent unbounded growth.
+        if self.metrics_buffer.len() >= 1000 {
+            self.metrics_buffer.drain(..1);
+        }
         self.metrics_buffer.push(update);
     }
 }

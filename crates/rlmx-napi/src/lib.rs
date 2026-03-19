@@ -605,7 +605,6 @@ mod napi_bindings {
     #[napi]
     pub fn napi_swarm_status() -> napi::Result<serde_json::Value> {
         let (rt, kernel) = shared()?;
-        let kernel = NapiKernel::new();
         let result = rt
             .block_on(kernel.swarm_status())
             .map_err(|e| napi::Error::from_reason(e.to_string()))?;
@@ -615,9 +614,7 @@ mod napi_bindings {
 
     #[napi]
     pub fn napi_route(query: String) -> napi::Result<serde_json::Value> {
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| napi::Error::from_reason(format!("tokio runtime: {e}")))?;
-        let kernel = NapiKernel::new();
+        let (rt, kernel) = shared()?;
         let result = rt
             .block_on(kernel.route(&query))
             .map_err(|e| napi::Error::from_reason(e.to_string()))?;

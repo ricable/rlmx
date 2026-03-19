@@ -27,7 +27,7 @@ pub use monitor::MonitorAgent;
 pub use mutation::{
     CloudEscalation, CrossPollinator, MutationEngine, MutationStrategy, TrainingConfig,
 };
-pub use registry::{AgentPermissions, PermissionMatrix, PermissionRegistry, SyscallPermission};
+pub use registry::{AgentPermissions, PermissionRegistry, SyscallPermission};
 pub use replicator::ReplicatorAgent;
 pub use researcher::{ResearchObjective, ResearchStatus, ResearcherAgent};
 pub use reviewer::ReviewerAgent;

@@ -31,7 +31,6 @@ pub use witness::{WitnessChain, WitnessEntry};
 
 #[cfg(feature = "rvf-ext")]
 pub mod rvf_ext {
-    use tracing::debug;
     pub mod types {
         pub use rvf_types::*;
     }

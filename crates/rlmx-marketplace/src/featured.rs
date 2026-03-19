@@ -59,13 +59,16 @@ impl FeaturedEngine {
         rating_score * 0.40 + install_score * 0.35 + recency_score * 0.25
     }
 
-    /// Rank a set of listings by feature score, returning top N.
-    pub fn rank(listings: &[&AgentListing], top_n: usize) -> Vec<ScoredAgent> {
+    /// Score, sort descending, and truncate a set of listings using a custom scorer.
+    fn rank_by<F>(listings: &[&AgentListing], scorer: F, top_n: usize) -> Vec<ScoredAgent>
+    where
+        F: Fn(&AgentListing) -> f64,
+    {
         let mut scored: Vec<ScoredAgent> = listings
             .iter()
             .map(|l| ScoredAgent {
                 agent_id: l.id,
-                score: Self::compute_score(l),
+                score: scorer(l),
             })
             .collect();
 
@@ -76,6 +79,11 @@ impl FeaturedEngine {
         });
         scored.truncate(top_n);
         scored
+    }
+
+    /// Rank a set of listings by feature score, returning top N.
+    pub fn rank(listings: &[&AgentListing], top_n: usize) -> Vec<ScoredAgent> {
+        Self::rank_by(listings, Self::compute_score, top_n)
     }
 
     /// Get recommended agents for a specific domain.
@@ -94,21 +102,7 @@ impl FeaturedEngine {
     /// Compute trending agents based on recent install velocity.
     /// Stub: uses install count as proxy for velocity.
     pub fn trending(listings: &[&AgentListing], top_n: usize) -> Vec<ScoredAgent> {
-        let mut scored: Vec<ScoredAgent> = listings
-            .iter()
-            .map(|l| ScoredAgent {
-                agent_id: l.id,
-                score: l.install_count as f64,
-            })
-            .collect();
-
-        scored.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        scored.truncate(top_n);
-        scored
+        Self::rank_by(listings, |l| l.install_count as f64, top_n)
     }
 }
 
