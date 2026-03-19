@@ -121,6 +121,8 @@ pub struct Sona {
     pub improvement_history: Vec<f64>,
     /// Maximum number of entries kept in `improvement_history`.
     pub max_improvement_history: usize,
+    /// Maximum number of LoRA deltas kept (oldest evicted first).
+    pub max_lora_deltas: usize,
 }
 
 impl Sona {
@@ -134,6 +136,7 @@ impl Sona {
             total_adaptations: 0,
             improvement_history: Vec::new(),
             max_improvement_history: 1000,
+            max_lora_deltas: 1000,
         }
     }
 
@@ -188,7 +191,7 @@ impl Sona {
             .map(|(i, emb)| (i, cosine_similarity(query_embedding, emb)))
             .collect();
 
-        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         let top_k: Vec<usize> = scored.iter().take(k).map(|(i, _)| *i).collect();
 
@@ -239,6 +242,12 @@ impl Sona {
             applied_at: Utc::now(),
         });
 
+        // Evict oldest LoRA deltas to bound memory growth.
+        if self.lora_deltas.len() > self.max_lora_deltas {
+            let excess = self.lora_deltas.len() - self.max_lora_deltas;
+            self.lora_deltas.drain(..excess);
+        }
+
         self.total_adaptations += 1;
         self.improvement_history.push(feedback.quality_delta);
 
@@ -254,7 +263,7 @@ impl Sona {
     /// Apply a voice-specific micro-LoRA adaptation (ADR-017).
     ///
     /// Delegates to the shared `adapt_inner` with a `"voice:"` prefix on the
-    /// layer name and uses voice-specific Fisher Information for EWC++.
+    /// layer name to namespace voice-specific LoRA deltas.
     pub fn adapt_voice(&mut self, feedback: AdaptationFeedback) -> Result<()> {
         let voice_layer = format!("voice:{}", feedback.layer_name);
         self.adapt_inner(AdaptationFeedback {

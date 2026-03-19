@@ -36,20 +36,7 @@ impl Marketplace {
             publisher_portal: PublisherPortal::new(),
             featured: FeaturedEngine::new(),
             analytics: MarketplaceAnalytics::new(),
-            categories: vec![
-                LifeDomain::Finance,
-                LifeDomain::Health,
-                LifeDomain::Legal,
-                LifeDomain::Career,
-                LifeDomain::Education,
-                LifeDomain::Home,
-                LifeDomain::Shopping,
-                LifeDomain::Travel,
-                LifeDomain::Social,
-                LifeDomain::Government,
-                LifeDomain::Automotive,
-                LifeDomain::Pet,
-            ],
+            categories: LifeDomain::all().to_vec(),
         }
     }
 

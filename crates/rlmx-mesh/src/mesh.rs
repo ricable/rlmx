@@ -88,8 +88,8 @@ pub enum MeshDomainEvent {
     },
 }
 
-/// Maximum number of devices in a single personal mesh.
-const MAX_DEVICES: usize = 16;
+/// Maximum number of devices in a single personal mesh (ADR-022).
+const MAX_DEVICES: usize = 10;
 
 /// The PersonalMesh aggregate root.
 ///

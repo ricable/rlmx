@@ -279,6 +279,16 @@ pub enum SyscallResult {
     IntentsRouted {
         intents: Vec<Intent>,
     },
+    MeshSynced {
+        mesh_id: Uuid,
+        devices_synced: usize,
+        ops_transferred: u64,
+    },
+    FederationContributed {
+        cycle_id: Uuid,
+        patterns_submitted: usize,
+        anonymized: bool,
+    },
 }
 
 /// A single search hit with score.

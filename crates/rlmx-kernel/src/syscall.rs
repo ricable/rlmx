@@ -16,7 +16,7 @@ use crate::types::{
     ProofRequest, SearchFilters, SegmentMetadata, SyscallResult,
 };
 
-/// The 12 RuVix kernel syscalls.
+/// The 17 RuVix kernel syscalls.
 #[derive(Debug, Clone)]
 pub enum Syscall {
     VecInsert {
@@ -85,6 +85,16 @@ pub enum Syscall {
         decompose: bool,
         max_intents: Option<usize>,
     },
+    MeshSync {
+        mesh_id: Uuid,
+        target_device: Option<Uuid>,
+        force: bool,
+    },
+    FederationContribute {
+        domain: String,
+        pattern_count: usize,
+        anonymize: bool,
+    },
 }
 
 impl Syscall {
@@ -106,6 +116,8 @@ impl Syscall {
             Syscall::VoiceTranscribe { .. } => "VoiceTranscribe",
             Syscall::VoiceSynthesize { .. } => "VoiceSynthesize",
             Syscall::IntentRoute { .. } => "IntentRoute",
+            Syscall::MeshSync { .. } => "MeshSync",
+            Syscall::FederationContribute { .. } => "FederationContribute",
         }
     }
 }
@@ -369,6 +381,31 @@ async fn dispatch_inner(syscall: &Syscall, ctx: &KernelContext) -> KernelResult<
                 vec![]
             };
             Ok(SyscallResult::IntentsRouted { intents })
+        }
+        Syscall::MeshSync {
+            mesh_id,
+            target_device,
+            force: _,
+        } => {
+            // Stub: real implementation delegates to rlmx-mesh SyncProtocol.
+            let devices_synced = if target_device.is_some() { 1 } else { 0 };
+            Ok(SyscallResult::MeshSynced {
+                mesh_id: *mesh_id,
+                devices_synced,
+                ops_transferred: 0,
+            })
+        }
+        Syscall::FederationContribute {
+            domain: _,
+            pattern_count,
+            anonymize,
+        } => {
+            // Stub: real implementation delegates to rlmx-federation.
+            Ok(SyscallResult::FederationContributed {
+                cycle_id: Uuid::new_v4(),
+                patterns_submitted: *pattern_count,
+                anonymized: *anonymize,
+            })
         }
     }
 }

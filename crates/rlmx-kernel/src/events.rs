@@ -73,6 +73,22 @@ pub enum DomainEvent {
         domains: Vec<String>,
         timestamp: DateTime<Utc>,
     },
+    /// Emitted when a device joins the personal mesh (ADR-022).
+    /// Consumer: Swarm Coordination (updates zone topology).
+    MeshDeviceJoined {
+        mesh_id: Uuid,
+        device_id: Uuid,
+        zone: String,
+        timestamp: DateTime<Utc>,
+    },
+    /// Emitted when a federated learning cycle completes (ADR-023).
+    /// Consumer: Cognitive (updates SONA with federated patterns).
+    FederationCycleCompleted {
+        cycle_id: Uuid,
+        contributors: usize,
+        patterns_aggregated: usize,
+        timestamp: DateTime<Utc>,
+    },
 }
 
 /// Event bus type alias for domain event broadcasting.
@@ -179,6 +195,18 @@ mod tests {
                 session_id: Uuid::new_v4(),
                 intent_count: 3,
                 domains: vec!["Finance".into(), "Health".into()],
+                timestamp: Utc::now(),
+            },
+            DomainEvent::MeshDeviceJoined {
+                mesh_id: Uuid::new_v4(),
+                device_id: Uuid::new_v4(),
+                zone: "A-Desktop".into(),
+                timestamp: Utc::now(),
+            },
+            DomainEvent::FederationCycleCompleted {
+                cycle_id: Uuid::new_v4(),
+                contributors: 1500,
+                patterns_aggregated: 42000,
                 timestamp: Utc::now(),
             },
         ];

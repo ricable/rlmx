@@ -198,7 +198,7 @@ Additional directories:
 ## Architecture
 
 ### Kernel (`rlmx-kernel`)
-**17 syscall permissions** (12 original + VoiceTranscribe, VoiceSynthesize, IntentRoute, MeshSync, FederationContribute) with `DomainEventBus` (8 cross-context events including VoiceSessionStarted, IntentsDecomposed). `TinyDancerRouter` (FastGRNN **18->32->5**) with 4 voice-aware dimensions (speaker_confidence, emotion_valence, urgency_score, ambient_noise_level) and online learning with 0.6 confidence gating. `Strategy` enum includes `Swarm { scatter_zones, gather_strategy, timeout_ms }`.
+**17-syscall dispatch** (12 original + VoiceTranscribe, VoiceSynthesize, IntentRoute, MeshSync, FederationContribute) with `DomainEventBus` (10 cross-context events including VoiceSessionStarted, IntentsDecomposed, MeshDeviceJoined, FederationCycleCompleted). `TinyDancerRouter` (FastGRNN **18->32->5**) with 4 voice-aware dimensions (speaker_confidence, emotion_valence, urgency_score, ambient_noise_level) and online learning with 0.6 confidence gating. `Strategy` enum includes `Swarm { scatter_zones, gather_strategy, timeout_ms }`.
 
 New types: `ResponseMode` (VoiceOnly/Visual/Multimodal/Ambient), `VoicePersona` (6 domain personas), `LifeDomain` (12 life categories), `Intent` struct.
 
@@ -327,7 +327,7 @@ Preconfigured event hooks in `scripts/hooks/` — all executable, accept JSON st
 | `crates/rlmx-kernel/src/lib.rs` | Kernel types: SyscallPermission (17), LifeDomain, Intent, ResponseMode, VoicePersona |
 | `crates/rlmx-kernel/src/scheduler.rs` | Strategy enum, GatherStrategy, Scheduler |
 | `crates/rlmx-kernel/src/router.rs` | TinyDancerRouter (FastGRNN 18->32->5, voice-aware) |
-| `crates/rlmx-kernel/src/events.rs` | DomainEvent (8 variants), DomainEventBus |
+| `crates/rlmx-kernel/src/events.rs` | DomainEvent (10 variants), DomainEventBus |
 | **Voice** | |
 | `crates/rlmx-voice/src/pipeline.rs` | VoicePipeline: VAD -> STT -> Intent -> TTS |
 | `crates/rlmx-voice/src/intent.rs` | MultiIntentDecomposer, IntentClassifier, 12 life domains |

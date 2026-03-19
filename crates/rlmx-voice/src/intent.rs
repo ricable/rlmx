@@ -8,12 +8,6 @@
 pub use rlmx_kernel::{Intent, LifeDomain};
 use serde::{Deserialize, Serialize};
 
-/// All 12 kernel life domain variants for iteration.
-/// Delegates to `LifeDomain::all()` from `rlmx-kernel` to avoid stale manual lists.
-fn all_life_domains() -> &'static [LifeDomain] {
-    LifeDomain::all()
-}
-
 /// Returns stub keyword associations for domain classification.
 fn keywords_for_domain(domain: &LifeDomain) -> &'static [&'static str] {
     match domain {
@@ -195,7 +189,7 @@ impl IntentClassifier {
         let lower = transcript.to_lowercase();
         let mut best: Option<(LifeDomain, f32)> = None;
 
-        for domain in all_life_domains() {
+        for domain in LifeDomain::all() {
             let score = Self::keyword_score(&lower, keywords_for_domain(domain));
             if score > self.confidence_threshold && best.as_ref().is_none_or(|(_, s)| score > *s) {
                 best = Some((*domain, score));
@@ -314,8 +308,11 @@ impl MultiIntentDecomposer {
     fn extract_entities(clause: &str, full_transcript: &str) -> Vec<ExtractedEntity> {
         let mut entities = Vec::new();
 
-        // Detect monetary amounts (very simplistic).
+        // Lowercase both inputs once to avoid repeated allocations.
         let lower = clause.to_lowercase();
+        let transcript_lower = full_transcript.to_lowercase();
+
+        // Detect monetary amounts (very simplistic).
         if let Some(pos) = lower.find('$') {
             let value_end = lower[pos + 1..]
                 .find(|c: char| !c.is_ascii_digit() && c != '.' && c != ',')
@@ -323,7 +320,7 @@ impl MultiIntentDecomposer {
                 .unwrap_or(lower.len());
             let value = &lower[pos..value_end];
             if value.len() > 1 {
-                let offset = full_transcript.to_lowercase().find(value).unwrap_or(pos);
+                let offset = transcript_lower.find(value).unwrap_or(pos);
                 entities.push(ExtractedEntity {
                     entity_type: "amount".to_string(),
                     value: value.to_string(),
@@ -350,7 +347,7 @@ impl MultiIntentDecomposer {
         ];
         for tw in &time_words {
             if let Some(pos) = lower.find(tw) {
-                let offset = full_transcript.to_lowercase().find(tw).unwrap_or(pos);
+                let offset = transcript_lower.find(tw).unwrap_or(pos);
                 entities.push(ExtractedEntity {
                     entity_type: "date".to_string(),
                     value: tw.to_string(),
@@ -406,7 +403,7 @@ mod tests {
 
     #[test]
     fn test_all_life_domains_returns_12() {
-        assert_eq!(all_life_domains().len(), 12);
+        assert_eq!(LifeDomain::all().len(), 12);
     }
 
     #[test]
