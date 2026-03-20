@@ -109,14 +109,20 @@ reconcile() {
 
     echo "$LOG_PREFIX Phase: Ingesting | Changes: $change_count files"
 
-    # Phase 2: Re-index via qmd
+    # Phase 2: Re-index via qmd (handles incremental updates internally)
     if command -v qmd &>/dev/null; then
         echo "$LOG_PREFIX Running qmd update for collection '$collection'..."
-        qmd update 2>&1 | grep -E "(Indexed|✓|Error)" || true
+        local update_output
+        update_output=$(qmd update 2>&1)
+        echo "$update_output" | grep -E "(Indexed|✓|Error)" || true
 
-        # Phase 3: Generate embeddings for new/changed content
-        echo "$LOG_PREFIX Running qmd embed..."
-        qmd embed 2>&1 | grep -E "(Done|✓|Error|chunks)" || true
+        # Phase 3: Generate embeddings only if update found new content
+        if echo "$update_output" | grep -qE "new|updated" && ! echo "$update_output" | grep -qE "^[^0-9]*0 new, 0 updated"; then
+            echo "$LOG_PREFIX Running qmd embed for new content..."
+            qmd embed 2>&1 | grep -E "(Done|✓|Error|chunks)" || true
+        else
+            echo "$LOG_PREFIX No new content to embed"
+        fi
     else
         echo "$LOG_PREFIX WARNING: qmd not found in PATH, skipping indexing"
     fi

@@ -338,6 +338,15 @@ pub enum KernelError {
 
     #[error("internal error: {0}")]
     Internal(String),
+
+    #[error("model load error: {0}")]
+    ModelLoadError(String),
+
+    #[error("embedding error: {0}")]
+    EmbeddingError(String),
+
+    #[error("I/O error: {0}")]
+    IoError(String),
 }
 
 pub type KernelResult<T> = Result<T, KernelError>;

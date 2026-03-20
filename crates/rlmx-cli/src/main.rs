@@ -477,7 +477,23 @@ enum FederationAction {
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt::init();
     let cli = Cli::parse();
+
+    // Best-effort embedding provider initialization (ADR-040)
+    #[cfg(feature = "real-embeddings")]
+    {
+        match rlmx_kernel::CandleEmbedder::load_default() {
+            Ok(embedder) => {
+                if let Err(e) = rlmx_kernel::init_embedding_provider(Box::new(embedder)) {
+                    tracing::warn!("failed to set embedding provider: {e}");
+                }
+            }
+            Err(e) => {
+                tracing::warn!("no real embedding model available, using hash fallback: {e}");
+            }
+        }
+    }
 
     let result = run(cli.command).await;
     if let Err(e) = result {
@@ -640,7 +656,7 @@ async fn cmd_ingest(
         extra: Default::default(),
     };
 
-    let segment_id = region.insert(embedding, content.clone(), metadata);
+    let segment_id = region.insert(embedding, content.clone(), metadata)?;
 
     println!("Ingested into region {:?}:", region_name);
     println!("  segment_id: {}", segment_id);

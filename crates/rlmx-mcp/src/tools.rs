@@ -332,7 +332,8 @@ impl ToolHandler for RlmxIngestHandler {
                 segment_type: "text".into(),
                 extra,
             };
-            let id = state.memory.insert(embedding, chunk.to_string(), meta);
+            let id = state.memory.insert(embedding, chunk.to_string(), meta)
+                .map_err(|e| McpError::internal(format!("insert failed: {e}")))?;
             segment_ids.push(id.to_string());
         }
 

@@ -2,7 +2,7 @@
 // @aix/mcp-server — Server tests
 //
 // Mirrors the Rust tests in rlmx-mcp/src/server.rs:
-//   - Tool registration (47 tools)
+//   - Tool registration (49 tools)
 //   - Initialize handshake
 //   - tools/list and tools/call dispatch
 //   - Rejection before initialization
@@ -20,8 +20,8 @@ describe('McpServer', () => {
     server = new McpServer();
   });
 
-  it('should register all 47 tools', () => {
-    expect(server.toolCount).toBe(47);
+  it('should register all 49 tools', () => {
+    expect(server.toolCount).toBe(49);
   });
 
   it('should list all tool names', () => {
@@ -51,7 +51,7 @@ describe('McpServer', () => {
     const result = (await server.handleRequest('tools/list')) as {
       tools: unknown[];
     };
-    expect(result.tools).toHaveLength(47);
+    expect(result.tools).toHaveLength(49);
   });
 
   it('should handle tools/call after initialization', async () => {

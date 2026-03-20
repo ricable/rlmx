@@ -1003,12 +1003,18 @@ function createRlmxMarketplaceRate(_state: ToolStateData): RegisteredTool {
       },
       required: ['agent_id', 'rating'],
     },
-    async (args) => ({
-      agent_id: args.agent_id,
-      rating: args.rating,
-      review: args.review ?? null,
-      status: 'stub',
-    }),
+    async (args) => {
+      const rating = args.rating as number;
+      if (rating < 1 || rating > 5 || !Number.isInteger(rating)) {
+        return { error: 'Rating must be an integer between 1 and 5' };
+      }
+      return {
+        agent_id: args.agent_id,
+        rating,
+        review: args.review ?? null,
+        status: 'stub',
+      };
+    },
   );
 }
 

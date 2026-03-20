@@ -39,6 +39,11 @@ NEW_CAPABILITIES="[]"
 MODEL_TIER="Small"
 MAX_CONCURRENT=1
 
+# Validate numeric input
+[[ "$NEW_LEVEL" =~ ^[0-9]+$ ]] || NEW_LEVEL=2
+[[ "$OLD_LEVEL" =~ ^[0-9]+$ ]] || OLD_LEVEL=1
+[[ "$XP_TOTAL" =~ ^[0-9]+$ ]] || XP_TOTAL=0
+
 # Progressive capability unlocks — range-based to cover all levels 1-10
 if [ "$NEW_LEVEL" -ge 10 ]; then
     NEW_CAPABILITIES='["batch_processing", "proactive_scanning", "cross_agent_collab", "cloud_escalation", "autonomous_action"]'
@@ -70,33 +75,49 @@ fi
 XP_NEXT_LEVEL=$((NEW_LEVEL * NEW_LEVEL * 100))
 
 # Log level-up event
-LOG_DIR="${RLMX_LOG_DIR:-/tmp/rlmx/agents}"
+LOG_DIR="${RLMX_LOG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/rlmx/agents}"
 mkdir -p "$LOG_DIR"
-echo "{\"timestamp\": \"${TIMESTAMP}\", \"agent_id\": \"${AGENT_ID}\", \"agent_name\": \"${AGENT_NAME}\", \"old_level\": ${OLD_LEVEL}, \"new_level\": ${NEW_LEVEL}, \"xp_total\": ${XP_TOTAL}}" >> "${LOG_DIR}/level-ups.jsonl"
+jq -n --arg ts "$TIMESTAMP" --arg aid "$AGENT_ID" --arg aname "$AGENT_NAME" \
+  --argjson old "$OLD_LEVEL" --argjson new "$NEW_LEVEL" --argjson xp "$XP_TOTAL" \
+  '{timestamp: $ts, agent_id: $aid, agent_name: $aname, old_level: $old, new_level: $new, xp_total: $xp}' \
+  >> "${LOG_DIR}/level-ups.jsonl"
 
-cat <<EOF
-{
-  "level_up": {
-    "agent_id": "${AGENT_ID}",
-    "agent_name": "${AGENT_NAME}",
-    "old_level": ${OLD_LEVEL},
-    "new_level": ${NEW_LEVEL},
-    "xp_total": ${XP_TOTAL},
-    "xp_next_level": ${XP_NEXT_LEVEL},
-    "trigger": "${TRIGGER}",
-    "timestamp": "${TIMESTAMP}"
-  },
-  "capability_update": {
-    "model_tier": "${MODEL_TIER}",
-    "max_concurrent_tasks": ${MAX_CONCURRENT},
-    "new_capabilities": ${NEW_CAPABILITIES}
-  },
-  "notification": {
-    "title": "${AGENT_NAME} leveled up!",
-    "body": "Level ${OLD_LEVEL} -> ${NEW_LEVEL}. New model tier: ${MODEL_TIER}",
-    "priority": "medium",
-    "channel": "agents"
-  },
-  "engagement_points": $((NEW_LEVEL * 10))
-}
-EOF
+ENGAGEMENT_POINTS=$((NEW_LEVEL * 10))
+
+jq -n \
+  --arg agent_id "$AGENT_ID" \
+  --arg agent_name "$AGENT_NAME" \
+  --argjson old_level "$OLD_LEVEL" \
+  --argjson new_level "$NEW_LEVEL" \
+  --argjson xp_total "$XP_TOTAL" \
+  --argjson xp_next_level "$XP_NEXT_LEVEL" \
+  --arg trigger "$TRIGGER" \
+  --arg timestamp "$TIMESTAMP" \
+  --arg model_tier "$MODEL_TIER" \
+  --argjson max_concurrent "$MAX_CONCURRENT" \
+  --argjson new_capabilities "$NEW_CAPABILITIES" \
+  --argjson engagement_points "$ENGAGEMENT_POINTS" \
+  '{
+    level_up: {
+      agent_id: $agent_id,
+      agent_name: $agent_name,
+      old_level: $old_level,
+      new_level: $new_level,
+      xp_total: $xp_total,
+      xp_next_level: $xp_next_level,
+      trigger: $trigger,
+      timestamp: $timestamp
+    },
+    capability_update: {
+      model_tier: $model_tier,
+      max_concurrent_tasks: $max_concurrent,
+      new_capabilities: $new_capabilities
+    },
+    notification: {
+      title: ($agent_name + " leveled up!"),
+      body: ("Level " + ($old_level|tostring) + " -> " + ($new_level|tostring) + ". New model tier: " + $model_tier),
+      priority: "medium",
+      channel: "agents"
+    },
+    engagement_points: $engagement_points
+  }'

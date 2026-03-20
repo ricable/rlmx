@@ -184,7 +184,7 @@ async fn dispatch_inner(syscall: &Syscall, ctx: &KernelContext) -> KernelResult<
             metadata,
         } => {
             let mut memory = ctx.memory.lock().await;
-            let segment_id = memory.insert(embedding.clone(), content.clone(), metadata.clone());
+            let segment_id = memory.insert(embedding.clone(), content.clone(), metadata.clone())?;
             Ok(SyscallResult::VecInserted { segment_id })
         }
         Syscall::VecSearch { query, k, filters } => {

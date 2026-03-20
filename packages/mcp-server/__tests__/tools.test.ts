@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // @aix/mcp-server — Tools tests
 //
-// Validates all 47 tool registrations and individual tool handler behavior.
+// Validates all 49 tool registrations and individual tool handler behavior.
 // ---------------------------------------------------------------------------
 
 import { describe, it, expect } from 'vitest';
@@ -11,14 +11,14 @@ describe('createAllTools', () => {
   const state = createToolState();
   const tools = createAllTools(state);
 
-  it('should create exactly 47 tools', () => {
-    expect(tools).toHaveLength(47);
+  it('should create exactly 49 tools', () => {
+    expect(tools).toHaveLength(49);
   });
 
   it('should have unique tool names', () => {
     const names = toolNames(tools);
     const unique = new Set(names);
-    expect(unique.size).toBe(47);
+    expect(unique.size).toBe(49);
   });
 
   it('should include all expected tool categories', () => {
@@ -96,6 +96,10 @@ describe('createAllTools', () => {
     expect(names).toContain('rlmx_billing_upgrade');
     expect(names).toContain('rlmx_billing_usage');
     expect(names).toContain('rlmx_billing_family');
+
+    // Approval tools (2, ADR-037)
+    expect(names).toContain('rlmx_approval_list');
+    expect(names).toContain('rlmx_approval_decide');
   });
 
   it('should have descriptions for all tools', () => {

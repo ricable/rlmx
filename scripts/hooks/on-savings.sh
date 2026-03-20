@@ -41,19 +41,23 @@ fi
 ANNUAL_IMPACT="$AMOUNT"
 if [ "$RECURRING" = "true" ]; then
     case "$FREQUENCY" in
-        monthly) ANNUAL_IMPACT=$(echo "$AMOUNT * 12" | bc 2>/dev/null || echo "$((AMOUNT * 12))") ;;
-        quarterly) ANNUAL_IMPACT=$(echo "$AMOUNT * 4" | bc 2>/dev/null || echo "$((AMOUNT * 4))") ;;
+        monthly) ANNUAL_IMPACT=$(awk "BEGIN {printf \"%.2f\", $AMOUNT * 12}") ;;
+        quarterly) ANNUAL_IMPACT=$(awk "BEGIN {printf \"%.2f\", $AMOUNT * 4}") ;;
         yearly) ANNUAL_IMPACT="$AMOUNT" ;;
     esac
 fi
 
 # Log savings event
-LOG_DIR="${RLMX_LOG_DIR:-/tmp/rlmx/savings}"
+LOG_DIR="${RLMX_LOG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/rlmx/savings}"
 mkdir -p "$LOG_DIR"
-echo "{\"timestamp\": \"${TIMESTAMP}\", \"agent\": \"${AGENT}\", \"amount\": ${AMOUNT}, \"recurring\": ${RECURRING}, \"frequency\": \"${FREQUENCY}\", \"provider\": \"${PROVIDER}\", \"annual_impact\": ${ANNUAL_IMPACT}}" >> "${LOG_DIR}/savings.jsonl"
+jq -n --arg ts "$TIMESTAMP" --arg agent "$AGENT" --argjson amount "$AMOUNT" \
+  --argjson recurring "$RECURRING" --arg freq "$FREQUENCY" --arg provider "$PROVIDER" \
+  --argjson annual "$ANNUAL_IMPACT" \
+  '{timestamp: $ts, agent: $agent, amount: $amount, recurring: $recurring, frequency: $freq, provider: $provider, annual_impact: $annual}' \
+  >> "${LOG_DIR}/savings.jsonl"
 
 # Guard: skip notification for zero-amount savings
-if [ "$AMOUNT" -eq 0 ] 2>/dev/null || [ "$AMOUNT" = "0" ]; then
+if awk "BEGIN {exit !($AMOUNT == 0)}"; then
     echo "{\"skipped\": true, \"reason\": \"Zero-amount savings ignored\"}"
     exit 0
 fi
@@ -66,26 +70,36 @@ else
     NOTIFY_BODY="${AGENT} saved you \$${AMOUNT} with ${PROVIDER}"
 fi
 
-cat <<EOF
-{
-  "notification": {
-    "title": "${NOTIFY_TITLE}",
-    "body": "${NOTIFY_BODY}",
-    "priority": "high",
-    "channel": "savings"
-  },
-  "savings_event": {
-    "timestamp": "${TIMESTAMP}",
-    "agent": "${AGENT}",
-    "action": "${ACTION}",
-    "amount": ${AMOUNT},
-    "recurring": ${RECURRING},
-    "frequency": "${FREQUENCY}",
-    "annual_impact": ${ANNUAL_IMPACT},
-    "provider": "${PROVIDER}",
-    "category": "${CATEGORY}"
-  },
-  "engagement_points": 25,
-  "achievement_check": "savings_milestone"
-}
-EOF
+jq -n \
+  --arg notify_title "$NOTIFY_TITLE" \
+  --arg notify_body "$NOTIFY_BODY" \
+  --arg timestamp "$TIMESTAMP" \
+  --arg agent "$AGENT" \
+  --arg action "$ACTION" \
+  --argjson amount "$AMOUNT" \
+  --argjson recurring "$RECURRING" \
+  --arg frequency "$FREQUENCY" \
+  --argjson annual_impact "$ANNUAL_IMPACT" \
+  --arg provider "$PROVIDER" \
+  --arg category "$CATEGORY" \
+  '{
+    notification: {
+      title: $notify_title,
+      body: $notify_body,
+      priority: "high",
+      channel: "savings"
+    },
+    savings_event: {
+      timestamp: $timestamp,
+      agent: $agent,
+      action: $action,
+      amount: $amount,
+      recurring: $recurring,
+      frequency: $frequency,
+      annual_impact: $annual_impact,
+      provider: $provider,
+      category: $category
+    },
+    engagement_points: 25,
+    achievement_check: "savings_milestone"
+  }'

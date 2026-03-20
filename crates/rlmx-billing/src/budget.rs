@@ -117,8 +117,18 @@ impl BudgetLedger {
             }
         }
 
-        // ADR-032: enforce per-call token limit
+        // ADR-032: enforce hard budget limit before accepting the entry
         if let Some(policy) = self.policies.get(&agent_id) {
+            let current_spent = self.spent_cache.get(&agent_id).copied().unwrap_or(0);
+            if current_spent + entry.cost_microcents > policy.hard_limit_microcents {
+                return Err(BillingError::QuotaExceeded {
+                    resource: "hard_limit_microcents".to_string(),
+                    used: current_spent + entry.cost_microcents,
+                    limit: policy.hard_limit_microcents,
+                });
+            }
+
+            // ADR-032: enforce per-call token limit
             if let Some(max_tokens) = policy.per_call_max_tokens {
                 let total_tokens = entry.tokens_in + entry.tokens_out;
                 if total_tokens > max_tokens {
@@ -327,9 +337,11 @@ mod tests {
             hard_limit_microcents: 10000,
             per_call_max_tokens: None,
         });
-        ledger.record(make_entry(id, "gpt-4", "openai", 15000), None).unwrap();
-        let decision = ledger.check(&id);
-        assert!(!decision.allowed);
+        // record() now rejects entries that would exceed the hard limit
+        let result = ledger.record(make_entry(id, "gpt-4", "openai", 15000), None);
+        assert!(result.is_err());
+        // spent should remain 0 since the entry was rejected
+        assert_eq!(ledger.total_spent(&id), 0);
     }
 
     #[test]
@@ -620,9 +632,16 @@ mod tests {
             hard_limit_microcents: 5000,
             per_call_max_tokens: None,
         });
-        for _ in 0..6 {
-            ledger.record(make_entry(id, "gpt-4", "openai", 1000), None).unwrap();
+        // First 5 entries (5000 total) succeed; the 6th would exceed the hard limit
+        for i in 0..6 {
+            let result = ledger.record(make_entry(id, "gpt-4", "openai", 1000), None);
+            if i < 5 {
+                result.unwrap();
+            } else {
+                assert!(result.is_err(), "6th entry should be rejected by hard limit");
+            }
         }
+        // At exactly the hard limit, check() reports not allowed
         let decision = ledger.check(&id);
         assert!(!decision.allowed);
         assert_eq!(decision.remaining_microcents, 0);

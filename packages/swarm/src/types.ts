@@ -33,6 +33,7 @@ export enum ConsensusType {
   Pbft = 'Pbft',
   Raft = 'Raft',
   Gossip = 'Gossip',
+  QuDag = 'QuDag',
 }
 
 /**

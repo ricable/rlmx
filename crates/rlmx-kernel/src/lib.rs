@@ -25,7 +25,12 @@ pub use graph::EnhancedGraph;
 pub use graph::Graph;
 #[cfg(feature = "ruvector")]
 pub use memory::HnswMemoryRegion;
-pub use memory::{cosine_similarity, text_to_embedding, ContextSegment, MemoryRegion, EMBED_DIM};
+pub use memory::{
+    cosine_similarity, init_embedding_provider, text_to_embedding, ContextSegment,
+    EmbeddingProvider, HashEmbeddingProvider, MemoryRegion, EMBED_DIM,
+};
+#[cfg(feature = "real-embeddings")]
+pub use memory::CandleEmbedder;
 #[cfg(feature = "ruvnet-phase1")]
 pub use memory::{BloomScreenedRegion, NamespacedMemoryStore};
 pub use process::{Process, ProcessManager, ProcessStatus};

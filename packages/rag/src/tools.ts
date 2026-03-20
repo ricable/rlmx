@@ -1,3 +1,4 @@
+import path from 'path';
 import type { RagConfig, RagSearchInput, RagSearchResult, RagStatsResult } from './types.js';
 import type { BackendRegistry } from './backends/backend.js';
 import { reciprocalRankFusion } from './merge/rrf.js';
@@ -20,6 +21,37 @@ export interface RagToolDefinition {
 export interface RegisteredRagTool {
   definition: RagToolDefinition;
   handler: (args: Record<string, unknown>, ctx: RagToolContext) => Promise<unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// Shared search logic (used by rag_search, rag_cluster, rag_export)
+// ---------------------------------------------------------------------------
+async function executeSearch(input: RagSearchInput, ctx: RagToolContext): Promise<RagSearchResult[]> {
+  const adapters = input.backends
+    ? ctx.registry.all().filter(a => input.backends!.includes(a.name))
+    : ctx.registry.all();
+
+  const results = await Promise.allSettled(
+    adapters.map(async a => ({
+      backend: a.name,
+      results: await a.search(input.query, (input.k ?? 10) * 2),
+    })),
+  );
+
+  const fulfilled = results
+    .filter((r): r is PromiseFulfilledResult<{ backend: string; results: RagSearchResult[] }> => r.status === 'fulfilled')
+    .map(r => r.value);
+
+  if (fulfilled.length === 0) {
+    throw searchFailed('All backends failed');
+  }
+
+  const weights = ctx.config.sonaEnabled
+    ? await getAdaptiveWeights(fulfilled.map(f => f.backend))
+    : new Map(fulfilled.map(f => [f.backend, 1.0] as const));
+
+  const merged = reciprocalRankFusion(fulfilled, weights, ctx.config.rrfK);
+  return merged.slice(0, input.k ?? 10);
 }
 
 // ---------------------------------------------------------------------------
@@ -48,32 +80,7 @@ function createRagSearch(): RegisteredRagTool {
         backends: args.backends as string[] | undefined,
         k: (args.k as number) ?? 10,
       };
-
-      const adapters = input.backends
-        ? ctx.registry.all().filter(a => input.backends!.includes(a.name))
-        : ctx.registry.all();
-
-      const results = await Promise.allSettled(
-        adapters.map(async a => ({
-          backend: a.name,
-          results: await a.search(input.query, (input.k ?? 10) * 2),
-        })),
-      );
-
-      const fulfilled = results
-        .filter((r): r is PromiseFulfilledResult<{ backend: string; results: RagSearchResult[] }> => r.status === 'fulfilled')
-        .map(r => r.value);
-
-      if (fulfilled.length === 0) {
-        throw searchFailed('All backends failed');
-      }
-
-      const weights = ctx.config.sonaEnabled
-        ? await getAdaptiveWeights(fulfilled.map(f => f.backend))
-        : new Map(fulfilled.map(f => [f.backend, 1.0] as const));
-
-      const merged = reciprocalRankFusion(fulfilled, weights, ctx.config.rrfK);
-      return { results: merged.slice(0, input.k ?? 10) };
+      return { results: await executeSearch(input, ctx) };
     },
   };
 }
@@ -98,6 +105,9 @@ function createRagIngest(): RegisteredRagTool {
     },
     handler: async (args, ctx) => {
       const file = args.file as string;
+      if (file.includes('..') || path.isAbsolute(file)) {
+        return { error: 'Invalid file path: directory traversal not allowed' };
+      }
       const collection = (args.collection as string) ?? ctx.config.qmdCollection;
       const docling = ctx.registry.get('docling');
       if (!docling?.ingest) {
@@ -168,10 +178,9 @@ function createRagCluster(): RegisteredRagTool {
       const query = args.query as string;
       const k = (args.k as number) ?? 3;
       // Search first, then group by source as a simple clustering heuristic
-      const searchTool = createRagSearch();
-      const searchResult = await searchTool.handler({ query, k: k * 5 }, ctx) as { results: RagSearchResult[] };
+      const searchResults = await executeSearch({ query, k: k * 5 }, ctx);
       const groups = new Map<string, RagSearchResult[]>();
-      for (const r of searchResult.results) {
+      for (const r of searchResults) {
         const key = r.backend;
         const group = groups.get(key) ?? [];
         group.push(r);
@@ -283,9 +292,7 @@ function createRagExport(): RegisteredRagTool {
       const format = (args.format as string) ?? 'json';
       const k = (args.k as number) ?? 10;
 
-      const searchTool = createRagSearch();
-      const searchResult = await searchTool.handler({ query, k }, ctx) as { results: RagSearchResult[] };
-      const results = searchResult.results;
+      const results = await executeSearch({ query, k }, ctx);
 
       let content: string;
       switch (format) {
@@ -293,7 +300,7 @@ function createRagExport(): RegisteredRagTool {
           content = results.map((r, i) => `## ${i + 1}. ${r.source}\n\n${r.content}\n\n*Score: ${r.score.toFixed(4)}*\n`).join('\n---\n\n');
           break;
         case 'csv':
-          content = 'id,score,source,backend,content\n' + results.map(r => `"${r.id}",${r.score},"${r.source}","${r.backend}","${r.content.replace(/"/g, '""')}"`).join('\n');
+          content = 'id,score,source,backend,content\n' + results.map(r => `${escapeCsvField(r.id)},${r.score},${escapeCsvField(r.source)},${escapeCsvField(r.backend)},${escapeCsvField(r.content)}`).join('\n');
           break;
         default:
           content = JSON.stringify(results, null, 2);
@@ -302,6 +309,17 @@ function createRagExport(): RegisteredRagTool {
       return { content, format, resultCount: results.length };
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// CSV escaping helper
+// ---------------------------------------------------------------------------
+function escapeCsvField(value: string): string {
+  const needsPrefix = /^[=+\-@\t\r]/.test(value);
+  const escaped = value.replace(/"/g, '""');
+  if (needsPrefix) return `"'${escaped}"`;
+  if (escaped.includes(',') || escaped.includes('"') || escaped.includes('\n')) return `"${escaped}"`;
+  return escaped;
 }
 
 // ---------------------------------------------------------------------------

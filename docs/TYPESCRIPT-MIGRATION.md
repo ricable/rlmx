@@ -274,4 +274,4 @@ When a TypeScript package passes its ported test suite:
 - [ADR-028: @aix Package Architecture](ADR/ADR-028-aix-package-architecture.md)
 - [DDD-014: NAPI Core Bridge Context](DDD/DDD-014-napi-core-bridge-context.md)
 - [DDD-015: TypeScript Package Context Map](DDD/DDD-015-typescript-package-context-map.md)
-- [move-to-typescript-plan.md](../move-to-typescript-plan.md) — original migration plan
+- [move-to-typescript-plan.md](../archives/root/move-to-typescript-plan.md) — original migration plan (archived)

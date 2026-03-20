@@ -1,3 +1,4 @@
+import { generateId } from '@aix/shared';
 import type { BackendAdapter } from './backend.js';
 import type { RagSearchResult } from '../types.js';
 
@@ -32,8 +33,7 @@ export class DoclingBackend implements BackendAdapter {
   async ingest(file: string, _collection: string): Promise<{ id: string; chunks: number }> {
     // Stub: in production, this would invoke docling-mcp to convert PDF/DOCX → markdown
     // then save to ingestedDir and trigger qmd reindex
-    const { randomUUID } = await import('node:crypto');
-    const id = randomUUID();
+    const id = generateId();
     return { id, chunks: 0 };
   }
 }

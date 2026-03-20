@@ -94,6 +94,7 @@ pub enum ConsensusType {
     Pbft,
     Raft,
     Gossip,
+    QuDag,
 }
 
 /// Consensus configuration mapping zones to consensus types.

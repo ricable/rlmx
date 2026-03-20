@@ -28,6 +28,10 @@ else
     MILESTONE=0
 fi
 
+# Validate numeric input
+[[ "$STREAK_DAYS" =~ ^[0-9]+$ ]] || STREAK_DAYS=0
+[[ "$MILESTONE" =~ ^[0-9]+$ ]] || MILESTONE=0
+
 # Determine reward based on milestone
 REWARD_TYPE="none"
 REWARD_DESC="No reward"
@@ -80,33 +84,42 @@ case "$MILESTONE" in
 esac
 
 # Log milestone
-LOG_DIR="${RLMX_LOG_DIR:-/tmp/rlmx/engagement}"
+LOG_DIR="${RLMX_LOG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/rlmx/engagement}"
 mkdir -p "$LOG_DIR"
-echo "{\"timestamp\": \"${TIMESTAMP}\", \"user_id\": \"${USER_ID}\", \"streak_days\": ${STREAK_DAYS}, \"milestone\": ${MILESTONE}, \"reward\": \"${REWARD_TYPE}\"}" >> "${LOG_DIR}/streaks.jsonl"
+jq -n --arg ts "$TIMESTAMP" --arg uid "$USER_ID" \
+  --argjson days "$STREAK_DAYS" --argjson ms "$MILESTONE" --arg reward "$REWARD_TYPE" \
+  '{timestamp: $ts, user_id: $uid, streak_days: $days, milestone: $ms, reward: $reward}' \
+  >> "${LOG_DIR}/streaks.jsonl"
 
 UNLOCK_JSON="null"
 if [ -n "$UNLOCK" ]; then
     UNLOCK_JSON="\"${UNLOCK}\""
 fi
 
-cat <<EOF
-{
-  "streak": {
-    "current_days": ${STREAK_DAYS},
-    "milestone_reached": ${MILESTONE},
-    "timestamp": "${TIMESTAMP}"
-  },
-  "reward": {
-    "type": "${REWARD_TYPE}",
-    "description": "${REWARD_DESC}",
-    "bonus_points": ${BONUS_POINTS},
-    "achievement_unlock": ${UNLOCK_JSON}
-  },
-  "notification": {
-    "title": "${STREAK_DAYS}-Day Streak!",
-    "body": "${REWARD_DESC}",
-    "priority": "medium",
-    "channel": "engagement"
-  }
-}
-EOF
+jq -n \
+  --argjson streak_days "$STREAK_DAYS" \
+  --argjson milestone "$MILESTONE" \
+  --arg timestamp "$TIMESTAMP" \
+  --arg reward_type "$REWARD_TYPE" \
+  --arg reward_desc "$REWARD_DESC" \
+  --argjson bonus_points "$BONUS_POINTS" \
+  --argjson achievement_unlock "$UNLOCK_JSON" \
+  '{
+    streak: {
+      current_days: $streak_days,
+      milestone_reached: $milestone,
+      timestamp: $timestamp
+    },
+    reward: {
+      type: $reward_type,
+      description: $reward_desc,
+      bonus_points: $bonus_points,
+      achievement_unlock: $achievement_unlock
+    },
+    notification: {
+      title: (($streak_days|tostring) + "-Day Streak!"),
+      body: $reward_desc,
+      priority: "medium",
+      channel: "engagement"
+    }
+  }'

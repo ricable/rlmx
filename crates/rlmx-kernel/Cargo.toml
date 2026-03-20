@@ -31,6 +31,12 @@ ruvector-collections = { version = "2.0.4", optional = true }
 ruvector-verified = { version = "0.1.1", optional = true }
 midstreamer-scheduler = { version = "0.1.0", optional = true }
 
+# Optional: real embedding model (candle)
+candle-core = { workspace = true, optional = true }
+candle-nn = { workspace = true, optional = true }
+candle-transformers = { workspace = true, optional = true }
+tokenizers = { workspace = true, optional = true }
+
 # Optional: Phase 5 — capability-secured kernel
 ruvix-cap = { version = "0.1.0", optional = true }
 ruvix-types = { version = "0.1.0", optional = true }
@@ -50,6 +56,7 @@ ruvnet-phase1 = ["ruvector", "dep:ruvector-graph", "dep:ruvector-filter", "dep:r
 ruvnet-phase5 = ["verified", "dep:ruvix-cap", "dep:ruvix-types", "dep:ruvix-region"]
 midstreamer = ["dep:midstreamer-scheduler"]
 verified = ["dep:ruvector-verified"]
+real-embeddings = ["dep:candle-core", "dep:candle-nn", "dep:candle-transformers", "dep:tokenizers"]
 
 [dev-dependencies]
 tokio = { workspace = true }

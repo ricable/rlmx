@@ -11,7 +11,7 @@
 
 RLMX agents currently run as in-process Tokio tasks sharing the host's resources with no isolation boundaries. There is no way to express "this agent needs 32 GB RAM, a Metal GPU, and may only communicate with cluster peers" as a deployable unit.
 
-The OpenShell/NemoClaw PRD (opensheell-nemoclaw.md) identifies the need for:
+The OpenShell/NemoClaw PRD (../../archives/docs/opensheell-nemoclaw.md) identifies the need for:
 
 1. **Kernel-level sandboxing** — Landlock + seccomp + network namespaces per agent.
 2. **Resource envelopes** — CPU, memory, GPU, disk, and runtime caps.
@@ -108,7 +108,7 @@ These integrate with the existing WebSocket event stream (ADR-008) and dashboard
 - `crates/rlmx-swarm/src/sandbox.rs` — type definitions
 - `crates/rlmx-swarm/src/cloud.rs` — `CloudProvider` trait, `VmId`, `CloudPolicy`
 - `crates/rlmx-swarm/src/types.rs` — `SwarmEvent` (extended)
-- `opensheell-nemoclaw.md` — source PRD
+- `../../archives/docs/opensheell-nemoclaw.md` — source PRD (archived)
 - ADR-001 — distributed swarm architecture (zone topology)
 - ADR-005 — capability-secured agents (permission matrix)
 - ADR-009 — browser WASM compute pool (BrowserCompute placement)

@@ -387,7 +387,7 @@ pub mod qudag_integration {
             None
         }
         fn consensus_type(&self) -> ConsensusType {
-            ConsensusType::Pbft
+            ConsensusType::QuDag
         }
     }
 
@@ -749,10 +749,10 @@ mod tests {
                 .is_none());
         }
         #[tokio::test]
-        async fn test_qudag_consensus_type_is_pbft() {
+        async fn test_qudag_consensus_type_is_qudag() {
             assert_eq!(
                 QuDagConsensusLayer::new(make_nodes(3)).consensus_type(),
-                ConsensusType::Pbft
+                ConsensusType::QuDag
             );
         }
         #[tokio::test]
@@ -793,7 +793,7 @@ mod tests {
         async fn test_qudag_in_manager() {
             let mut m = ConsensusManager::new();
             m.register(Box::new(QuDagConsensusLayer::new(make_nodes(4))));
-            assert!(m.propose(ConsensusType::Pbft, b"v".to_vec()).await.unwrap());
+            assert!(m.propose(ConsensusType::QuDag, b"v".to_vec()).await.unwrap());
         }
     }
 

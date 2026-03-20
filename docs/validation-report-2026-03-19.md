@@ -13,7 +13,7 @@ Full validation of 19 workspace crates against two product use cases.
 
 ## Use Case 1: "RuVix — One Voice, Millions of Agents"
 
-**Source**: `docs/crazy-ruv-cartes-plan.md`
+**Source**: `packages/plugin/examples/uc1-voice-agents/` (original: `archives/docs/crazy-ruv-cartes-plan.md`)
 
 **Scope**: Voice-first pipeline, phone command center, agent marketplace, multi-intent fan-out, 47-agent swarm coordination, multimodal responses.
 
@@ -38,7 +38,7 @@ Full validation of 19 workspace crates against two product use cases.
 
 ## Use Case 2: "RuVix Mesh — The Personal Agent Cloud"
 
-**Source**: `docs/crazy-ruv-cartes-plan copy.md`
+**Source**: `packages/plugin/examples/uc2-personal-cloud/` (original: `archives/docs/crazy-ruv-cartes-plan-copy.md`)
 
 **Scope**: Cross-device mesh (NAPI/WASM/RPi), federated learning, subscription billing, feature gates, privacy invariants.
 

@@ -19,6 +19,7 @@ Ruvnet ecosystem crates are integrated behind opt-in feature gates. Stub impleme
 | `metal` | `rlmx-ruvllm` | Apple Metal GPU acceleration |
 | `napi` | `rlmx-napi` | NAPI-RS Node.js native bindings |
 | `wasm` | `rlmx-wasm` | wasm-bindgen browser bindings |
+| `real-embeddings` | `rlmx-kernel` | Real embedding model: CandleEmbedder (embeddinggemma-300M, 256-dim) via candle-core/nn/transformers + tokenizers |
 
 ## Rules
 

@@ -21,6 +21,7 @@ tokio = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 serde_json = { workspace = true }
 rand = { workspace = true }
 ed25519-dalek = { version = "2", features = ["rand_core"] }
@@ -43,5 +44,6 @@ ruvector-consensus = ["rlmx-swarm/ruvector-consensus"]
 ruvnet-phase2 = ["rlmx-swarm/ruvnet-phase2"]
 ruvnet-phase4 = ["rlmx-ruvllm/ruvnet-phase4"]
 ruvnet-phase5 = ["rlmx-kernel/ruvnet-phase5"]
+real-embeddings = ["rlmx-kernel/real-embeddings"]
 ruvector-sona = ["rlmx-cognitive/ruvector-sona"]
 cognitive-phase3 = ["rlmx-cognitive/ruvnet-phase3"]

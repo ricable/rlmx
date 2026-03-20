@@ -386,7 +386,8 @@ impl WasmKernel {
         metadata: SegmentMetadata,
     ) -> WasmResult<WasmInsertResult> {
         let embedding = text_to_embedding(content);
-        let segment_id = self.memory.insert(embedding, content.to_string(), metadata);
+        let segment_id = self.memory.insert(embedding, content.to_string(), metadata)
+            .map_err(|e| WasmError::InsertFailed(e.to_string()))?;
         Ok(WasmInsertResult {
             segment_id,
             total_segments: self.memory.len(),
@@ -400,7 +401,8 @@ impl WasmKernel {
         content: &str,
         metadata: SegmentMetadata,
     ) -> WasmResult<WasmInsertResult> {
-        let segment_id = self.memory.insert(embedding, content.to_string(), metadata);
+        let segment_id = self.memory.insert(embedding, content.to_string(), metadata)
+            .map_err(|e| WasmError::InsertFailed(e.to_string()))?;
         Ok(WasmInsertResult {
             segment_id,
             total_segments: self.memory.len(),
