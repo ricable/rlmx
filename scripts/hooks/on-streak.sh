@@ -15,6 +15,10 @@ INPUT=$(cat)
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 if command -v jq &>/dev/null; then
+    if ! echo "$INPUT" | jq empty 2>/dev/null; then
+        echo "{\"error\": \"Invalid JSON input\"}"
+        exit 0
+    fi
     USER_ID=$(echo "$INPUT" | jq -r '.user_id // "default"')
     STREAK_DAYS=$(echo "$INPUT" | jq -r '.streak_days // 0')
     MILESTONE=$(echo "$INPUT" | jq -r '.milestone // 0')

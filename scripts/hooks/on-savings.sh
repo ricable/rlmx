@@ -16,6 +16,10 @@ INPUT=$(cat)
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 if command -v jq &>/dev/null; then
+    if ! echo "$INPUT" | jq empty 2>/dev/null; then
+        echo "{\"error\": \"Invalid JSON input\"}"
+        exit 0
+    fi
     AGENT=$(echo "$INPUT" | jq -r '.agent // "unknown"')
     ACTION=$(echo "$INPUT" | jq -r '.action // "savings found"')
     AMOUNT=$(echo "$INPUT" | jq -r '.amount // 0')
@@ -47,6 +51,12 @@ fi
 LOG_DIR="${RLMX_LOG_DIR:-/tmp/rlmx/savings}"
 mkdir -p "$LOG_DIR"
 echo "{\"timestamp\": \"${TIMESTAMP}\", \"agent\": \"${AGENT}\", \"amount\": ${AMOUNT}, \"recurring\": ${RECURRING}, \"frequency\": \"${FREQUENCY}\", \"provider\": \"${PROVIDER}\", \"annual_impact\": ${ANNUAL_IMPACT}}" >> "${LOG_DIR}/savings.jsonl"
+
+# Guard: skip notification for zero-amount savings
+if [ "$AMOUNT" -eq 0 ] 2>/dev/null || [ "$AMOUNT" = "0" ]; then
+    echo "{\"skipped\": true, \"reason\": \"Zero-amount savings ignored\"}"
+    exit 0
+fi
 
 # Build notification
 NOTIFY_TITLE="Money Saved!"

@@ -16,11 +16,15 @@ INPUT=$(cat)
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 if command -v jq &>/dev/null; then
+    if ! echo "$INPUT" | jq empty 2>/dev/null; then
+        echo "{\"logged\": false, \"error\": \"Invalid JSON input\"}"
+        exit 0
+    fi
     SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "unknown"')
     DURATION=$(echo "$INPUT" | jq -r '.duration_ms // 0')
     SUCCESS=$(echo "$INPUT" | jq -r '.success // false')
     AGENT=$(echo "$INPUT" | jq -r '.agent_used // "none"')
-    INTENT_COUNT=$(echo "$INPUT" | jq -r '.intents | length // 0')
+    INTENT_COUNT=$(echo "$INPUT" | jq -r '.intents | length')
 else
     SESSION_ID="unknown"
     DURATION=0

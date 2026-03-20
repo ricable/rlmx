@@ -15,6 +15,10 @@ INPUT=$(cat)
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 if command -v jq &>/dev/null; then
+    if [ -z "$INPUT" ] || ! echo "$INPUT" | jq -e 'type == "object"' &>/dev/null; then
+        echo "{\"error\": \"Invalid JSON input\"}"
+        exit 0
+    fi
     AGENT_ID=$(echo "$INPUT" | jq -r '.agent_id // "unknown"')
     AGENT_NAME=$(echo "$INPUT" | jq -r '.agent_name // "unknown"')
     OLD_LEVEL=$(echo "$INPUT" | jq -r '.old_level // 1')
@@ -35,36 +39,32 @@ NEW_CAPABILITIES="[]"
 MODEL_TIER="Small"
 MAX_CONCURRENT=1
 
-case "$NEW_LEVEL" in
-    2)
-        NEW_CAPABILITIES='["batch_processing"]'
-        MODEL_TIER="Small"
-        MAX_CONCURRENT=2
-        ;;
-    3)
-        NEW_CAPABILITIES='["batch_processing", "proactive_scanning"]'
-        MODEL_TIER="Small"
-        MAX_CONCURRENT=3
-        ;;
-    5)
-        NEW_CAPABILITIES='["batch_processing", "proactive_scanning", "cross_agent_collab"]'
-        MODEL_TIER="Medium"
-        MAX_CONCURRENT=4
-        ;;
-    7)
-        NEW_CAPABILITIES='["batch_processing", "proactive_scanning", "cross_agent_collab", "cloud_escalation"]'
-        MODEL_TIER="Medium"
-        MAX_CONCURRENT=5
-        ;;
-    10)
-        NEW_CAPABILITIES='["batch_processing", "proactive_scanning", "cross_agent_collab", "cloud_escalation", "autonomous_action"]'
-        MODEL_TIER="Large"
-        MAX_CONCURRENT=8
-        ;;
-    *)
-        NEW_CAPABILITIES='["base"]'
-        ;;
-esac
+# Progressive capability unlocks — range-based to cover all levels 1-10
+if [ "$NEW_LEVEL" -ge 10 ]; then
+    NEW_CAPABILITIES='["batch_processing", "proactive_scanning", "cross_agent_collab", "cloud_escalation", "autonomous_action"]'
+    MODEL_TIER="Large"
+    MAX_CONCURRENT=8
+elif [ "$NEW_LEVEL" -ge 7 ]; then
+    NEW_CAPABILITIES='["batch_processing", "proactive_scanning", "cross_agent_collab", "cloud_escalation"]'
+    MODEL_TIER="Medium"
+    MAX_CONCURRENT=5
+elif [ "$NEW_LEVEL" -ge 5 ]; then
+    NEW_CAPABILITIES='["batch_processing", "proactive_scanning", "cross_agent_collab"]'
+    MODEL_TIER="Medium"
+    MAX_CONCURRENT=4
+elif [ "$NEW_LEVEL" -ge 3 ]; then
+    NEW_CAPABILITIES='["batch_processing", "proactive_scanning"]'
+    MODEL_TIER="Small"
+    MAX_CONCURRENT=3
+elif [ "$NEW_LEVEL" -ge 2 ]; then
+    NEW_CAPABILITIES='["batch_processing"]'
+    MODEL_TIER="Small"
+    MAX_CONCURRENT=2
+else
+    NEW_CAPABILITIES='["base"]'
+    MODEL_TIER="Small"
+    MAX_CONCURRENT=1
+fi
 
 # Calculate XP for next level
 XP_NEXT_LEVEL=$((NEW_LEVEL * NEW_LEVEL * 100))

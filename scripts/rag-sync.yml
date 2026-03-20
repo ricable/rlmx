@@ -1,0 +1,31 @@
+# rag-sync.yml — Declarative RAG sync spec (CRD-inspired)
+# Modeled after GitKnowledgeSource from devopstoolkit.live
+#
+# This is the "Custom Resource" that defines what to watch and index.
+# The controller (rag-sync.sh) reconciles actual state to desired state.
+
+collection: rlmx
+branch: main
+patterns: "**/*.{md,rs,ts,tsx,toml,json}"
+
+# Paths to include (glob patterns)
+include:
+  - "crates/**/*.rs"
+  - "packages/**/*.ts"
+  - "docs/**/*.md"
+  - "*.toml"
+  - "*.json"
+
+# Paths to exclude
+exclude:
+  - "node_modules/**"
+  - "target/**"
+  - "dist/**"
+  - "docs/ingested/**"
+
+# Reconciliation settings
+reconcile:
+  schedule: "5m"
+  on_commit: true
+  on_merge: true
+  full_reindex_interval: "24h"

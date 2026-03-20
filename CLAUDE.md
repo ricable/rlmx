@@ -1,5 +1,27 @@
 # Claude Code Configuration — RLMX Cognition Kernel
 
+## Token-Saving Rules (qmd + Serena) — 98.9% reduction validated
+
+Before reading files or exploring directories, ALWAYS use qmd and Serena first. See [docs/TOKEN-SAVINGS.md](docs/TOKEN-SAVINGS.md) for full benchmark data.
+
+**Lookup priority (mandatory):**
+1. `qmd search "query"` — fast keyword (BM25, <400ms), use 80% of the time
+2. `qmd query "query"` — hybrid + reranking (~9s), for complex questions
+3. `qmd vsearch "query"` — semantic vector (~4s), for conceptual/exploratory
+4. `serena find_symbol <name>` — struct/enum/trait definitions + type info
+5. `serena find_referencing_symbols <name>` — cross-references
+6. `Read` / `Glob` / `Grep` — LAST RESORT only
+
+**Hard rules:**
+- NEVER `Read` a file >100 lines without trying qmd/serena first
+- Prefer `qmd get <file>` with line ranges over full-file `Read`
+- Use `serena get_symbols_overview` for file structure instead of reading entire files
+- Use `serena find_symbol` with `include_info: true` for type definitions
+
+**RAG sync**: `scripts/rag-sync.sh` keeps qmd index current via git-diff reconciliation (CRD pattern). Runs automatically on post-commit hook or manually via `--watch 5m`.
+
+**If qmd breaks** (NODE_MODULE_VERSION error): `cd $(dirname $(which qmd))/../lib/node_modules/@tobilu/qmd && npm rebuild better-sqlite3`
+
 ## Behavioral Rules (Always Enforced)
 
 - Do what has been asked; nothing more, nothing less
@@ -26,7 +48,7 @@
 
 RLMX ("RuVix") is a **voice-first cognition kernel** — an OS-kernel-inspired runtime for LLM agents. Rust (edition 2021) + async Tokio + React Native mobile.
 
-**22 Rust crates + 20 npm packages (@aix), 82 MCP tools, 17 agent types, 6 swarm zones, 1,286+ Rust tests + 1,135 TS tests (2,421+ total), 39 ADRs, 16 DDD bounded contexts.**
+**22 Rust crates + 21 npm packages (@aix), 90 MCP tools, 17 agent types, 6 swarm zones, 1,286+ Rust tests + 1,135 TS tests (2,421+ total), 39 ADRs, 16 DDD bounded contexts.**
 
 ## Quick Build Reference
 
@@ -59,6 +81,7 @@ Full commands: **[docs/BUILD-COMMANDS.md](docs/BUILD-COMMANDS.md)**
 - `rlmx-channels`: `ChannelAdapter`, `ChannelMessage`, `ChannelRegistry`, `ChannelId`
 - `rlmx-kernel` (new modules): `ApprovalTier`, `ApprovalGate`, `TriggerBinding`, `TriggerRegistry`, `AgentCard`, `A2ASkill`
 - `packages/deploy`: Deploy manifest types, bridge adapters (domain-specific, not in kernel/shared)
+- `packages/rag`: RagConfig, RagError, BackendAdapter, ProvenanceTracker (domain-specific, not in kernel/shared)
 - New crate domain events: crate-local enums, not kernel `DomainEvent`
 
 **TypeScript** (details in `docs/TYPESCRIPT-MIGRATION.md`):
@@ -114,8 +137,8 @@ Full commands: **[docs/BUILD-COMMANDS.md](docs/BUILD-COMMANDS.md)**
 
 ## Use Case Validation
 
-- **UC1** "One Voice, Millions of Agents" (`docs/crazy-ruv-cartes-plan.md`) — 585 tests across voice/phone/marketplace/kernel/agents/swarm/mcp
-- **UC2** "Personal Agent Cloud" (`docs/crazy-ruv-cartes-plan copy.md`) — 279 tests across napi/wasm/mesh/federation/billing/cognitive
+- **UC1** "One Voice, Millions of Agents" (`packages/plugin/examples/uc1-voice-agents/`) — 585 tests across voice/phone/marketplace/kernel/agents/swarm/mcp
+- **UC2** "Personal Agent Cloud" (`packages/plugin/examples/uc2-personal-cloud/`) — 279 tests across napi/wasm/mesh/federation/billing/cognitive
 - Run UC1 suite before merging voice/phone/marketplace changes
 - Run UC2 suite before merging mesh/federation/billing changes
 - New agent types must map to existing 12 LifeDomains
@@ -175,6 +198,8 @@ Full commands: **[docs/BUILD-COMMANDS.md](docs/BUILD-COMMANDS.md)**
 | `on-savings.sh` | Savings discovered (annual impact) |
 | `on-streak.sh` | Streak milestone (reward tier) |
 | `on-agent-level.sh` | Agent levels up (unlock capabilities) |
+| `post-commit-rag-sync.sh` | After git commit (triggers RAG reindex) |
+| `pre-serena-cleanup.sh` | Before new Serena session (kills stale, preserves active) |
 
 ## Detailed Reference (read on demand)
 
@@ -186,8 +211,9 @@ Full commands: **[docs/BUILD-COMMANDS.md](docs/BUILD-COMMANDS.md)**
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Detailed component descriptions for all subsystems |
 | [docs/KEY-FILES.md](docs/KEY-FILES.md) | Key file locations across all crates and packages |
 | [docs/TYPESCRIPT-MIGRATION.md](docs/TYPESCRIPT-MIGRATION.md) | Full TS migration reference (packages, NAPI, DDD) |
-| [docs/ADR/](docs/ADR/) | 39 Architecture Decision Records (ADR-001 through ADR-039) |
+| [docs/ADR/](docs/ADR/) | 40 Architecture Decision Records (ADR-001 through ADR-040) |
 | [docs/DDD/](docs/DDD/) | 16 Domain-Driven Design documents |
+| [docs/TOKEN-SAVINGS.md](docs/TOKEN-SAVINGS.md) | qmd + Serena token savings benchmarks and guidelines |
 
 ## Known Gaps (2026-03-19)
 
@@ -199,6 +225,7 @@ Full commands: **[docs/BUILD-COMMANDS.md](docs/BUILD-COMMANDS.md)**
 | Evolution WASM sandbox integration: not yet wired to SandboxManager | Low — lifecycle/scoring/feedback complete, sandbox gate is placeholder |
 | A2A HTTP server: types + task store ready, HTTP listener not yet wired | Low — JSON-RPC handler works, needs HTTP mount point |
 | 35 new MCP tools: type-safe but not wired to rlmx-mcp tool dispatch | Medium — handlers need adding to tools.rs |
+| @aix/rag backends: qmd HTTP + docling/memory stubs | Low — MCP server wired, backends need production integration |
 
 ## Swarm Configuration
 

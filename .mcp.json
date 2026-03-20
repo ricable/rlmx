@@ -17,6 +17,27 @@
         "CLAUDE_FLOW_MEMORY_BACKEND": "hybrid"
       },
       "autoStart": false
+    },
+    "qmd": {
+      "command": "qmd",
+      "args": ["mcp"]
+    },
+    "serena": {
+      "command": "uvx",
+      "args": [
+        "--from", "git+https://github.com/oraios/serena@0c915bd18d51e2225508b6dccc8ae3bd9c20be1e",
+        "serena", "start-mcp-server",
+        "--context", "claude-code",
+        "--project", "/Users/cedric/dev/rlmx",
+        "--mode", "query-projects"
+      ],
+      "env": {
+        "ENABLE_TOOL_SEARCH": "true"
+      }
+    },
+    "docling": {
+      "command": "uvx",
+      "args": ["--from", "docling-mcp", "docling-mcp-server"]
     }
   }
 }

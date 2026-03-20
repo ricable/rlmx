@@ -14,6 +14,10 @@ INPUT=$(cat)
 
 # Extract fields (portable: works with or without jq)
 if command -v jq &>/dev/null; then
+    if ! echo "$INPUT" | jq empty 2>/dev/null; then
+        echo "{\"allow\": false, \"reason\": \"Invalid JSON input\", \"capabilities\": {\"asr\": false, \"nlu\": false, \"tts\": false}}"
+        exit 0
+    fi
     BATTERY=$(echo "$INPUT" | jq -r '.battery // 50')
     NETWORK=$(echo "$INPUT" | jq -r '.network // "wifi"')
     DEVICE=$(echo "$INPUT" | jq -r '.device // "unknown"')
