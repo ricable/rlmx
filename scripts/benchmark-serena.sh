@@ -27,7 +27,7 @@ rm -f "$NO_SERENA_CONFIG"
 
 if [ -s /tmp/bench-no-serena.json ]; then
   echo "Wall time: $((END1 - START1))s"
-  NO_SERENA_TOKENS=$(jq -r '.usage.input_tokens + .usage.cache_creation_input_tokens + .usage.cache_read_input_tokens + .usage.output_tokens // 0' /tmp/bench-no-serena.json 2>/dev/null || echo "N/A")
+  NO_SERENA_TOKENS=$(jq -r '(.usage.input_tokens // 0) + (.usage.cache_creation_input_tokens // 0) + (.usage.cache_read_input_tokens // 0) + (.usage.output_tokens // 0)' /tmp/bench-no-serena.json 2>/dev/null || echo "N/A")
   NO_SERENA_TURNS=$(jq -r '.num_turns // "N/A"' /tmp/bench-no-serena.json 2>/dev/null || echo "N/A")
   NO_SERENA_COST=$(jq -r '.total_cost_usd // "N/A"' /tmp/bench-no-serena.json 2>/dev/null || echo "N/A")
 else
@@ -49,7 +49,7 @@ END2=$(date +%s)
 
 if [ -s /tmp/bench-with-serena.json ]; then
   echo "Wall time: $((END2 - START2))s"
-  WITH_SERENA_TOKENS=$(jq -r '.usage.input_tokens + .usage.cache_creation_input_tokens + .usage.cache_read_input_tokens + .usage.output_tokens // 0' /tmp/bench-with-serena.json 2>/dev/null || echo "N/A")
+  WITH_SERENA_TOKENS=$(jq -r '(.usage.input_tokens // 0) + (.usage.cache_creation_input_tokens // 0) + (.usage.cache_read_input_tokens // 0) + (.usage.output_tokens // 0)' /tmp/bench-with-serena.json 2>/dev/null || echo "N/A")
   WITH_SERENA_TURNS=$(jq -r '.num_turns // "N/A"' /tmp/bench-with-serena.json 2>/dev/null || echo "N/A")
   WITH_SERENA_COST=$(jq -r '.total_cost_usd // "N/A"' /tmp/bench-with-serena.json 2>/dev/null || echo "N/A")
 else

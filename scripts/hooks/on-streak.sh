@@ -15,7 +15,7 @@ INPUT=$(cat)
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 if command -v jq &>/dev/null; then
-    if ! echo "$INPUT" | jq empty 2>/dev/null; then
+    if [ -z "$INPUT" ] || ! echo "$INPUT" | jq -e 'type == "object"' &>/dev/null; then
         echo "{\"error\": \"Invalid JSON input\"}"
         exit 0
     fi

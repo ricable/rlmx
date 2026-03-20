@@ -51,8 +51,7 @@ save_synced_commit() {
 # ---------------------------------------------------------------------------
 detect_changes() {
     local last_commit="$1"
-    local current_commit
-    current_commit=$(git -C "$PROJECT_ROOT" rev-parse HEAD)
+    local current_commit="${2:-$(git -C "$PROJECT_ROOT" rev-parse HEAD)}"
 
     # Git pathspecs for our file types (expanded from brace pattern)
     local -a pathspecs=( '*.md' '*.rs' '*.ts' '*.tsx' '*.toml' '*.json' )
@@ -98,7 +97,7 @@ reconcile() {
 
     # Phase 1: Detect changes
     local changed_files
-    changed_files=$(detect_changes "$last_commit")
+    changed_files=$(detect_changes "$last_commit" "$current_commit")
     local change_count
     change_count=$(echo "$changed_files" | grep -c '.' || true)
 

@@ -14,7 +14,7 @@ INPUT=$(cat)
 
 # Extract fields (portable: works with or without jq)
 if command -v jq &>/dev/null; then
-    if ! echo "$INPUT" | jq empty 2>/dev/null; then
+    if [ -z "$INPUT" ] || ! echo "$INPUT" | jq -e 'type == "object"' &>/dev/null; then
         echo "{\"allow\": false, \"reason\": \"Invalid JSON input\", \"capabilities\": {\"asr\": false, \"nlu\": false, \"tts\": false}}"
         exit 0
     fi
