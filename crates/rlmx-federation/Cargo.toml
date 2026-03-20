@@ -1,0 +1,24 @@
+[package]
+name = "rlmx-federation"
+version = "0.1.0"
+edition = "2021"
+description = "Federated learning pipeline: anonymization, aggregation, and LoRA distribution"
+
+[dependencies]
+rlmx-kernel = { path = "../rlmx-kernel" }
+rlmx-cognitive = { path = "../rlmx-cognitive" }
+
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+
+[dev-dependencies]
+tokio = { workspace = true }

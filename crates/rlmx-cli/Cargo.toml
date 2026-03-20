@@ -13,9 +13,37 @@ rlmx-kernel = { path = "../rlmx-kernel" }
 rlmx-mcp = { path = "../rlmx-mcp" }
 rlmx-rvf = { path = "../rlmx-rvf" }
 rlmx-plugin = { path = "../rlmx-plugin" }
+rlmx-swarm = { path = "../rlmx-swarm" }
+rlmx-agents = { path = "../rlmx-agents" }
+rlmx-ruvllm = { path = "../rlmx-ruvllm", default-features = false }
+rlmx-cognitive = { path = "../rlmx-cognitive", default-features = false }
 tokio = { workspace = true }
+chrono = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 serde_json = { workspace = true }
 rand = { workspace = true }
 ed25519-dalek = { version = "2", features = ["rand_core"] }
+uuid = { workspace = true }
+
+[features]
+default = []
+ruvllm = ["rlmx-ruvllm/ruvllm"]
+metal = ["rlmx-ruvllm/metal"]
+ruvector = ["rlmx-kernel/ruvector", "rlmx-mcp/ruvector"]
+ruvnet-phase1 = ["rlmx-kernel/ruvnet-phase1", "rlmx-rvf/rvf-ext"]
+rvf-ext = ["rlmx-rvf/rvf-ext", "rlmx-mcp/rvf-ext"]
+qudag = ["rlmx-swarm/qudag"]
+ruv-swarm = ["rlmx-swarm/ruv-swarm"]
+neural = ["rlmx-ruvllm/neural"]
+cognitum = ["rlmx-swarm/cognitum"]
+midstreamer = ["rlmx-kernel/midstreamer", "rlmx-swarm/midstreamer"]
+ruvnet-phase3 = ["rlmx-ruvllm/ruvnet-phase3"]
+ruvector-consensus = ["rlmx-swarm/ruvector-consensus"]
+ruvnet-phase2 = ["rlmx-swarm/ruvnet-phase2"]
+ruvnet-phase4 = ["rlmx-ruvllm/ruvnet-phase4"]
+ruvnet-phase5 = ["rlmx-kernel/ruvnet-phase5"]
+real-embeddings = ["rlmx-kernel/real-embeddings"]
+ruvector-sona = ["rlmx-cognitive/ruvector-sona"]
+cognitive-phase3 = ["rlmx-cognitive/ruvnet-phase3"]

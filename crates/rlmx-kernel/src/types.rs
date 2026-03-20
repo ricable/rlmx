@@ -66,7 +66,7 @@ pub enum MinCutAlgorithm {
 // ---------------------------------------------------------------------------
 
 /// Permission for a specific syscall family.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SyscallPermission {
     VecInsert,
     VecSearch,
@@ -80,7 +80,94 @@ pub enum SyscallPermission {
     StateMutate,
     AttentionSelect,
     HaltCheck,
+    VoiceTranscribe,
+    VoiceSynthesize,
+    IntentRoute,
+    MeshSync,
+    FederationContribute,
+    /// Write content-addressed artifacts to the DAG (ADR-030).
+    ArtifactWrite,
     All,
+}
+
+// ---------------------------------------------------------------------------
+// Voice-first architecture types (ADR-019)
+// ---------------------------------------------------------------------------
+
+/// How the kernel should respond to a voice-originated request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ResponseMode {
+    /// Audio-only reply (no visual output).
+    VoiceOnly,
+    /// Visual-only reply (screen/text, no audio).
+    Visual,
+    /// Combined audio + visual reply.
+    Multimodal,
+    /// Background/ambient notification (low-priority).
+    Ambient,
+}
+
+/// Persona profile used for voice synthesis style selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VoicePersona {
+    Finance,
+    Health,
+    Legal,
+    Shopping,
+    Calendar,
+    Emergency,
+}
+
+/// Life domain categories for intent decomposition and routing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum LifeDomain {
+    Finance,
+    Health,
+    Legal,
+    Career,
+    Education,
+    Home,
+    Shopping,
+    Travel,
+    Social,
+    Government,
+    Automotive,
+    Pet,
+}
+
+impl LifeDomain {
+    /// Returns all 12 life domain variants.
+    pub fn all() -> &'static [LifeDomain] {
+        &[
+            LifeDomain::Finance,
+            LifeDomain::Health,
+            LifeDomain::Legal,
+            LifeDomain::Career,
+            LifeDomain::Education,
+            LifeDomain::Home,
+            LifeDomain::Shopping,
+            LifeDomain::Travel,
+            LifeDomain::Social,
+            LifeDomain::Government,
+            LifeDomain::Automotive,
+            LifeDomain::Pet,
+        ]
+    }
+}
+
+/// A single parsed intent extracted from a voice transcript.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Intent {
+    /// The life domain this intent belongs to.
+    pub domain: LifeDomain,
+    /// Action verb or short description (e.g. "schedule", "pay", "lookup").
+    pub action: String,
+    /// Named entities extracted from the transcript.
+    pub entities: Vec<String>,
+    /// Urgency score in \[0.0, 1.0\] — higher means more time-sensitive.
+    pub urgency: f64,
+    /// Confidence that this intent was correctly parsed, in \[0.0, 1.0\].
+    pub confidence: f64,
 }
 
 /// A capability granted to a process, restricting which syscalls it may invoke.
@@ -141,18 +228,69 @@ impl Default for ProofRequest {
 /// The result of executing a syscall.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SyscallResult {
-    VecInserted { segment_id: Uuid },
-    VecSearchResults { results: Vec<SearchHit> },
-    VecDeleted { success: bool },
-    GraphQueryResult { rows: Vec<serde_json::Value> },
-    GraphCutResult { cut_weight: f64, partitions: Vec<Vec<Uuid>> },
-    GraphDiffused { output_signal: Vec<f64> },
-    ProcessForked { child_id: ProcessId },
-    MessageSent { delivered: bool },
-    MessageReceived { message: Option<KernelMessage> },
-    StateMutated { witness_id: Uuid, success: bool },
-    AttentionSelected { selected_indices: Vec<usize>, mechanism: String },
-    HaltDecision { should_halt: bool, reason: String },
+    VecInserted {
+        segment_id: Uuid,
+    },
+    VecSearchResults {
+        results: Vec<SearchHit>,
+    },
+    VecDeleted {
+        success: bool,
+    },
+    GraphQueryResult {
+        rows: Vec<serde_json::Value>,
+    },
+    GraphCutResult {
+        cut_weight: f64,
+        partitions: Vec<Vec<Uuid>>,
+    },
+    GraphDiffused {
+        output_signal: Vec<f64>,
+    },
+    ProcessForked {
+        child_id: ProcessId,
+    },
+    MessageSent {
+        delivered: bool,
+    },
+    MessageReceived {
+        message: Option<KernelMessage>,
+    },
+    StateMutated {
+        witness_id: Uuid,
+        success: bool,
+    },
+    AttentionSelected {
+        selected_indices: Vec<usize>,
+        mechanism: String,
+    },
+    HaltDecision {
+        should_halt: bool,
+        reason: String,
+    },
+    VoiceTranscribed {
+        transcript: String,
+        language: String,
+        confidence: f64,
+    },
+    VoiceSynthesized {
+        audio_len: usize,
+        persona: String,
+        streaming: bool,
+    },
+    IntentsRouted {
+        intents: Vec<Intent>,
+    },
+    MeshSynced {
+        mesh_id: Uuid,
+        devices_synced: usize,
+        ops_transferred: u64,
+    },
+    FederationContributed {
+        cycle_id: Uuid,
+        patterns_submitted: usize,
+        anonymized: bool,
+    },
 }
 
 /// A single search hit with score.
@@ -200,6 +338,15 @@ pub enum KernelError {
 
     #[error("internal error: {0}")]
     Internal(String),
+
+    #[error("model load error: {0}")]
+    ModelLoadError(String),
+
+    #[error("embedding error: {0}")]
+    EmbeddingError(String),
+
+    #[error("I/O error: {0}")]
+    IoError(String),
 }
 
 pub type KernelResult<T> = Result<T, KernelError>;

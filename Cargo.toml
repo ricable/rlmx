@@ -8,7 +8,21 @@ members = [
     "crates/rlmx-mcp",
     "crates/rlmx-rvf",
     "crates/rlmx-cognitive",
+    "crates/rlmx-agents",
+    "crates/rlmx-swarm",
+    "crates/rlmx-ruvllm",
+    "crates/rlmx-voice",
+    "crates/rlmx-phone",
     "crates/rlmx-cli",
+    "crates/rlmx-marketplace",
+    "crates/rlmx-napi",
+    "crates/rlmx-wasm",
+    "crates/rlmx-mesh",
+    "crates/rlmx-federation",
+    "crates/rlmx-billing",
+    "crates/rlmx-artifact",
+    "crates/rlmx-evolve",
+    "crates/rlmx-channels",
 ]
 
 [workspace.dependencies]
@@ -19,6 +33,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
 tracing = "0.1"
+tracing-subscriber = "0.3"
 clap = { version = "4", features = ["derive"] }
 semver = { version = "1", features = ["serde"] }
 async-trait = "0.1"
@@ -26,3 +41,59 @@ rand = "0.8"
 sha2 = "0.10"
 hmac = "0.12"
 hex = "0.4"
+
+# Embedding model support (optional, feature-gated)
+candle-core = { version = "0.8" }
+candle-nn = { version = "0.8" }
+candle-transformers = { version = "0.8" }
+tokenizers = { version = "0.21" }
+
+# --- ruvnet ecosystem (all optional, feature-gated per crate) ---
+# Phase 1: Core Vector & Storage
+ruvector-core = { version = "2.0.6" }
+ruvector-graph = { version = "2.0.4" }
+ruvector-filter = { version = "2.0.4" }
+ruvector-collections = { version = "2.0.4" }
+rvf-types = { version = "0.2.0" }
+rvf-runtime = { version = "0.2.0" }
+rvf-wire = { version = "0.1.0" }
+rvf-index = { version = "0.1.0" }
+rvf-quant = { version = "0.1.0" }
+rvf-crypto = { version = "0.2.0" }
+# Phase 2: Swarm Consensus & Networking
+qudag-dag = { version = "0.5.0" }
+qudag-network = { version = "0.5.0" }
+# qudag-protocol excluded: sqlx dep conflicts with ruvector-tiny-dancer-core's rusqlite
+qudag-crypto = { version = "0.5.1" }
+ruvector-raft = { version = "2.0.4" }
+midstreamer-quic = { version = "0.1.0" }
+ruv-swarm-core = { version = "1.0.6" }
+ruv-swarm-transport = { version = "1.0.5" }
+# Phase 3: Enhanced Inference & Attention
+ruvector-attention = { version = "2.0.4" }
+ruvector-attn-mincut = { version = "2.0.4" }
+ruvector-sona = { version = "0.1.6" }
+ruvector-solver = { version = "2.0.4" }
+ruvector-gnn = { version = "2.0.5" }
+ruvector-tiny-dancer-core = { version = "2.0.4" }
+midstreamer-scheduler = { version = "0.1.0" }
+cognitum-gate-tilezero = { version = "0.1.1" }
+cognitum-gate-kernel = { version = "0.1.1" }
+# Phase 4: Edge & WASM + Neural
+ruvector-cognitive-container = { version = "2.0.4" }
+ruvector-memopt = { version = "0.5.0" }
+ruv-neural-core = { version = "0.1.0" }
+ruv-neural-signal = { version = "0.1.0" }
+ruv-neural-graph = { version = "0.1.0" }
+ruv-neural-embed = { version = "0.1.0" }
+ruv-neural-memory = { version = "0.1.0" }
+cognitum-rs = { version = "0.1.0" }
+# Phase 5: Bare-Metal RuVix + Verification
+ruvix-hal = { version = "0.1.0" }
+ruvix-types = { version = "0.1.0" }
+ruvix-cap = { version = "0.1.0" }
+ruvix-region = { version = "0.1.0" }
+ruvix-nucleus = { version = "0.1.0" }
+ruvix-sched = { version = "0.1.0" }
+ruvix-bcm2711 = { version = "0.1.0" }
+ruvector-verified = { version = "0.1.1" }

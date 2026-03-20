@@ -29,6 +29,28 @@ pub use rbac::{AccessControl, AccessPolicy, Operation, Role};
 pub use segments::{DiffKind, RvfSegment, SegmentDiff, SegmentType};
 pub use witness::{WitnessChain, WitnessEntry};
 
+#[cfg(feature = "rvf-ext")]
+pub mod rvf_ext {
+    pub mod types {
+        pub use rvf_types::*;
+    }
+    pub mod runtime {
+        pub use rvf_runtime::*;
+    }
+    pub mod wire {
+        pub use rvf_wire::*;
+    }
+    pub mod index {
+        pub use rvf_index::*;
+    }
+    pub mod quant {
+        pub use rvf_quant::*;
+    }
+    pub mod crypto_ext {
+        pub use rvf_crypto::*;
+    }
+}
+
 /// Errors that can occur during RVF operations.
 #[derive(Debug, thiserror::Error)]
 pub enum RvfError {

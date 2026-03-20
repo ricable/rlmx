@@ -1,0 +1,19 @@
+[package]
+name = "rlmx-phone"
+version = "0.1.0"
+edition = "2021"
+description = "Phone runtime bounded context - Zone A-Mobile command center (ADR-013, DDD-009)"
+
+[dependencies]
+rlmx-kernel = { path = "../rlmx-kernel" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+rand = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

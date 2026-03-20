@@ -1,0 +1,28 @@
+[package]
+name = "rlmx-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "WASM kernel subset for browser/WebView (Zone D phone) — ADR-021"
+
+[dependencies]
+rlmx-kernel = { path = "../rlmx-kernel" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# Optional: wasm-bindgen for actual WASM builds
+wasm-bindgen = { version = "0.2", optional = true }
+
+# Optional: 4-bit quantization
+rvf-quant = { workspace = true, optional = true }
+
+[features]
+default = []
+wasm = ["dep:wasm-bindgen"]
+quantized = ["dep:rvf-quant"]
+
+[dev-dependencies]
+tokio = { workspace = true }

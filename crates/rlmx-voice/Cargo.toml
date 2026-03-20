@@ -1,0 +1,19 @@
+[package]
+name = "rlmx-voice"
+version = "0.1.0"
+edition = "2021"
+description = "Voice-first pipeline for RLMX cognition kernel (ADR-012, DDD-008)"
+
+[dependencies]
+rlmx-kernel = { path = "../rlmx-kernel" }
+tokio = { workspace = true }
+serde = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+rand = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+serde_json = { workspace = true }

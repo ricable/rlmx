@@ -1,0 +1,15 @@
+[package]
+name = "rlmx-artifact"
+version = "0.1.0"
+edition = "2021"
+description = "Content-addressed artifact DAG for the RuVix cognition kernel"
+
+[dependencies]
+sha2 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+hex = { workspace = true }

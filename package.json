@@ -1,0 +1,24 @@
+{
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build:native": "cd crates/rlmx-napi && npx napi build --platform --release --features napi",
+    "build:wasm": "wasm-pack build crates/rlmx-wasm --target web --out-dir ../../packages/wasm --out-name aix_wasm -- --features wasm",
+    "build:ts": "npm run build --workspaces",
+    "build": "npm run build:native && npm run build:wasm && npm run build:ts",
+    "test:rust": "cargo test --workspace",
+    "test:ts": "npx vitest run --workspace",
+    "test": "npm run test:rust && npm run test:ts",
+    "lint": "npx eslint packages/*/src/**/*.ts",
+    "typecheck": "npx tsc --build packages/*/tsconfig.json"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "vitest": "^1.6.0",
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

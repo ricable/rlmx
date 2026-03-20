@@ -1,0 +1,46 @@
+[package]
+name = "rlmx-swarm"
+version = "0.1.0"
+edition = "2021"
+description = "Distributed swarm coordination for the RuVix cognition kernel"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+rand = { workspace = true }
+async-trait = { workspace = true }
+sha2 = { workspace = true }
+rlmx-kernel = { path = "../rlmx-kernel" }
+
+# Optional: ruvnet consensus & networking
+qudag-dag = { version = "0.5.0", optional = true }
+qudag-network = { version = "0.5.0", optional = true }
+# NOTE: qudag-protocol excluded — its sqlx dep conflicts with
+# ruvector-tiny-dancer-core's rusqlite (libsqlite3-sys links clash).
+# Use qudag-dag + qudag-network + qudag-crypto directly instead.
+qudag-crypto = { version = "0.5.1", optional = true }
+ruvector-raft = { version = "2.0.4", optional = true }
+midstreamer-quic = { version = "0.1.0", optional = true }
+ruv-swarm-core = { version = "1.0.6", optional = true }
+ruv-swarm-transport = { version = "1.0.5", optional = true }
+cognitum-gate-tilezero = { version = "0.1.1", optional = true }
+cognitum-gate-kernel = { version = "0.1.1", optional = true }
+
+[features]
+default = ["process-sim"]
+process-sim = []
+qudag = [
+    "dep:qudag-dag",
+    "dep:qudag-network",
+    "dep:qudag-crypto",
+]
+ruv-swarm = ["dep:ruv-swarm-core", "dep:ruv-swarm-transport"]
+midstreamer = ["dep:midstreamer-quic"]
+ruvector-consensus = ["dep:ruvector-raft"]
+cognitum = ["dep:cognitum-gate-tilezero", "dep:cognitum-gate-kernel"]
+ruvnet-phase2 = ["qudag", "ruv-swarm", "midstreamer", "ruvector-consensus", "cognitum"]

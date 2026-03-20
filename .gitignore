@@ -1,1 +1,15 @@
 target/
+.DS_Store
+node_modules/
+dist/
+*.tsbuildinfo
+package-lock.json
+
+# Serena
+.serena/cache/
+.serena/logs/
+.serena/project.local.yml
+
+# RAG ingested documents (ephemeral)
+docs/ingested/*
+!docs/ingested/.gitkeep
